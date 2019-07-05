@@ -22,8 +22,8 @@ class TrackerStorage(object):
         self.tracker_down_time_interval = 60 * 60
         self.tracker_discover_time_interval = 5 * 60
 
-        self.working_shared_trackers_limit_per_protocol = {}
-        self.working_shared_trackers_limit_per_protocol["other"] = 2
+        self.shared_trackers_limit_per_protocol = {}
+        self.shared_trackers_limit_per_protocol["other"] = 2
 
         self.file_path = "%s/trackers.json" % config.data_dir
         self.load()
@@ -32,18 +32,18 @@ class TrackerStorage(object):
         atexit.register(self.save)
 
     def initTrackerLimitForProtocol(self):
-        for s in re.split("[,;]", config.working_shared_trackers_limit_per_protocol):
+        for s in re.split("[,;]", config.shared_trackers_limit_per_protocol):
             x = s.split("=", 1)
             if len(x) == 1:
                 x = ["other", x[0]]
             try:
-                self.working_shared_trackers_limit_per_protocol[x[0]] = int(x[1])
+                self.shared_trackers_limit_per_protocol[x[0]] = int(x[1])
             except ValueError:
                 pass
-        self.log.debug("Limits per protocol: %s" % self.working_shared_trackers_limit_per_protocol)
+        self.log.debug("Limits per protocol: %s" % self.shared_trackers_limit_per_protocol)
 
     def getTrackerLimitForProtocol(self, protocol):
-        l = self.working_shared_trackers_limit_per_protocol
+        l = self.shared_trackers_limit_per_protocol
         return l.get(protocol, l.get("other"))
 
     def setSiteAnnouncer(self, site_announcer):
@@ -175,7 +175,7 @@ class TrackerStorage(object):
         error_limit = 30
         if nr_working_trackers_for_protocol >= self.getTrackerLimitForProtocol(protocol):
             error_limit = 10
-            if nr_working_trackers >= config.working_shared_trackers_limit:
+            if nr_working_trackers >= config.shared_trackers_limit:
                 error_limit = 5
 
         if trackers[tracker_address]["num_error"] > error_limit and trackers[tracker_address]["time_success"] < time.time() - self.tracker_down_time_interval:
@@ -262,9 +262,9 @@ class TrackerStorage(object):
                 return False
             total_nr += len(trackers)
 
-        if total_nr < config.working_shared_trackers_limit:
+        if total_nr < config.shared_trackers_limit:
             self.log.debug("Not enough working trackers: %s < %s" % (
-                total_nr, config.working_shared_trackers_limit))
+                total_nr, config.shared_trackers_limit))
             return False
 
         return True
@@ -357,7 +357,7 @@ class FileServerPlugin(object):
 class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("TrackerShare plugin")
-        group.add_argument('--working_shared_trackers_limit', help='Stop discovering new shared trackers after this number of shared trackers reached (total)', default=10, type=int, metavar='limit')
-        group.add_argument('--working_shared_trackers_limit_per_protocol', help='Stop discovering new shared trackers after this number of shared trackers reached per each supported protocol', default="zero=5,other=4", metavar='limit')
+        group.add_argument('--shared_trackers_limit', help='Discover new shared trackers if this number of shared trackers isn\'t reached (total)', default=10, type=int, metavar='limit')
+        group.add_argument('--shared_trackers_limit_per_protocol', help='Discover new shared trackers if this number of shared trackers isn\'t reached per each supported protocol', default="zero=5,other=4", metavar='limit')
 
         return super(ConfigPlugin, self).createArguments()
