@@ -277,6 +277,7 @@ class TrackerStorage(object):
 
         s = time.time()
         num_success = 0
+        num_trackers_discovered = 0
         for peer in peers:
             if peer.connection and peer.connection.handshake.get("rev", 0) < 3560:
                 continue  # Not supported
@@ -293,6 +294,7 @@ class TrackerStorage(object):
                     tracker_address = tracker_address.decode("utf8")
                 added = self.onTrackerFound(tracker_address)
                 if added:  # Only add one tracker from one source
+                    num_trackers_discovered += 1
                     break
 
         if not num_success and len(peers) < 20:
@@ -301,7 +303,7 @@ class TrackerStorage(object):
         if num_success:
             self.save()
 
-        self.log.info("Trackers discovered from %s/%s peers in %.3fs" % (num_success, len(peers), time.time() - s))
+        self.log.info("Discovered %s new trackers from %s/%s peers in %.3fs" % (num_trackers_discovered, num_success, len(peers), time.time() - s))
 
 
 if "tracker_storage" not in locals():
