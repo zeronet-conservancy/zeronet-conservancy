@@ -358,6 +358,6 @@ class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("TrackerShare plugin")
         group.add_argument('--working_shared_trackers_limit', help='Stop discovering new shared trackers after this number of shared trackers reached (total)', default=10, type=int, metavar='limit')
-        group.add_argument('--working_shared_trackers_limit_per_protocol', help='Stop discovering new shared trackers after this number of shared trackers reached per each supported protocol', default="zero=5,other=2", metavar='limit')
+        group.add_argument('--working_shared_trackers_limit_per_protocol', help='Stop discovering new shared trackers after this number of shared trackers reached per each supported protocol', default="zero=5,other=4", metavar='limit')
 
         return super(ConfigPlugin, self).createArguments()
