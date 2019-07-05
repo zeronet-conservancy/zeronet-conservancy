@@ -122,25 +122,31 @@ class TrackerStorage(object):
     def getDefaultFile(self):
         return {"shared": {}}
 
-    def onTrackerFound(self, tracker_address, type="shared", my=False):
+    def onTrackerFound(self, tracker_address, type="shared", my=False, persistent=False):
         if not self.isTrackerAddressValid(tracker_address):
             return False
 
         trackers = self.getTrackers(type)
         added = False
         if tracker_address not in trackers:
+            # "My" trackers never get deleted on announce errors, but aren't saved between restarts.
+            # They are to be used as automatically added addresses from the Bootstrap plugin.
+            # Persistent trackers never get deleted.
+            # They are to be used for entries manually added by the user.
             trackers[tracker_address] = {
                 "time_added": time.time(),
                 "time_success": 0,
                 "latency": 99.0,
                 "num_error": 0,
-                "my": False
+                "my": False,
+                "persistent": False
             }
             self.log.info("New tracker found: %s" % tracker_address)
             added = True
 
         trackers[tracker_address]["time_found"] = time.time()
-        trackers[tracker_address]["my"] = my
+        trackers[tracker_address]["my"] |= my
+        trackers[tracker_address]["persistent"] |= persistent
         return added
 
     def onTrackerSuccess(self, tracker_address, latency):
@@ -161,6 +167,9 @@ class TrackerStorage(object):
 
         trackers[tracker_address]["time_error"] = time.time()
         trackers[tracker_address]["num_error"] += 1
+
+        if trackers[tracker_address]["my"] or trackers[tracker_address]["persistent"]:
+            return
 
         if self.time_success < time.time() - self.tracker_down_time_interval / 2:
             # Don't drop trackers from the list, if there haven't been any successful announces recently.
@@ -235,7 +244,14 @@ class TrackerStorage(object):
         trackers = self.getTrackers()
         self.log.debug("Loaded %s shared trackers" % len(trackers))
         for address, tracker in list(trackers.items()):
+            tracker.setdefault("time_added", time.time())
+            tracker.setdefault("time_success", 0)
+            tracker.setdefault("latency", 99.0)
+            tracker.setdefault("my", False)
+            tracker.setdefault("persistent", False)
             tracker["num_error"] = 0
+            if tracker["my"]:
+                del trackers[address]
         self.recheckValidTrackers()
 
     def save(self):
