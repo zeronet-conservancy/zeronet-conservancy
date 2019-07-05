@@ -56,9 +56,6 @@ class TrackerList(object):
             self.last_rescan_failed = False
 
     def reload(self):
-        if "AnnounceShare" not in PluginManager.plugin_manager.plugin_names:
-            return
-
         rescan_interval = config.tracker_list_rescan_interval
         if self.last_rescan_failed:
             rescan_interval = (rescan_interval / 2, 60)
@@ -68,14 +65,19 @@ class TrackerList(object):
 
         self.last_rescan_time = time.time()
 
-        try:
-            if "tracker_storage" not in locals():
-                from AnnounceShare.AnnounceSharePlugin import tracker_storage
-            self.tracker_storage = tracker_storage
-            if self.tracker_storage:
-                gevent.spawn(self.do_rescan)
-        except Exception as err:
-            self.log.error("%s" % Debug.formatException(err))
+        if "tracker_storage" not in locals():
+            try:
+                if "TrackerShare" in PluginManager.plugin_manager.plugin_names:
+                    from TrackerShare.TrackerSharePlugin import tracker_storage
+                    self.tracker_storage = tracker_storage
+                elif "AnnounceShare" in PluginManager.plugin_manager.plugin_names:
+                    from AnnounceShare.AnnounceSharePlugin import tracker_storage
+                    self.tracker_storage = tracker_storage
+            except Exception as err:
+                self.log.error("%s" % Debug.formatException(err))
+
+        if self.tracker_storage:
+            gevent.spawn(self.do_rescan)
 
 
 if "tracker_list" not in locals():
