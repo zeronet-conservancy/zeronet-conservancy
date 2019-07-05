@@ -40,7 +40,7 @@ class TrackerStorage(object):
                 self.shared_trackers_limit_per_protocol[x[0]] = int(x[1])
             except ValueError:
                 pass
-        self.log.debug("Limits per protocol: %s" % self.shared_trackers_limit_per_protocol)
+        self.log.info("Limits per protocol: %s" % self.shared_trackers_limit_per_protocol)
 
     def getTrackerLimitForProtocol(self, protocol):
         l = self.shared_trackers_limit_per_protocol
@@ -103,7 +103,7 @@ class TrackerStorage(object):
             t = max(trackers[tracker_address]["time_added"],
                     trackers[tracker_address]["time_success"])
             if tracker_address not in supported_trackers and t < time.time() - self.tracker_down_time_interval:
-                self.log.debug("Tracker %s looks unused, removing." % tracker_address)
+                self.log.info("Tracker %s looks unused, removing." % tracker_address)
                 del trackers[tracker_address]
 
         protocols = set()
@@ -136,7 +136,7 @@ class TrackerStorage(object):
                 "num_error": 0,
                 "my": False
             }
-            self.log.debug("New tracker found: %s" % tracker_address)
+            self.log.info("New tracker found: %s" % tracker_address)
             added = True
 
         trackers[tracker_address]["time_found"] = time.time()
@@ -179,7 +179,7 @@ class TrackerStorage(object):
                 error_limit = 5
 
         if trackers[tracker_address]["num_error"] > error_limit and trackers[tracker_address]["time_success"] < time.time() - self.tracker_down_time_interval:
-            self.log.debug("Tracker %s looks down, removing." % tracker_address)
+            self.log.info("Tracker %s looks down, removing." % tracker_address)
             del trackers[tracker_address]
 
     def isTrackerWorking(self, tracker_address, type="shared"):
@@ -257,13 +257,13 @@ class TrackerStorage(object):
         for protocol in supported_protocols:
             trackers = trackers_per_protocol.get(protocol, [])
             if len(trackers) < self.getTrackerLimitForProtocol(protocol):
-                self.log.debug("Not enough working trackers for protocol %s: %s < %s" % (
+                self.log.info("Not enough working trackers for protocol %s: %s < %s" % (
                     protocol, len(trackers), self.getTrackerLimitForProtocol(protocol)))
                 return False
             total_nr += len(trackers)
 
         if total_nr < config.shared_trackers_limit:
-            self.log.debug("Not enough working trackers: %s < %s" % (
+            self.log.info("Not enough working trackers: %s < %s" % (
                 total_nr, config.shared_trackers_limit))
             return False
 
@@ -273,7 +273,7 @@ class TrackerStorage(object):
         if self.enoughWorkingTrackers(type="shared"):
             return False
 
-        self.log.debug("Discovering trackers from %s peers..." % len(peers))
+        self.log.info("Discovering trackers from %s peers..." % len(peers))
 
         s = time.time()
         num_success = 0
@@ -301,7 +301,7 @@ class TrackerStorage(object):
         if num_success:
             self.save()
 
-        self.log.debug("Trackers discovered from %s/%s peers in %.3fs" % (num_success, len(peers), time.time() - s))
+        self.log.info("Trackers discovered from %s/%s peers in %.3fs" % (num_success, len(peers), time.time() - s))
 
 
 if "tracker_storage" not in locals():
