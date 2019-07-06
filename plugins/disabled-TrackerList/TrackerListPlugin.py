@@ -58,7 +58,7 @@ class TrackerList(object):
     def reload(self):
         rescan_interval = config.tracker_list_rescan_interval
         if self.last_rescan_failed:
-            rescan_interval = (rescan_interval / 2, 60)
+            rescan_interval = rescan_interval / 2
 
         if self.last_rescan_time > time.time() - rescan_interval:
             return
