@@ -25,7 +25,7 @@ class TrackerStorage(object):
         self.shared_trackers_limit_per_protocol = {}
         self.shared_trackers_limit_per_protocol["other"] = 2
 
-        self.file_path = "%s/trackers.json" % config.data_dir
+        self.file_path = "%s/shared-trackers.json" % config.data_dir
         self.load()
         self.time_discover = 0.0
         self.time_success = 0.0
