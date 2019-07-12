@@ -7,12 +7,10 @@ from .TrackerZeroDb import TrackerZeroDb
 from Crypt import CryptRsa
 from Config import config
 
-if "db" not in locals().keys():  # Share during reloads
-    db = TrackerZeroDb()
+class TrackerZero(object):
+    def __init__(self):
+        self.log = logging.getLogger("TrackerZero")
 
-
-@PluginManager.registerTo("FileRequest")
-class FileRequestPlugin(object):
     def checkOnionSigns(self, onions, onion_signs, onion_sign_this):
         if not onion_signs or len(onion_signs) != len(set(onions)):
             return False
@@ -34,7 +32,7 @@ class FileRequestPlugin(object):
         else:
             return False
 
-    def actionAnnounce(self, params):
+    def actionAnnounce(self, file_request, params):
         time_started = time.time()
         s = time.time()
         # Backward compatibility
@@ -49,9 +47,9 @@ class FileRequestPlugin(object):
 
         time_onion_check = time.time() - s
 
-        ip_type = helper.getIpType(self.connection.ip)
+        ip_type = helper.getIpType(file_request.connection.ip)
 
-        if ip_type == "onion" or self.connection.ip in config.ip_local:
+        if ip_type == "onion" or file_request.connection.ip in config.ip_local:
             is_port_open = False
         elif ip_type in params["add"]:
             is_port_open = True
@@ -84,7 +82,7 @@ class FileRequestPlugin(object):
         if is_port_open:
             hashes_changed += db.peerAnnounce(
                 ip_type=ip_type,
-                address=self.connection.ip,
+                address=file_request.connection.ip,
                 port=params["port"],
                 hashes=hashes,
                 delete_missing_hashes=params.get("delete")
@@ -106,12 +104,12 @@ class FileRequestPlugin(object):
             order = True
         for hash in hashes:
             if time.time() - time_started > 1:  # 1 sec limit on request
-                self.connection.log("Announce time limit exceeded after %s/%s sites" % (len(peers), len(hashes)))
+                file_request.connection.log("Announce time limit exceeded after %s/%s sites" % (len(peers), len(hashes)))
                 break
 
             hash_peers = db.peerList(
                 hash,
-                address=self.connection.ip, onions=list(onion_to_hash.keys()), port=params["port"],
+                address=file_request.connection.ip, onions=list(onion_to_hash.keys()), port=params["port"],
                 limit=min(limit, params["need_num"]), need_types=params["need_types"], order=order
             )
             if "ip4" in params["need_types"]:  # Backward compatibility
@@ -121,11 +119,25 @@ class FileRequestPlugin(object):
         time_peerlist = time.time() - s
 
         back["peers"] = peers
-        self.connection.log(
+        file_request.connection.log(
             "Announce %s sites (onions: %s, onion_check: %.3fs, db_onion: %.3fs, db_ip: %.3fs, peerlist: %.3fs, limit: %s)" %
             (len(hashes), len(onion_to_hash), time_onion_check, time_db_onion, time_db_ip, time_peerlist, limit)
         )
-        self.response(back)
+        file_request.response(back)
+
+
+if "db" not in locals().keys():  # Share during reloads
+    db = TrackerZeroDb()
+
+if "TrackerZero" not in locals():
+    tracker_zero = TrackerZero()
+
+
+
+@PluginManager.registerTo("FileRequest")
+class FileRequestPlugin(object):
+    def actionAnnounce(self, params):
+        tracker_zero.actionAnnounce(self, params)
 
 
 @PluginManager.registerTo("UiRequest")
