@@ -1,3 +1,7 @@
+import atexit
+import json
+import logging
+import os
 import time
 
 from util import helper
@@ -10,6 +14,53 @@ from Config import config
 class TrackerZero(object):
     def __init__(self):
         self.log = logging.getLogger("TrackerZero")
+        self.log_once = set()
+        self.enabled_addresses = []
+        self.config_file_path = "%s/tracker-zero.json" % config.data_dir
+        self.config = None
+        self.load()
+        atexit.register(self.save)
+
+
+    def logOnce(self, message):
+        if message in self.log_once:
+            return
+        self.log_once.add(message)
+        self.log.info(message)
+
+    def getDefaultConfig(self):
+        return {
+            "settings": {
+                "enable": False,
+                "enable_only_in_tor_always_mode": True,
+                "listen_on_public_ips": False,
+                "listen_on_temporary_onion_address": False,
+                "listen_on_persistent_onion_address": True
+            }
+        }
+
+    def readJSON(self, file_path, default_value):
+        if not os.path.isfile(file_path):
+            try:
+                self.writeJSON(file_path, default_value)
+            except Exception as err:
+                self.log.error("Error writing %s: %s" % (file_path, err))
+            return default_value
+
+        try:
+            return json.load(open(file_path))
+        except Exception as err:
+            self.log.error("Error loading %s: %s" % (file_path, err))
+            return default_value
+
+    def writeJSON(self, file_path, value):
+        helper.atomicWrite(file_path, json.dumps(value, indent=2, sort_keys=True).encode("utf8"))
+
+    def load(self):
+        self.config = self.readJSON(self.config_file_path, self.getDefaultConfig())
+
+    def save(self):
+        self.writeJSON(self.config_file_path, self.config)
 
     def checkOnionSigns(self, onions, onion_signs, onion_sign_this):
         if not onion_signs or len(onion_signs) != len(set(onions)):
@@ -126,10 +177,61 @@ class TrackerZero(object):
         file_request.response(back)
 
 
+    def getTrackerStorage(self):
+        try:
+            if "TrackerShare" in PluginManager.plugin_manager.plugin_names:
+                from TrackerShare.TrackerSharePlugin import tracker_storage
+                return tracker_storage
+            elif "AnnounceShare" in PluginManager.plugin_manager.plugin_names:
+                from AnnounceShare.AnnounceSharePlugin import tracker_storage
+                return tracker_storage
+        except Exception as err:
+            self.log.error("%s" % Debug.formatException(err))
+
+        return None
+
+    def registerSharedAddresses(self, file_server, port_open):
+        tracker_storage = self.getTrackerStorage()
+        if not tracker_storage:
+            return
+
+        settings = self.config.get("settings", {})
+
+        if not settings.get("enable"):
+            self.logOnce("Plugin loaded, but disabled by the settings")
+            return False
+
+        if settings.get("enable_only_in_tor_always_mode") and not config.tor == "always":
+            self.logOnce("Plugin loaded, but disabled from running in the modes other than 'tor = always'")
+            return False
+
+        self.enabled_addresses = []
+
+        if settings.get("listen_on_public_ips") and port_open and not config.tor == "always":
+            for ip in file_server.ip_external_list:
+                my_tracker_address = "zero://%s:%s" % (ip, config.fileserver_port)
+                if tracker_storage.onTrackerFound(my_tracker_address, my=True):
+                    self.logOnce("listening on public IP: %s" % my_tracker_address)
+                    self.enabled_addresses.append(my_tracker_address)
+
+        if settings.get("listen_on_temporary_onion_address") and file_server.tor_manager.enabled:
+            onion = file_server.tor_manager.getOnion(config.homepage)
+            if onion:
+                my_tracker_address = "zero://%s.onion:%s" % (onion, file_server.tor_manager.fileserver_port)
+                if tracker_storage.onTrackerFound(my_tracker_address, my=True):
+                    self.logOnce("listening on temporary onion address: %s" % my_tracker_address)
+                    self.enabled_addresses.append(my_tracker_address)
+
+        if settings.get("listen_on_persistent_onion_address") and file_server.tor_manager.enabled:
+            # FIXME: not implemented
+            pass
+
+        return len(self.enabled_addresses) > 0
+
 if "db" not in locals().keys():  # Share during reloads
     db = TrackerZeroDb()
 
-if "TrackerZero" not in locals():
+if "tracker_zero" not in locals():
     tracker_zero = TrackerZero()
 
 
@@ -138,6 +240,14 @@ if "TrackerZero" not in locals():
 class FileRequestPlugin(object):
     def actionAnnounce(self, params):
         tracker_zero.actionAnnounce(self, params)
+
+
+@PluginManager.registerTo("FileServer")
+class FileServerPlugin(object):
+    def portCheck(self, *args, **kwargs):
+        res = super(FileServerPlugin, self).portCheck(*args, **kwargs)
+        tracker_zero.registerSharedAddresses(self, res)
+        return res
 
 
 @PluginManager.registerTo("UiRequest")
