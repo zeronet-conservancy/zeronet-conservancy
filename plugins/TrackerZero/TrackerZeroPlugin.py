@@ -1,6 +1,7 @@
 import atexit
 import json
 import logging
+import re
 import os
 import time
 
@@ -20,7 +21,6 @@ class TrackerZero(object):
         self.config = None
         self.load()
         atexit.register(self.save)
-
 
     def logOnce(self, message):
         if message in self.log_once:
@@ -190,10 +190,22 @@ class TrackerZero(object):
 
         return None
 
-    def registerSharedAddresses(self, file_server, port_open):
-        tracker_storage = self.getTrackerStorage()
-        if not tracker_storage:
+    def registerTrackerAddress(self, message, address, port):
+        _tracker_storage = self.getTrackerStorage()
+        if not _tracker_storage:
             return
+
+        my_tracker_address = "zero://%s:%s" % (address, port)
+        if _tracker_storage.onTrackerFound(my_tracker_address, my=True):
+            self.logOnce("listening on %s: %s" % (message, my_tracker_address))
+            self.enabled_addresses.append("%s:%s" % (address, port))
+
+    def registerTrackerAddresses(self, file_server, port_open):
+        _tracker_storage = self.getTrackerStorage()
+        if not _tracker_storage:
+            return
+
+        tor_manager = file_server.tor_manager
 
         settings = self.config.get("settings", {})
 
@@ -209,22 +221,36 @@ class TrackerZero(object):
 
         if settings.get("listen_on_public_ips") and port_open and not config.tor == "always":
             for ip in file_server.ip_external_list:
-                my_tracker_address = "zero://%s:%s" % (ip, config.fileserver_port)
-                if tracker_storage.onTrackerFound(my_tracker_address, my=True):
-                    self.logOnce("listening on public IP: %s" % my_tracker_address)
-                    self.enabled_addresses.append(my_tracker_address)
+                self.registerTrackerAddress("public IP", ip, config.fileserver_port)
 
-        if settings.get("listen_on_temporary_onion_address") and file_server.tor_manager.enabled:
-            onion = file_server.tor_manager.getOnion(config.homepage)
+        if settings.get("listen_on_temporary_onion_address") and tor_manager.enabled:
+            onion = tor_manager.getOnion(config.homepage)
             if onion:
-                my_tracker_address = "zero://%s.onion:%s" % (onion, file_server.tor_manager.fileserver_port)
-                if tracker_storage.onTrackerFound(my_tracker_address, my=True):
-                    self.logOnce("listening on temporary onion address: %s" % my_tracker_address)
-                    self.enabled_addresses.append(my_tracker_address)
+                self.registerTrackerAddress("temporary onion address", onion, tor_manager.fileserver_port)
 
-        if settings.get("listen_on_persistent_onion_address") and file_server.tor_manager.enabled:
-            # FIXME: not implemented
-            pass
+        if settings.get("listen_on_persistent_onion_address") and tor_manager.enabled:
+            persistent_addresses = self.config.setdefault("persistent_addresses", {})
+            if len(persistent_addresses) == 0:
+                result = tor_manager.makeOnionAndKey()
+                if result:
+                    onion_address, onion_privatekey = result
+                    persistent_addresses[onion_address] = {
+                        "private_key": onion_privatekey
+                    }
+                    self.registerTrackerAddress("persistent onion address", onion_address, tor_manager.fileserver_port)
+            else:
+                for address, d in persistent_addresses.items():
+                    private_key = d.get("private_key")
+                    if not private_key:
+                        continue
+                    res = tor_manager.request(
+                        "ADD_ONION RSA1024:%s port=%s" % (private_key, tor_manager.fileserver_port)
+                    )
+                    match = re.search("ServiceID=([A-Za-z0-9]+)", res)
+                    if match:
+                        onion_address = match.groups()[0]
+                        if onion_address == address:
+                            self.registerTrackerAddress("persistent onion address", onion_address, tor_manager.fileserver_port)
 
         return len(self.enabled_addresses) > 0
 
@@ -246,7 +272,7 @@ class FileRequestPlugin(object):
 class FileServerPlugin(object):
     def portCheck(self, *args, **kwargs):
         res = super(FileServerPlugin, self).portCheck(*args, **kwargs)
-        tracker_zero.registerSharedAddresses(self, res)
+        tracker_zero.registerTrackerAddresses(self, res)
         return res
 
 
