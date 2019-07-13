@@ -365,17 +365,6 @@ class FileRequestPlugin(object):
         self.response({"trackers": shared_trackers})
 
 
-@PluginManager.registerTo("FileServer")
-class FileServerPlugin(object):
-    def portCheck(self, *args, **kwargs):
-        res = super(FileServerPlugin, self).portCheck(*args, **kwargs)
-        if res and not config.tor == "always" and "Bootstrapper" in PluginManager.plugin_manager.plugin_names:
-            for ip in self.ip_external_list:
-                my_tracker_address = "zero://%s:%s" % (ip, config.fileserver_port)
-                tracker_storage.onTrackerFound(my_tracker_address, my=True)
-        return res
-
-
 @PluginManager.registerTo("ConfigPlugin")
 class ConfigPlugin(object):
     def createArguments(self):
