@@ -84,6 +84,10 @@ class TrackerZero(object):
             return False
 
     def actionAnnounce(self, file_request, params):
+        if len(self.enabled_addresses) < 1:
+            file_request.actionUnknown("announce", params)
+            return
+
         time_started = time.time()
         s = time.time()
         # Backward compatibility
