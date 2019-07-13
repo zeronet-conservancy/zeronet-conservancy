@@ -230,7 +230,7 @@ class TrackerZero(object):
         if settings.get("listen_on_temporary_onion_address") and tor_manager.enabled:
             onion = tor_manager.getOnion(config.homepage)
             if onion:
-                self.registerTrackerAddress("temporary onion address", onion, tor_manager.fileserver_port)
+                self.registerTrackerAddress("temporary onion address", "%s.onion" % onion, tor_manager.fileserver_port)
 
         if settings.get("listen_on_persistent_onion_address") and tor_manager.enabled:
             persistent_addresses = self.config.setdefault("persistent_addresses", {})
@@ -241,7 +241,7 @@ class TrackerZero(object):
                     persistent_addresses[onion_address] = {
                         "private_key": onion_privatekey
                     }
-                    self.registerTrackerAddress("persistent onion address", onion_address, tor_manager.fileserver_port)
+                    self.registerTrackerAddress("persistent onion address", "%s.onion" % onion_address, tor_manager.fileserver_port)
             else:
                 for address, d in persistent_addresses.items():
                     private_key = d.get("private_key")
@@ -254,7 +254,7 @@ class TrackerZero(object):
                     if match:
                         onion_address = match.groups()[0]
                         if onion_address == address:
-                            self.registerTrackerAddress("persistent onion address", onion_address, tor_manager.fileserver_port)
+                            self.registerTrackerAddress("persistent onion address", "%s.onion" % onion_address, tor_manager.fileserver_port)
 
         return len(self.enabled_addresses) > 0
 
