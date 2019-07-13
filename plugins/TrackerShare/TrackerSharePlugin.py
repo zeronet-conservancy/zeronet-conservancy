@@ -75,6 +75,9 @@ class TrackerStorage(object):
             if not self.isTrackerAddressValid(address):
                 del trackers[address]
 
+    def isUdpEnabled(self):
+        return not (config.disable_udp or config.trackers_proxy != "disable")
+
     def getNormalizedTrackerProtocol(self, tracker_address):
         if not self.site_announcer:
             return None
@@ -110,6 +113,8 @@ class TrackerStorage(object):
         for tracker_address in supported_trackers:
             protocol = self.getNormalizedTrackerProtocol(tracker_address)
             if not protocol:
+                continue
+            if protocol == "udp" and not self.isUdpEnabled():
                 continue
             protocols.add(protocol)
 
