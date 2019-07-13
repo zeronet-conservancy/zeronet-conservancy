@@ -278,6 +278,8 @@ class FileServerPlugin(object):
 
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):
+
+    @helper.encodeResponse
     def actionStatsTrackerZero(self):
         self.sendHeader()
 
