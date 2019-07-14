@@ -4,6 +4,7 @@ import logging
 import re
 import os
 import time
+import binascii
 
 from util import helper
 
@@ -303,7 +304,7 @@ class UiRequestPlugin(object):
             ).fetchall()
 
             yield "<br>%s (added: %s, peers: %s)<br>" % (
-                str(hash_row["hash"]).encode("hex"), hash_row["date_added"], len(peer_rows)
+                binascii.hexlify(hash_row["hash"]).decode("utf-8"), hash_row["date_added"], len(peer_rows)
             )
             for peer_row in peer_rows:
-                yield " - {ip4: <30} {onion: <30} added: {date_added}, announced: {date_announced}<br>".format(**dict(peer_row))
+                yield " - {type: <6} {address: <30} {port: >5} added: {date_added}, announced: {date_announced}<br>".format(**dict(peer_row))
