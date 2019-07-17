@@ -47,11 +47,15 @@ class TrackerStorage(object):
         return l.get(protocol, l.get("other"))
 
     def setSiteAnnouncer(self, site_announcer):
-        if self.site_announcer:
+        if not site_announcer:
             return
-        self.site_announcer = site_announcer
-        self.initTrackerLimitForProtocol()
-        self.recheckValidTrackers()
+
+        if not self.site_announcer:
+            self.site_announcer = site_announcer
+            self.initTrackerLimitForProtocol()
+            self.recheckValidTrackers()
+        else:
+            self.site_announcer = site_announcer
 
     def isTrackerAddressValid(self, tracker_address):
         if not self.site_announcer: # Not completely initialized, skip check
