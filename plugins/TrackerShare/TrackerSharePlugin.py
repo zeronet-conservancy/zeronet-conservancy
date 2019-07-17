@@ -96,12 +96,7 @@ class TrackerStorage(object):
 
         return protocol
 
-    def getSupportedProtocols(self):
-        if not self.site_announcer:
-            return None
-
-        supported_trackers = self.site_announcer.getSupportedTrackers()
-
+    def deleteUnusedTrackers(self, supported_trackers):
         # If a tracker is in our list, but is absent from the results of getSupportedTrackers(),
         # it seems to be supported by software, but forbidden by the settings or network configuration.
         # We check and remove thoose trackers here, since onTrackerError() is never emitted for them.
@@ -112,6 +107,14 @@ class TrackerStorage(object):
             if tracker_address not in supported_trackers and t < time.time() - self.tracker_down_time_interval:
                 self.log.info("Tracker %s looks unused, removing." % tracker_address)
                 del trackers[tracker_address]
+
+    def getSupportedProtocols(self):
+        if not self.site_announcer:
+            return None
+
+        supported_trackers = self.site_announcer.getSupportedTrackers()
+
+        self.deleteUnusedTrackers(supported_trackers)
 
         protocols = set()
         for tracker_address in supported_trackers:
