@@ -289,6 +289,8 @@ class TrackerStorage(object):
         if not trackers_per_protocol:
             return False
 
+        unmet_conditions = 0
+
         total_nr = 0
 
         for protocol in supported_protocols:
@@ -296,15 +298,15 @@ class TrackerStorage(object):
             if len(trackers) < self.getTrackerLimitForProtocol(protocol):
                 self.log.info("Not enough working trackers for protocol %s: %s < %s" % (
                     protocol, len(trackers), self.getTrackerLimitForProtocol(protocol)))
-                return False
+                unmet_conditions += 1
             total_nr += len(trackers)
 
         if total_nr < config.shared_trackers_limit:
-            self.log.info("Not enough working trackers: %s < %s" % (
+            self.log.info("Not enough working trackers (total): %s < %s" % (
                 total_nr, config.shared_trackers_limit))
-            return False
+            unmet_conditions + 1
 
-        return True
+        return unmet_conditions == 0
 
     def discoverTrackers(self, peers):
         if self.enoughWorkingTrackers(type="shared"):
