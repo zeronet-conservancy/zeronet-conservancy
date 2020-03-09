@@ -18,10 +18,29 @@ class TrackerZero(object):
         self.log = logging.getLogger("TrackerZero")
         self.log_once = set()
         self.enabled_addresses = []
+        self.added_onions = set()
         self.config_file_path = "%s/tracker-zero.json" % config.data_dir
         self.config = None
         self.load()
         atexit.register(self.save)
+
+    def addOnion(self, tor_manager, onion, private_key):
+        # XXX: TorManager hangs if Tor returns a code different from 250 OK,
+        # so we keep the list of already added onions to avoid adding them twice.
+        # TODO: Report to the upstream.
+
+        if onion in self.added_onions:
+            return onion
+
+        res = tor_manager.request(
+            "ADD_ONION RSA1024:%s port=%s" % (private_key, tor_manager.fileserver_port)
+        )
+        match = re.search("ServiceID=([A-Za-z0-9]+)", res)
+        if match:
+            onion_address = match.groups()[0]
+            self.added_onions.add(onion_address)
+            return onion_address
+        return None
 
     def logOnce(self, message):
         if message in self.log_once:
@@ -248,14 +267,9 @@ class TrackerZero(object):
                     private_key = d.get("private_key")
                     if not private_key:
                         continue
-                    res = tor_manager.request(
-                        "ADD_ONION RSA1024:%s port=%s" % (private_key, tor_manager.fileserver_port)
-                    )
-                    match = re.search("ServiceID=([A-Za-z0-9]+)", res)
-                    if match:
-                        onion_address = match.groups()[0]
-                        if onion_address == address:
-                            self.registerTrackerAddress("persistent onion address", "%s.onion" % onion_address, tor_manager.fileserver_port)
+                    onion_address = self.addOnion(tor_manager, address, private_key)
+                    if onion_address == address:
+                        self.registerTrackerAddress("persistent onion address", "%s.onion" % onion_address, tor_manager.fileserver_port)
 
         return len(self.enabled_addresses) > 0
 
