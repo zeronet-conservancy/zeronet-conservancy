@@ -7,6 +7,8 @@ import collections
 import time
 import logging
 import base64
+import json
+
 import gevent
 
 from Config import config
@@ -35,6 +37,32 @@ def atomicWrite(dest, content, mode="wb"):
         if os.path.isfile(dest + "-tmpold") and not os.path.isfile(dest):
             os.rename(dest + "-tmpold", dest)
         return False
+
+
+def jsonDumps(data):
+    content = json.dumps(data, indent=1, sort_keys=True)
+
+    # Make it a little more compact by removing unnecessary white space
+    def compact_dict(match):
+        if "\n" in match.group(0):
+            return match.group(0).replace(match.group(1), match.group(1).strip())
+        else:
+            return match.group(0)
+
+    content = re.sub(r"\{(\n[^,\[\{]{10,100000}?)\}[, ]{0,2}\n", compact_dict, content, flags=re.DOTALL)
+
+    def compact_list(match):
+        if "\n" in match.group(0):
+            stripped_lines = re.sub("\n[ ]*", "", match.group(1))
+            return match.group(0).replace(match.group(1), stripped_lines)
+        else:
+            return match.group(0)
+
+    content = re.sub(r"\[([^\[\{]{2,100000}?)\][, ]{0,2}\n", compact_list, content, flags=re.DOTALL)
+
+    # Remove end of line whitespace
+    content = re.sub(r"(?m)[ ]+$", "", content)
+    return content
 
 
 def openLocked(path, mode="wb"):
@@ -91,9 +119,10 @@ def packPeers(peers):
     for peer in peers:
         try:
             ip_type = getIpType(peer.ip)
-            packed_peers[ip_type].append(peer.packMyAddress())
+            if ip_type in packed_peers:
+                packed_peers[ip_type].append(peer.packMyAddress())
         except Exception:
-            logging.error("Error packing peer address: %s" % peer)
+            logging.debug("Error packing peer address: %s" % peer)
     return packed_peers
 
 
@@ -144,7 +173,7 @@ def getFilename(path):
 def getFilesize(path):
     try:
         s = os.stat(path)
-    except:
+    except Exception:
         return None
     if stat.S_ISREG(s.st_mode):  # Test if it's file
         return s.st_size
@@ -206,7 +235,7 @@ def timerCaller(secs, func, *args, **kwargs):
 
 
 def timer(secs, func, *args, **kwargs):
-    gevent.spawn_later(secs, timerCaller, secs, func, *args, **kwargs)
+    return gevent.spawn_later(secs, timerCaller, secs, func, *args, **kwargs)
 
 
 def create_connection(address, timeout=None, source_address=None):
@@ -246,14 +275,14 @@ def isIp(ip):
         try:
             socket.inet_pton(socket.AF_INET6, ip)
             return True
-        except:
+        except Exception:
             return False
 
     else:  # IPv4
         try:
             socket.inet_aton(ip)
             return True
-        except:
+        except Exception:
             return False
 
 
@@ -267,8 +296,10 @@ def getIpType(ip):
         return "onion"
     elif ":" in ip:
         return "ipv6"
-    else:
+    elif re.match(r"[0-9\.]+$", ip):
         return "ipv4"
+    else:
+        return "unknown"
 
 
 def createSocket(ip, sock_type=socket.SOCK_STREAM):
@@ -291,12 +322,12 @@ def getInterfaceIps(ip_type="ipv4"):
             s = createSocket(test_ip, sock_type=socket.SOCK_DGRAM)
             s.connect((test_ip, 1))
             res.append(s.getsockname()[0])
-        except:
+        except Exception:
             pass
 
     try:
         res += [ip[4][0] for ip in socket.getaddrinfo(socket.gethostname(), 1)]
-    except:
+    except Exception:
         pass
 
     res = [re.sub("%.*", "", ip) for ip in res if getIpType(ip) == ip_type and isIp(ip)]
@@ -312,8 +343,14 @@ def encodeResponse(func):
         back = func(*args, **kwargs)
         if "__next__" in dir(back):
             for part in back:
-                yield part.encode()
+                if type(part) == bytes:
+                    yield part
+                else:
+                    yield part.encode()
         else:
-            yield back.encode()
+            if type(back) == bytes:
+                yield back
+            else:
+                yield back.encode()
 
     return wrapper

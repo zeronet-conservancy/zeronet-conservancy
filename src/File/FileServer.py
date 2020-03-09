@@ -2,6 +2,7 @@ import logging
 import time
 import random
 import socket
+import sys
 
 import gevent
 import gevent.pool
@@ -64,7 +65,7 @@ class FileServer(ConnectionServer):
 
         self.port_opened = {}
 
-        self.sites = {}
+        self.sites = self.site_manager.sites
         self.last_request = time.time()
         self.files_parsing = {}
         self.ui_server = None
@@ -108,7 +109,7 @@ class FileServer(ConnectionServer):
                 self.log.debug("IPv6 supported on IP %s" % local_ipv6)
                 return True
         except socket.error as err:
-            self.log.error("IPv6 not supported: %s" % err)
+            self.log.warning("IPv6 not supported: %s" % err)
             return False
         except Exception as err:
             self.log.error("IPv6 check error: %s" % err)
@@ -346,7 +347,20 @@ class FileServer(ConnectionServer):
 
     # Bind and start serving sites
     def start(self, check_sites=True):
+        if self.stopping:
+            return False
+
         ConnectionServer.start(self)
+
+        try:
+            self.stream_server.start()
+        except Exception as err:
+            self.log.error("Error listening on: %s:%s: %s" % (self.ip, self.port, err))
+            if "ui_server" in dir(sys.modules["main"]):
+                self.log.debug("Stopping UI Server.")
+                sys.modules["main"].ui_server.stop()
+                return False
+
         self.sites = self.site_manager.list()
         if config.debug:
             # Auto reload FileRequest on change

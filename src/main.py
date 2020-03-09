@@ -5,8 +5,19 @@ import stat
 import time
 import logging
 
+startup_errors = []
+def startupError(msg):
+    startup_errors.append(msg)
+    print("Startup error: %s" % msg)
+
 # Third party modules
 import gevent
+try:
+    # Workaround for random crash when libuv used with threads
+    if "libev" not in str(gevent.config.loop):
+        gevent.config.loop = "libev-cext"
+except Exception as err:
+    startupError("Unable to switch gevent loop to libev: %s" % err)
 
 import gevent.monkey
 gevent.monkey.patch_all(thread=False, subprocess=False)
@@ -25,7 +36,7 @@ if not os.path.isdir(config.data_dir):
     try:
         os.chmod(config.data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     except Exception as err:
-        print("Can't change permission of %s: %s" % (config.data_dir, err))
+        startupError("Can't change permission of %s: %s" % (config.data_dir, err))
 
 if not os.path.isfile("%s/sites.json" % config.data_dir):
     open("%s/sites.json" % config.data_dir, "w").write("{}")
@@ -38,7 +49,7 @@ if config.action == "main":
         lock = helper.openLocked("%s/lock.pid" % config.data_dir, "w")
         lock.write("%s" % os.getpid())
     except BlockingIOError as err:
-        print("Can't open lock file, your ZeroNet client is probably already running, exiting... (%s)" % err)
+        startupError("Can't open lock file, your ZeroNet client is probably already running, exiting... (%s)" % err)
         if config.open_browser and config.open_browser != "False":
             print("Opening browser: %s...", config.open_browser)
             import webbrowser
@@ -47,13 +58,14 @@ if config.action == "main":
                     browser = webbrowser.get()
                 else:
                     browser = webbrowser.get(config.open_browser)
-                browser.open("http://%s:%s/%s" % (config.ui_ip if config.ui_ip != "*" else "127.0.0.1", config.ui_port, config.homepage), new=2)
+                browser.open("http://%s:%s/%s" % (
+                    config.ui_ip if config.ui_ip != "*" else "127.0.0.1", config.ui_port, config.homepage
+                ), new=2)
             except Exception as err:
-                print("Error starting browser: %s" % err)
+                startupError("Error starting browser: %s" % err)
         sys.exit()
 
 config.initLogging()
-
 
 # Debug dependent configuration
 from Debug import DebugHook
@@ -76,6 +88,15 @@ if config.stack_size:
 if config.msgpack_purepython:
     os.environ["MSGPACK_PUREPYTHON"] = "True"
 
+# Fix console encoding on Windows
+if sys.platform.startswith("win"):
+    import subprocess
+    try:
+        chcp_res = subprocess.check_output("chcp 65001", shell=True).decode(errors="ignore").strip()
+        logging.debug("Changed console encoding to utf8: %s" % chcp_res)
+    except Exception as err:
+        logging.error("Error changing console encoding to utf8: %s" % err)
+
 # Socket monkey patch
 if config.proxy:
     from util import SocksProxy
@@ -83,6 +104,7 @@ if config.proxy:
     logging.info("Patching sockets to socks proxy: %s" % config.proxy)
     if config.fileserver_ip == "*":
         config.fileserver_ip = '127.0.0.1'  # Do not accept connections anywhere but localhost
+    config.disable_udp = True  # UDP not supported currently with proxy
     SocksProxy.monkeyPatch(*config.proxy.split(":"))
 elif config.tor == "always":
     from util import SocksProxy
@@ -123,6 +145,9 @@ class Actions(object):
         ui_server = UiServer()
         file_server.ui_server = ui_server
 
+        for startup_error in startup_errors:
+            logging.error("Startup error: %s" % startup_error)
+
         logging.info("Removing old SSL certs...")
         from Crypt import CryptConnection
         CryptConnection.manager.removeCerts()
@@ -133,18 +158,27 @@ class Actions(object):
 
     # Site commands
 
-    def siteCreate(self):
-        logging.info("Generating new privatekey...")
+    def siteCreate(self, use_master_seed=True):
+        logging.info("Generating new privatekey (use_master_seed: %s)..." % config.use_master_seed)
         from Crypt import CryptBitcoin
-        privatekey = CryptBitcoin.newPrivatekey()
+        if use_master_seed:
+            from User import UserManager
+            user = UserManager.user_manager.get()
+            if not user:
+                user = UserManager.user_manager.create()
+            address, address_index, site_data = user.getNewSiteData()
+            privatekey = site_data["privatekey"]
+            logging.info("Generated using master seed from users.json, site index: %s" % address_index)
+        else:
+            privatekey = CryptBitcoin.newPrivatekey()
+            address = CryptBitcoin.privatekeyToAddress(privatekey)
         logging.info("----------------------------------------------------------------------")
         logging.info("Site private key: %s" % privatekey)
         logging.info("                  !!! ^ Save it now, required to modify the site ^ !!!")
-        address = CryptBitcoin.privatekeyToAddress(privatekey)
         logging.info("Site address:     %s" % address)
         logging.info("----------------------------------------------------------------------")
 
-        while True and not config.batch:
+        while True and not config.batch and not use_master_seed:
             if input("? Have you secured your private key? (yes, no) > ").lower() == "yes":
                 break
             else:
@@ -160,7 +194,11 @@ class Actions(object):
 
         logging.info("Creating content.json...")
         site = Site(address)
-        site.content_manager.sign(privatekey=privatekey, extend={"postmessage_nonce_security": True})
+        extend = {"postmessage_nonce_security": True}
+        if use_master_seed:
+            extend["address_index"] = address_index
+
+        site.content_manager.sign(privatekey=privatekey, extend=extend)
         site.settings["own"] = True
         site.saveSettings()
 
@@ -187,7 +225,10 @@ class Actions(object):
                 import getpass
                 privatekey = getpass.getpass("Private key (input hidden):")
         try:
-            succ = site.content_manager.sign(inner_path=inner_path, privatekey=privatekey, update_changed_files=True, remove_missing_optional=remove_missing_optional)
+            succ = site.content_manager.sign(
+                inner_path=inner_path, privatekey=privatekey,
+                update_changed_files=True, remove_missing_optional=remove_missing_optional
+            )
         except Exception as err:
             logging.error("Sign error: %s" % Debug.formatException(err))
             succ = False
@@ -302,7 +343,6 @@ class Actions(object):
         site.downloadContent("content.json", check_modifications=True)
 
         print("Downloaded in %.3fs" % (time.time()-s))
-
 
     def siteNeedFile(self, address, inner_path):
         from Site.Site import Site
@@ -447,30 +487,24 @@ class Actions(object):
         if not peer.connection:
             print("Error: Can't connect to peer (connection error: %s)" % peer.connection_error)
             return False
+        if "shared_ciphers" in dir(peer.connection.sock):
+            print("Shared ciphers:", peer.connection.sock.shared_ciphers())
+        if "cipher" in dir(peer.connection.sock):
+            print("Cipher:", peer.connection.sock.cipher()[0])
+        if "version" in dir(peer.connection.sock):
+            print("TLS version:", peer.connection.sock.version())
         print("Connection time: %.3fs  (connection error: %s)" % (time.time() - s, peer.connection_error))
 
         for i in range(5):
             ping_delay = peer.ping()
-            if "cipher" in dir(peer.connection.sock):
-                cipher = peer.connection.sock.cipher()[0]
-                tls_version = peer.connection.sock.version()
-            else:
-                cipher = peer.connection.crypt
-                tls_version = None
-            print("Response time: %.3fs (crypt: %s %s %s)" % (ping_delay, peer.connection.crypt, cipher, tls_version))
+            print("Response time: %.3fs" % ping_delay)
             time.sleep(1)
         peer.remove()
         print("Reconnect test...")
         peer = Peer(peer_ip, peer_port)
         for i in range(5):
             ping_delay = peer.ping()
-            if "cipher" in dir(peer.connection.sock):
-                cipher = peer.connection.sock.cipher()[0]
-                tls_version = peer.connection.sock.version()
-            else:
-                cipher = peer.connection.crypt
-                tls_version = None
-            print("Response time: %.3fs (crypt: %s %s %s)" % (ping_delay, peer.connection.crypt, cipher, tls_version))
+            print("Response time: %.3fs" % ping_delay)
             time.sleep(1)
 
     def peerGetFile(self, peer_ip, peer_port, site, filename, benchmark=False):
@@ -521,6 +555,41 @@ class Actions(object):
         import json
         print(json.dumps(config.getServerInfo(), indent=2, ensure_ascii=False))
 
+    def test(self, test_name, *args, **kwargs):
+        import types
+        def funcToName(func_name):
+            test_name = func_name.replace("test", "")
+            return test_name[0].lower() + test_name[1:]
+
+        test_names = [funcToName(name) for name in dir(self) if name.startswith("test") and name != "test"]
+        if not test_name:
+            # No test specificed, list tests
+            print("\nNo test specified, possible tests:")
+            for test_name in test_names:
+                func_name = "test" + test_name[0].upper() + test_name[1:]
+                func = getattr(self, func_name)
+                if func.__doc__:
+                    print("- %s: %s" % (test_name, func.__doc__.strip()))
+                else:
+                    print("- %s" % test_name)
+            return None
+
+        # Run tests
+        func_name = "test" + test_name[0].upper() + test_name[1:]
+        if hasattr(self, func_name):
+            func = getattr(self, func_name)
+            print("- Running %s" % test_name, end="")
+            s = time.time()
+            ret = func(*args, **kwargs)
+            if type(ret) is types.GeneratorType:
+                for progress in ret:
+                    print(progress, end="")
+                    sys.stdout.flush()
+            print("\n* Test %s done in %.3fs" % (test_name, time.time() - s))
+        else:
+            print("Unknown test: %r (choose from: %s)" % (
+                test_name, test_names
+            ))
 
 
 actions = Actions()

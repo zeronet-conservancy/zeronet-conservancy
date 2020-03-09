@@ -1,17 +1,20 @@
 import time
 import re
 import html
-import hashlib
+import os
 
 from Plugin import PluginManager
 from Translate import Translate
 from Config import config
+from util.Flag import flag
 
 from .ContentFilterStorage import ContentFilterStorage
 
 
+plugin_dir = os.path.dirname(__file__)
+
 if "_" not in locals():
-    _ = Translate("plugins/ContentFilter/languages/")
+    _ = Translate(plugin_dir + "/languages/")
 
 
 @PluginManager.registerTo("SiteManager")
@@ -20,6 +23,24 @@ class SiteManagerPlugin(object):
         global filter_storage
         super(SiteManagerPlugin, self).load(*args, **kwargs)
         filter_storage = ContentFilterStorage(site_manager=self)
+
+    def add(self, address, *args, **kwargs):
+        should_ignore_block = kwargs.get("ignore_block") or kwargs.get("settings")
+        if should_ignore_block:
+            block_details = None
+        elif filter_storage.isSiteblocked(address):
+            block_details = filter_storage.getSiteblockDetails(address)
+        else:
+            address_hashed = filter_storage.getSiteAddressHashed(address)
+            if filter_storage.isSiteblocked(address_hashed):
+                block_details = filter_storage.getSiteblockDetails(address_hashed)
+            else:
+                block_details = None
+
+        if block_details:
+            raise Exception("Site blocked: %s" % html.escape(block_details.get("reason", "unknown reason")))
+        else:
+            return super(SiteManagerPlugin, self).add(address, *args, **kwargs)
 
 
 @PluginManager.registerTo("UiWebsocket")
@@ -33,6 +54,7 @@ class UiWebsocketPlugin(object):
         filter_storage.changeDbs(auth_address, "remove")
         self.response(to, "ok")
 
+    @flag.no_multiuser
     def actionMuteAdd(self, to, auth_address, cert_user_id, reason):
         if "ADMIN" in self.getPermissions(to):
             self.cbMuteAdd(to, auth_address, cert_user_id, reason)
@@ -43,50 +65,73 @@ class UiWebsocketPlugin(object):
                 lambda res: self.cbMuteAdd(to, auth_address, cert_user_id, reason)
             )
 
+    @flag.no_multiuser
     def cbMuteRemove(self, to, auth_address):
         del filter_storage.file_content["mutes"][auth_address]
         filter_storage.save()
         filter_storage.changeDbs(auth_address, "load")
         self.response(to, "ok")
 
+    @flag.no_multiuser
     def actionMuteRemove(self, to, auth_address):
         if "ADMIN" in self.getPermissions(to):
             self.cbMuteRemove(to, auth_address)
         else:
+            cert_user_id = html.escape(filter_storage.file_content["mutes"][auth_address]["cert_user_id"])
             self.cmd(
                 "confirm",
-                [_["Unmute <b>%s</b>?"] % html.escape(filter_storage.file_content["mutes"][auth_address]["cert_user_id"]), _["Unmute"]],
+                [_["Unmute <b>%s</b>?"] % cert_user_id, _["Unmute"]],
                 lambda res: self.cbMuteRemove(to, auth_address)
             )
 
+    @flag.admin
     def actionMuteList(self, to):
-        if "ADMIN" in self.getPermissions(to):
-            self.response(to, filter_storage.file_content["mutes"])
-        else:
-            return self.response(to, {"error": "Forbidden: Only ADMIN sites can list mutes"})
+        self.response(to, filter_storage.file_content["mutes"])
 
     # Siteblock
+    @flag.no_multiuser
+    @flag.admin
+    def actionSiteblockIgnoreAddSite(self, to, site_address):
+        if site_address in filter_storage.site_manager.sites:
+            return {"error": "Site already added"}
+        else:
+            if filter_storage.site_manager.need(site_address, ignore_block=True):
+                return "ok"
+            else:
+                return {"error": "Invalid address"}
+
+    @flag.no_multiuser
+    @flag.admin
     def actionSiteblockAdd(self, to, site_address, reason=None):
-        if "ADMIN" not in self.getPermissions(to):
-            return self.response(to, {"error": "Forbidden: Only ADMIN sites can add to blocklist"})
         filter_storage.file_content["siteblocks"][site_address] = {"date_added": time.time(), "reason": reason}
         filter_storage.save()
         self.response(to, "ok")
 
+    @flag.no_multiuser
+    @flag.admin
     def actionSiteblockRemove(self, to, site_address):
-        if "ADMIN" not in self.getPermissions(to):
-            return self.response(to, {"error": "Forbidden: Only ADMIN sites can remove from blocklist"})
         del filter_storage.file_content["siteblocks"][site_address]
         filter_storage.save()
         self.response(to, "ok")
 
+    @flag.admin
     def actionSiteblockList(self, to):
-        if "ADMIN" in self.getPermissions(to):
-            self.response(to, filter_storage.file_content["siteblocks"])
+        self.response(to, filter_storage.file_content["siteblocks"])
+
+    @flag.admin
+    def actionSiteblockGet(self, to, site_address):
+        if filter_storage.isSiteblocked(site_address):
+            res = filter_storage.getSiteblockDetails(site_address)
         else:
-            return self.response(to, {"error": "Forbidden: Only ADMIN sites can list blocklists"})
+            site_address_hashed = filter_storage.getSiteAddressHashed(site_address)
+            if filter_storage.isSiteblocked(site_address_hashed):
+                res = filter_storage.getSiteblockDetails(site_address_hashed)
+            else:
+                res = {"error": "Site block not found"}
+        self.response(to, res)
 
     # Include
+    @flag.no_multiuser
     def actionFilterIncludeAdd(self, to, inner_path, description=None, address=None):
         if address:
             if "ADMIN" not in self.getPermissions(to):
@@ -118,6 +163,7 @@ class UiWebsocketPlugin(object):
         filter_storage.includeAdd(address, inner_path, description)
         self.response(to, "ok")
 
+    @flag.no_multiuser
     def actionFilterIncludeRemove(self, to, inner_path, address=None):
         if address:
             if "ADMIN" not in self.getPermissions(to):
@@ -177,7 +223,7 @@ class SiteStoragePlugin(object):
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):
     def actionWrapper(self, path, extra_headers=None):
-        match = re.match("/(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
+        match = re.match(r"/(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if not match:
             return False
         address = match.group("address")
@@ -185,15 +231,15 @@ class UiRequestPlugin(object):
         if self.server.site_manager.get(address):  # Site already exists
             return super(UiRequestPlugin, self).actionWrapper(path, extra_headers)
 
-        if self.server.site_manager.isDomain(address):
-            address = self.server.site_manager.resolveDomain(address)
+        if self.isDomain(address):
+            address = self.resolveDomain(address)
 
         if address:
-            address_sha256 = "0x" + hashlib.sha256(address.encode("utf8")).hexdigest()
+            address_hashed = filter_storage.getSiteAddressHashed(address)
         else:
-            address_sha256 = None
+            address_hashed = None
 
-        if filter_storage.isSiteblocked(address) or filter_storage.isSiteblocked(address_sha256):
+        if filter_storage.isSiteblocked(address) or filter_storage.isSiteblocked(address_hashed):
             site = self.server.site_manager.get(config.homepage)
             if not extra_headers:
                 extra_headers = {}
@@ -210,7 +256,7 @@ class UiRequestPlugin(object):
 
     def actionUiMedia(self, path, *args, **kwargs):
         if path.startswith("/uimedia/plugins/contentfilter/"):
-            file_path = path.replace("/uimedia/plugins/contentfilter/", "plugins/ContentFilter/media/")
+            file_path = path.replace("/uimedia/plugins/contentfilter/", plugin_dir + "/media/")
             return self.actionFile(file_path)
         else:
             return super(UiRequestPlugin, self).actionUiMedia(path)

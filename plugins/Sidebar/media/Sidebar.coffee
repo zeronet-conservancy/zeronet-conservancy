@@ -23,9 +23,9 @@ class Sidebar extends Class
 		@original_set_site_info = @wrapper.setSiteInfo  # We going to override this, save the original
 
 		# Start in opened state for debugging
-		if false
+		if window.top.location.hash == "#ZeroNet:OpenSidebar"
 			@startDrag()
-			@moved()
+			@moved("x")
 			@fixbutton_targetx = @fixbutton_initx - @width
 			@stopDrag()
 
@@ -204,15 +204,15 @@ class Sidebar extends Class
 						return true
 				}
 
-		# Save and forgot privatekey for site signing
+		# Save and forget privatekey for site signing
 		@tag.find("#privatekey-add").off("click, touchend").on "click touchend", (e) =>
 			@wrapper.displayPrompt "Enter your private key:", "password", "Save", "", (privatekey) =>
 				@wrapper.ws.cmd "userSetSitePrivatekey", [privatekey], (res) =>
 					@wrapper.notifications.add "privatekey", "done", "Private key saved for site signing", 5000
 			return false
 
-		@tag.find("#privatekey-forgot").off("click, touchend").on "click touchend", (e) =>
-			@wrapper.displayConfirm "Remove saved private key for this site?", "Forgot", (res) =>
+		@tag.find("#privatekey-forget").off("click, touchend").on "click touchend", (e) =>
+			@wrapper.displayConfirm "Remove saved private key for this site?", "Forget", (res) =>
 				if not res
 					return false
 				@wrapper.ws.cmd "userSetSitePrivatekey", [""], (res) =>
@@ -370,6 +370,14 @@ class Sidebar extends Class
 				if res == "ok"
 					@wrapper.notifications.add "done-bigfilelimit", "done", "Site bigfile auto download limit modified!", 5000
 				@updateHtmlTag()
+			return false
+
+		# Site start download optional files
+		@tag.find("#button-autodownload_previous").off("click touchend").on "click touchend", =>
+			@wrapper.ws.cmd "siteUpdate", {"address": @wrapper.site_info.address, "check_files": true}, =>
+				@wrapper.notifications.add "done-download_optional", "done", "Optional files downloaded", 5000
+
+			@wrapper.notifications.add "start-download_optional", "info", "Optional files download started", 5000
 			return false
 
 		# Database reload

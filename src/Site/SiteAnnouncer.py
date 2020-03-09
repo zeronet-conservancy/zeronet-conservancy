@@ -10,6 +10,7 @@ from Plugin import PluginManager
 from Config import config
 from Debug import Debug
 from util import helper
+from greenlet import GreenletExit
 import util
 
 
@@ -38,6 +39,8 @@ class SiteAnnouncer(object):
         if not self.site.connection_server.tor_manager.enabled:
             trackers = [tracker for tracker in trackers if ".onion" not in tracker]
 
+        trackers = [tracker for tracker in trackers if self.getAddressParts(tracker)]  # Remove trackers with unknown address
+
         if "ipv6" not in self.site.connection_server.supported_ip_types:
             trackers = [tracker for tracker in trackers if helper.getIpType(self.getAddressParts(tracker)["ip"]) != "ipv6"]
 
@@ -58,7 +61,7 @@ class SiteAnnouncer(object):
     def getOpenedServiceTypes(self):
         back = []
         # Type of addresses they can reach me
-        if config.trackers_proxy == "disable":
+        if config.trackers_proxy == "disable" and config.tor != "always":
             for ip_type, opened in list(self.site.connection_server.port_opened.items()):
                 if opened:
                     back.append(ip_type)
@@ -90,11 +93,12 @@ class SiteAnnouncer(object):
         for tracker in trackers:  # Start announce threads
             tracker_stats = global_stats[tracker]
             # Reduce the announce time for trackers that looks unreliable
-            if tracker_stats["num_error"] > 5 and tracker_stats["time_request"] > time.time() - 60 * min(30, tracker_stats["num_error"]):
+            time_announce_allowed = time.time() - 60 * min(30, tracker_stats["num_error"])
+            if tracker_stats["num_error"] > 5 and tracker_stats["time_request"] > time_announce_allowed and not force:
                 if config.verbose:
                     self.site.log.debug("Tracker %s looks unreliable, announce skipped (error: %s)" % (tracker, tracker_stats["num_error"]))
                 continue
-            thread = gevent.spawn(self.announceTracker, tracker, mode=mode)
+            thread = self.site.greenlet_manager.spawn(self.announceTracker, tracker, mode=mode)
             threads.append(thread)
             thread.tracker = tracker
 
@@ -134,7 +138,7 @@ class SiteAnnouncer(object):
                 self.site.log.error("Announce to %s trackers in %.3fs, failed" % (len(threads), time.time() - s))
             if len(threads) == 1 and mode != "start":  # Move to next tracker
                 self.site.log.debug("Tracker failed, skipping to next one...")
-                gevent.spawn_later(1.0, self.announce, force=force, mode=mode, pex=pex)
+                self.site.greenlet_manager.spawnLater(1.0, self.announce, force=force, mode=mode, pex=pex)
 
         self.updateWebsocket(trackers="announced")
 
@@ -206,10 +210,12 @@ class SiteAnnouncer(object):
             self.stats[tracker]["time_status"] = time.time()
             self.stats[tracker]["last_error"] = str(error)
             self.stats[tracker]["time_last_error"] = time.time()
-            self.stats[tracker]["num_error"] += 1
+            if self.site.connection_server.has_internet:
+                self.stats[tracker]["num_error"] += 1
             self.stats[tracker]["num_request"] += 1
             global_stats[tracker]["num_request"] += 1
-            global_stats[tracker]["num_error"] += 1
+            if self.site.connection_server.has_internet:
+                global_stats[tracker]["num_error"] += 1
             self.updateWebsocket(tracker="error")
             return False
 
@@ -257,7 +263,7 @@ class SiteAnnouncer(object):
             peers = self.site.getConnectedPeers()
 
         if len(peers) == 0:  # Small number of connected peers for this site, connect to any
-            peers = list(self.site.peers.values())
+            peers = list(self.site.getRecentPeers(20))
             need_num = 10
 
         random.shuffle(peers)
@@ -271,6 +277,8 @@ class SiteAnnouncer(object):
                 if num_added:
                     self.site.worker_manager.onPeers()
                     self.site.updateWebsocket(peers_added=num_added)
+            else:
+                time.sleep(0.1)
             if done == query_num:
                 break
         self.site.log.debug("Pex result: from %s peers got %s new peers." % (done, total_added))

@@ -109,7 +109,7 @@ class ConfigStorage extends Class
 		section.items.push
 			title: "Trackers files"
 			key: "trackers_file"
-			type: "text"
+			type: "textarea"
 			description: "Load additional list of torrent trackers dynamically, from a file"
 			placeholder: "Eg.: data/trackers.json"
 			value_pos: "fullwidth"
@@ -123,6 +123,8 @@ class ConfigStorage extends Class
 				{title: "Tor", value: "tor"}
 				{title: "Disable", value: "disable"}
 			]
+			isHidden: ->
+				Page.values["tor"] == "always"
 
 		section.items.push
 			title: "Custom socks proxy address for trackers"
@@ -145,6 +147,62 @@ class ConfigStorage extends Class
 				{title: "Everything", value: "DEBUG"}
 				{title: "Only important messages", value: "INFO"}
 				{title: "Only errors", value: "ERROR"}
+			]
+
+		section.items.push
+			key: "threads_fs_read"
+			title: "Threads for async file system reads"
+			type: "select"
+			options: [
+				{title: "Sync read", value: 0}
+				{title: "1 thread", value: 1}
+				{title: "2 threads", value: 2}
+				{title: "3 threads", value: 3}
+				{title: "4 threads", value: 4}
+				{title: "5 threads", value: 5}
+				{title: "10 threads", value: 10}
+			]
+
+		section.items.push
+			key: "threads_fs_write"
+			title: "Threads for async file system writes"
+			type: "select"
+			options: [
+				{title: "Sync write", value: 0}
+				{title: "1 thread", value: 1}
+				{title: "2 threads", value: 2}
+				{title: "3 threads", value: 3}
+				{title: "4 threads", value: 4}
+				{title: "5 threads", value: 5}
+				{title: "10 threads", value: 10}
+			]
+
+		section.items.push
+			key: "threads_crypt"
+			title: "Threads for cryptographic functions"
+			type: "select"
+			options: [
+				{title: "Sync execution", value: 0}
+				{title: "1 thread", value: 1}
+				{title: "2 threads", value: 2}
+				{title: "3 threads", value: 3}
+				{title: "4 threads", value: 4}
+				{title: "5 threads", value: 5}
+				{title: "10 threads", value: 10}
+			]
+
+		section.items.push
+			key: "threads_db"
+			title: "Threads for database operations"
+			type: "select"
+			options: [
+				{title: "Sync execution", value: 0}
+				{title: "1 thread", value: 1}
+				{title: "2 threads", value: 2}
+				{title: "3 threads", value: 3}
+				{title: "4 threads", value: 4}
+				{title: "5 threads", value: 5}
+				{title: "10 threads", value: 10}
 			]
 
 	createSection: (title) =>

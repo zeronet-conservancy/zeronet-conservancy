@@ -19,7 +19,9 @@ else:
 
 
 class DebugReloader:
-    def __init__(self, paths=["src", "plugins"]):
+    def __init__(self, paths=None):
+        if not paths:
+            paths = ["src", "plugins", config.data_dir + "/__plugins__"]
         self.log = logging.getLogger("DebugReloader")
         self.last_chaged = 0
         self.callbacks = []
@@ -29,6 +31,8 @@ class DebugReloader:
             event_handler.on_modified = event_handler.on_deleted = self.onChanged
             event_handler.on_created = event_handler.on_moved = self.onChanged
             for path in paths:
+                if not os.path.isdir(path):
+                    continue
                 self.log.debug("Adding autoreload: %s" % path)
                 self.observer.schedule(event_handler, path, recursive=True)
             self.observer.start()
@@ -42,7 +46,10 @@ class DebugReloader:
         if ext not in ["py", "json"] or "Test" in path or time.time() - self.last_chaged < 1.0:
             return False
         self.last_chaged = time.time()
-        time_modified = os.path.getmtime(path)
+        if os.path.isfile(path):
+            time_modified = os.path.getmtime(path)
+        else:
+            time_modified = 0
         self.log.debug("File changed: %s reloading source code (modified %.3fs ago)" % (evt, time.time() - time_modified))
         if time.time() - time_modified > 5:  # Probably it's just an attribute change, ignore it
             return False

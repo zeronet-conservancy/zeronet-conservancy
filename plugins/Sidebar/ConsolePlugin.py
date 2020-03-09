@@ -5,6 +5,7 @@ from Plugin import PluginManager
 from Config import config
 from Debug import Debug
 from util import SafeRe
+from util.Flag import flag
 
 
 class WsLogStreamer(logging.StreamHandler):
@@ -37,10 +38,11 @@ class WsLogStreamer(logging.StreamHandler):
 @PluginManager.registerTo("UiWebsocket")
 class UiWebsocketPlugin(object):
     def __init__(self, *args, **kwargs):
-        self.admin_commands.update(["consoleLogRead", "consoleLogStream", "consoleLogStreamRemove"])
         self.log_streamers = {}
         return super(UiWebsocketPlugin, self).__init__(*args, **kwargs)
 
+    @flag.no_multiuser
+    @flag.admin
     def actionConsoleLogRead(self, to, filter=None, read_size=32 * 1024, limit=500):
         log_file_path = "%s/debug.log" % config.log_dir
         log_file = open(log_file_path, encoding="utf-8")
@@ -56,9 +58,16 @@ class UiWebsocketPlugin(object):
             assert SafeRe.isSafePattern(filter)
             filter_re = re.compile(".*" + filter)
 
+        last_match = False
         for line in log_file:
-            if filter and not filter_re.match(line):
+            if not line.startswith("[") and last_match:  # Multi-line log entry
+                lines.append(line.replace(" ", "&nbsp;"))
                 continue
+
+            if filter and not filter_re.match(line):
+                last_match = False
+                continue
+            last_match = True
             lines.append(line)
 
         num_found = len(lines)
@@ -74,11 +83,15 @@ class UiWebsocketPlugin(object):
         logging.getLogger('').addHandler(logger)
         return logger
 
+    @flag.no_multiuser
+    @flag.admin
     def actionConsoleLogStream(self, to, filter=None):
         stream_id = to
         self.log_streamers[stream_id] = self.addLogStreamer(stream_id, filter)
         self.response(to, {"stream_id": stream_id})
 
+    @flag.no_multiuser
+    @flag.admin
     def actionConsoleLogStreamRemove(self, to, stream_id):
         try:
             self.log_streamers[stream_id].stop()

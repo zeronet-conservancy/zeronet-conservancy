@@ -11,16 +11,17 @@ import urllib.parse
 
 import gevent
 
+import util
 from Config import config
 from Plugin import PluginManager
 from Debug import Debug
 from Translate import Translate
 from util import helper
+from util.Flag import flag
 from .ZipStream import ZipStream
 
-plugin_dir = "plugins/Sidebar"
+plugin_dir = os.path.dirname(__file__)
 media_dir = plugin_dir + "/media"
-sys.path.append(plugin_dir)  # To able to load geoip lib
 
 loc_cache = {}
 if "_" not in locals():
@@ -86,10 +87,6 @@ class UiRequestPlugin(object):
 
 @PluginManager.registerTo("UiWebsocket")
 class UiWebsocketPlugin(object):
-    def __init__(self, *args, **kwargs):
-        self.async_commands.add("sidebarGetPeers")
-        return super(UiWebsocketPlugin, self).__init__(*args, **kwargs)
-
     def sidebarRenderPeerStats(self, body, site):
         connected = len([peer for peer in list(site.peers.values()) if peer.connection and peer.connection.connected])
         connectable = len([peer_id for peer_id in list(site.peers.keys()) if not peer_id.endswith(":0")])
@@ -318,18 +315,20 @@ class UiWebsocketPlugin(object):
 
         body.append(_("""
             <li>
-             <label>{_[Download and help distribute all files]}</label>
+             <label>{_[Help distribute added optional files]}</label>
              <input type="checkbox" class="checkbox" id="checkbox-autodownloadoptional" {checked}/><div class="checkbox-skin"></div>
         """))
 
-        autodownload_bigfile_size_limit = int(site.settings.get("autodownload_bigfile_size_limit", config.autodownload_bigfile_size_limit))
-        body.append(_("""
-            <div class='settings-autodownloadoptional'>
-             <label>{_[Auto download big file size limit]}</label>
-             <input type='text' class='text text-num' value="{autodownload_bigfile_size_limit}" id='input-autodownload_bigfile_size_limit'/><span class='text-post'>MB</span>
-             <a href='#Set' class='button' id='button-autodownload_bigfile_size_limit'>{_[Set]}</a>
-            </div>
-        """))
+        if hasattr(config, "autodownload_bigfile_size_limit"):
+            autodownload_bigfile_size_limit = int(site.settings.get("autodownload_bigfile_size_limit", config.autodownload_bigfile_size_limit))
+            body.append(_("""
+                <div class='settings-autodownloadoptional'>
+                 <label>{_[Auto download big file size limit]}</label>
+                 <input type='text' class='text text-num' value="{autodownload_bigfile_size_limit}" id='input-autodownload_bigfile_size_limit'/><span class='text-post'>MB</span>
+                 <a href='#Set' class='button' id='button-autodownload_bigfile_size_limit'>{_[Set]}</a>
+                 <a href='#Download+previous' class='button' id='button-autodownload_previous'>{_[Download previous files]}</a>
+                </div>
+            """))
         body.append("</li>")
 
     def sidebarRenderBadFiles(self, body, site):
@@ -485,7 +484,7 @@ class UiWebsocketPlugin(object):
     def sidebarRenderContents(self, body, site):
         has_privatekey = bool(self.user.getSiteData(site.address, create=False).get("privatekey"))
         if has_privatekey:
-            tag_privatekey = _("{_[Private key saved.]} <a href='#Forgot+private+key' id='privatekey-forgot' class='link-right'>{_[Forgot]}</a>")
+            tag_privatekey = _("{_[Private key saved.]} <a href='#Forget+private+key' id='privatekey-forget' class='link-right'>{_[Forget]}</a>")
         else:
             tag_privatekey = _("<a href='#Add+private+key' id='privatekey-add' class='link-right'>{_[Add saved private key]}</a>")
 
@@ -511,11 +510,8 @@ class UiWebsocketPlugin(object):
         body.append("</div>")
         body.append("</li>")
 
+    @flag.admin
     def actionSidebarGetHtmlTag(self, to):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
-
         site = self.site
 
         body = []
@@ -566,7 +562,7 @@ class UiWebsocketPlugin(object):
         self.log.info("Downloading GeoLite2 City database...")
         self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], 0])
         db_urls = [
-            "https://geolite.maxmind.com/download/geoip/database/GeoLite2-City.mmdb.gz",
+            "https://raw.githubusercontent.com/aemr3/GeoLite2-Database/master/GeoLite2-City.mmdb.gz",
             "https://raw.githubusercontent.com/texnikru/GeoLite2-Database/master/GeoLite2-City.mmdb.gz"
         ]
         for db_url in db_urls:
@@ -635,6 +631,7 @@ class UiWebsocketPlugin(object):
             loc_cache[ip] = loc
             return loc
 
+    @util.Noparallel()
     def getGeoipDb(self):
         db_name = 'GeoLite2-City.mmdb'
 
@@ -664,7 +661,6 @@ class UiWebsocketPlugin(object):
             self.log.debug("Not showing peer locations: no GeoIP database")
             return False
 
-        self.log.info("Loading GeoIP database from: %s" % db_path)
         geodb = maxminddb.open_database(db_path)
 
         peers = list(peers.values())
@@ -706,11 +702,9 @@ class UiWebsocketPlugin(object):
 
         return peer_locations
 
-
+    @flag.admin
+    @flag.async_run
     def actionSidebarGetPeers(self, to):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
         try:
             peer_locations = self.getPeerLocations(self.site.peers)
             globe_data = []
@@ -739,53 +733,41 @@ class UiWebsocketPlugin(object):
             self.log.debug("sidebarGetPeers error: %s" % Debug.formatException(err))
             self.response(to, {"error": str(err)})
 
+    @flag.admin
+    @flag.no_multiuser
     def actionSiteSetOwned(self, to, owned):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
-
         if self.site.address == config.updatesite:
             return self.response(to, "You can't change the ownership of the updater site")
 
         self.site.settings["own"] = bool(owned)
         self.site.updateWebsocket(owned=owned)
 
+    @flag.admin
+    @flag.no_multiuser
     def actionUserSetSitePrivatekey(self, to, privatekey):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
-
         site_data = self.user.sites[self.site.address]
         site_data["privatekey"] = privatekey
         self.site.updateWebsocket(set_privatekey=bool(privatekey))
 
         return "ok"
 
+    @flag.admin
+    @flag.no_multiuser
     def actionSiteSetAutodownloadoptional(self, to, owned):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
-
         self.site.settings["autodownloadoptional"] = bool(owned)
-        self.site.bad_files = {}
-        gevent.spawn(self.site.update, check_files=True)
         self.site.worker_manager.removeSolvedFileTasks()
 
+    @flag.no_multiuser
+    @flag.admin
     def actionDbReload(self, to):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
-
         self.site.storage.closeDb()
         self.site.storage.getDb()
 
         return self.response(to, "ok")
 
+    @flag.no_multiuser
+    @flag.admin
     def actionDbRebuild(self, to):
-        permissions = self.getPermissions(to)
-        if "ADMIN" not in permissions:
-            return self.response(to, "You don't have permission to run this command")
-
         try:
             self.site.storage.rebuildDb()
         except Exception as err:

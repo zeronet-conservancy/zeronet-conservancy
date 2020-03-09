@@ -1,27 +1,35 @@
 import logging
 import os
 import sys
-import ctypes
-import ctypes.util
+from ctypes.util import find_library
+from lib.sslcrypto.openssl import discovery
 
-
-find_library_original = ctypes.util.find_library
+from Config import config
 
 
 def getOpensslPath():
-    if sys.platform.startswith("win"):
-        lib_path = os.path.dirname(os.path.abspath(__file__)) + "/../../dist/openssl/libeay32.dll"
-    elif sys.platform == "cygwin":
-        lib_path = "/bin/cygcrypto-1.0.0.dll"
-    elif os.path.isfile("../lib/libcrypto.so"):  # ZeroBundle OSX
-        lib_path = "../lib/libcrypto.so"
-    elif os.path.isfile("/opt/lib/libcrypto.so.1.0.0"):  # For optware and entware
-        lib_path = "/opt/lib/libcrypto.so.1.0.0"
-    else:
-        lib_path = "/usr/local/ssl/lib/libcrypto.so"
+    if config.openssl_lib_file:
+        return config.openssl_lib_file
 
-    if os.path.isfile(lib_path):
-        return lib_path
+    if sys.platform.startswith("win"):
+        lib_paths = [
+            os.path.join(os.getcwd(), "tools/openssl/libeay32.dll"),  # ZeroBundle Windows
+            os.path.join(os.path.dirname(sys.executable), "DLLs/libcrypto-1_1-x64.dll"),
+            os.path.join(os.path.dirname(sys.executable), "DLLs/libcrypto-1_1.dll")
+        ]
+    elif sys.platform == "cygwin":
+        lib_paths = ["/bin/cygcrypto-1.0.0.dll"]
+    else:
+        lib_paths = [
+            "../runtime/lib/libcrypto.so.1.1",  # ZeroBundle Linux
+            "../../Frameworks/libcrypto.1.1.dylib",  # ZeroBundle macOS
+            "/opt/lib/libcrypto.so.1.0.0",  # For optware and entware
+            "/usr/local/ssl/lib/libcrypto.so"
+        ]
+
+    for lib_path in lib_paths:
+        if os.path.isfile(lib_path):
+            return lib_path
 
     if "ANDROID_APP_PATH" in os.environ:
         try:
@@ -39,29 +47,11 @@ def getOpensslPath():
                 logging.debug("OpenSSL lib not found in: %s (%s)" % (path, err))
 
     lib_path = (
-        find_library_original('ssl.so.1.0') or find_library_original('ssl') or
-        find_library_original('crypto') or find_library_original('libcrypto') or 'libeay32'
+        find_library('ssl.so') or find_library('ssl') or
+        find_library('crypto') or find_library('libcrypto') or 'libeay32'
     )
 
     return lib_path
 
 
-def patchCtypesOpensslFindLibrary():
-    def findLibraryPatched(name):
-        if name in ("ssl", "crypto", "libeay32"):
-            lib_path = getOpensslPath()
-            return lib_path
-        else:
-            return find_library_original(name)
-
-    ctypes.util.find_library = findLibraryPatched
-
-
-patchCtypesOpensslFindLibrary()
-
-
-def openLibrary():
-    lib_path = getOpensslPath()
-    logging.debug("Opening %s..." % lib_path)
-    ssl_lib = ctypes.CDLL(lib_path, ctypes.RTLD_GLOBAL)
-    return ssl_lib
+discovery.discover = getOpensslPath

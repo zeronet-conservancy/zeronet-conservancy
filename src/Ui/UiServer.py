@@ -1,13 +1,11 @@
 import logging
 import time
-import cgi
+import urllib
 import socket
-import sys
 import gevent
 
 from gevent.pywsgi import WSGIServer
-from gevent.pywsgi import WSGIHandler
-from geventwebsocket.handler import WebSocketHandler
+from lib.gevent_ws import WebSocketHandler
 
 from .UiRequest import UiRequest
 from Site import SiteManager
@@ -16,8 +14,19 @@ from Debug import Debug
 import importlib
 
 
+class LogDb(logging.StreamHandler):
+    def __init__(self, ui_server):
+        self.lines = []
+        self.ui_server = ui_server
+        return super(LogDb, self).__init__()
+
+    def emit(self, record):
+        self.ui_server.updateWebsocket(log_event=record.levelname)
+        self.lines.append([time.time(), record.levelname, self.format(record)])
+
+
 # Skip websocket handler if not necessary
-class UiWSGIHandler(WSGIHandler):
+class UiWSGIHandler(WebSocketHandler):
 
     def __init__(self, *args, **kwargs):
         self.server = args[2]
@@ -25,25 +34,25 @@ class UiWSGIHandler(WSGIHandler):
         self.args = args
         self.kwargs = kwargs
 
+    def handleError(self, err):
+        if config.debug:  # Allow websocket errors to appear on /Debug
+            import main
+            main.DebugHook.handleError()
+        else:
+            ui_request = UiRequest(self.server, {}, self.environ, self.start_response)
+            block_gen = ui_request.error500("UiWSGIHandler error: %s" % Debug.formatExceptionMessage(err))
+            for block in block_gen:
+                self.write(block)
+
     def run_application(self):
-        if "HTTP_UPGRADE" in self.environ:  # Websocket request
-            try:
-                ws_handler = WebSocketHandler(*self.args, **self.kwargs)
-                ws_handler.__dict__ = self.__dict__  # Match class variables
-                ws_handler.run_application()
-            except Exception as err:
-                logging.error("UiWSGIHandler websocket error: %s" % Debug.formatException(err))
-                if config.debug:  # Allow websocket errors to appear on /Debug
-                    import main
-                    main.DebugHook.handleError()
-        else:  # Standard HTTP request
-            try:
-                super(UiWSGIHandler, self).run_application()
-            except Exception as err:
-                logging.error("UiWSGIHandler error: %s" % Debug.formatException(err))
-                if config.debug:  # Allow websocket errors to appear on /Debug
-                    import main
-                    main.DebugHook.handleError()
+        err_name = "UiWSGIHandler websocket" if "HTTP_UPGRADE" in self.environ else "UiWSGIHandler"
+        try:
+            super(UiWSGIHandler, self).run_application()
+        except (ConnectionAbortedError, ConnectionResetError) as err:
+            logging.warning("%s connection error: %s" % (err_name, err))
+        except Exception as err:
+            logging.warning("%s error: %s" % (err_name, Debug.formatException(err)))
+            self.handleError(err)
 
     def handle(self):
         # Save socket to be able to close them properly on exit
@@ -53,7 +62,6 @@ class UiWSGIHandler(WSGIHandler):
 
 
 class UiServer:
-
     def __init__(self):
         self.ip = config.ui_ip
         self.port = config.ui_port
@@ -76,6 +84,7 @@ class UiServer:
                 self.allowed_hosts.update(["localhost"])
         else:
             self.allowed_hosts = set([])
+        self.allowed_ws_origins = set()
         self.allow_trans_proxy = config.ui_trans_proxy
 
         self.wrapper_nonces = []
@@ -84,6 +93,10 @@ class UiServer:
         self.site_manager = SiteManager.site_manager
         self.sites = SiteManager.site_manager.list()
         self.log = logging.getLogger(__name__)
+
+        self.logdb_errors = LogDb(ui_server=self)
+        self.logdb_errors.setLevel(logging.getLevelName("ERROR"))
+        logging.getLogger('').addHandler(self.logdb_errors)
 
     # After WebUI started
     def afterStarted(self):
@@ -94,7 +107,7 @@ class UiServer:
     def handleRequest(self, env, start_response):
         path = bytes(env["PATH_INFO"], "raw-unicode-escape").decode("utf8")
         if env.get("QUERY_STRING"):
-            get = dict(cgi.parse_qsl(env['QUERY_STRING']))
+            get = dict(urllib.parse.parse_qsl(env['QUERY_STRING']))
         else:
             get = {}
         ui_request = UiRequest(self, get, env, start_response)
@@ -195,5 +208,10 @@ class UiServer:
         time.sleep(1)
 
     def updateWebsocket(self, **kwargs):
+        if kwargs:
+            param = {"event": list(kwargs.items())[0]}
+        else:
+            param = None
+
         for ws in self.websockets:
-            ws.event("serverChanged", kwargs)
+            ws.event("serverChanged", param)

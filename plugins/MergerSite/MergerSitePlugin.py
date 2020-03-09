@@ -1,11 +1,13 @@
 import re
 import time
 import copy
+import os
 
 from Plugin import PluginManager
 from Translate import Translate
 from util import RateLimit
 from util import helper
+from util.Flag import flag
 from Debug import Debug
 try:
     import OptionalManager.UiWebsocketPlugin  # To make optioanlFileInfo merger sites compatible
@@ -18,8 +20,11 @@ if "merger_db" not in locals().keys():  # To keep merger_sites between module re
     merged_to_merger = {}  # {address: [site1, site2, ...]} cache
     site_manager = None  # Site manager for merger sites
 
+
+plugin_dir = os.path.dirname(__file__)
+
 if "_" not in locals():
-    _ = Translate("plugins/MergerSite/languages/")
+    _ = Translate(plugin_dir + "/languages/")
 
 
 # Check if the site has permission to this merger site
@@ -74,14 +79,18 @@ class UiWebsocketPlugin(object):
     def cbMergerSiteAdd(self, to, addresses):
         added = 0
         for address in addresses:
-            added += 1
-            site_manager.need(address)
+            try:
+                site_manager.need(address)
+                added += 1
+            except Exception as err:
+                self.cmd("notification", ["error", _["Adding <b>%s</b> failed: %s"] % (address, err)])
         if added:
             self.cmd("notification", ["done", _["Added <b>%s</b> new site"] % added, 5000])
         RateLimit.called(self.site.address + "-MergerSiteAdd")
         site_manager.updateMergerSites()
 
     # Delete a merged site
+    @flag.no_multiuser
     def actionMergerSiteDelete(self, to, address):
         site = self.server.sites.get(address)
         if not site:
@@ -221,7 +230,7 @@ class UiWebsocketPlugin(object):
             site = self.server.sites.get(address)
             try:
                 merged_sites.append(site.content_manager.contents.get("content.json").get("title", address))
-            except Exception as err:
+            except Exception:
                 merged_sites.append(address)
 
         details = _["Read and write permissions to sites with merged type of <b>%s</b> "] % merger_type
@@ -289,6 +298,9 @@ class SiteStoragePlugin(object):
 
     # Also notice merger sites on a merged site file change
     def onUpdated(self, inner_path, file=None):
+        if inner_path == "content.json":
+            site_manager.updateMergerSites()
+
         super(SiteStoragePlugin, self).onUpdated(inner_path, file)
 
         merged_type = merged_db.get(self.site.address)
@@ -333,9 +345,9 @@ class SiteManagerPlugin(object):
     def updateMergerSites(self):
         global merger_db, merged_db, merged_to_merger, site_manager
         s = time.time()
-        merger_db = {}
-        merged_db = {}
-        merged_to_merger = {}
+        merger_db_new = {}
+        merged_db_new = {}
+        merged_to_merger_new = {}
         site_manager = self
         if not self.sites:
             return
@@ -347,7 +359,7 @@ class SiteManagerPlugin(object):
                 self.log.error("Error loading site %s: %s" % (site.address, Debug.formatException(err)))
                 continue
             if merged_type:
-                merged_db[site.address] = merged_type
+                merged_db_new[site.address] = merged_type
 
             # Update merger sites
             for permission in site.settings["permissions"]:
@@ -361,18 +373,24 @@ class SiteManagerPlugin(object):
                     site.settings["permissions"].remove(permission)
                     continue
                 merger_type = permission.replace("Merger:", "")
-                if site.address not in merger_db:
-                    merger_db[site.address] = []
-                merger_db[site.address].append(merger_type)
+                if site.address not in merger_db_new:
+                    merger_db_new[site.address] = []
+                merger_db_new[site.address].append(merger_type)
                 site_manager.sites[site.address] = site
 
             # Update merged to merger
             if merged_type:
                 for merger_site in self.sites.values():
                     if "Merger:" + merged_type in merger_site.settings["permissions"]:
-                        if site.address not in merged_to_merger:
-                            merged_to_merger[site.address] = []
-                        merged_to_merger[site.address].append(merger_site)
+                        if site.address not in merged_to_merger_new:
+                            merged_to_merger_new[site.address] = []
+                        merged_to_merger_new[site.address].append(merger_site)
+
+        # Update globals
+        merger_db = merger_db_new
+        merged_db = merged_db_new
+        merged_to_merger = merged_to_merger_new
+
         self.log.debug("Updated merger sites in %.3fs" % (time.time() - s))
 
     def load(self, *args, **kwags):
