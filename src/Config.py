@@ -7,13 +7,14 @@ import configparser
 import logging
 import logging.handlers
 import stat
+import time
 
 
 class Config(object):
 
     def __init__(self, argv):
-        self.version = "0.7.1"
-        self.rev = 4462
+        self.version = "0.7.2"
+        self.rev = 4538
         self.argv = argv
         self.action = None
         self.test_parser = None
@@ -647,9 +648,26 @@ class Config(object):
 
         logging.getLogger('').name = "-"  # Remove root prefix
 
+        self.error_logger = ErrorLogHandler()
+        self.error_logger.setLevel(logging.getLevelName("ERROR"))
+        logging.getLogger('').addHandler(self.error_logger)
+
         if console_logging:
             self.initConsoleLogger()
         if file_logging:
             self.initFileLogger()
+
+
+class ErrorLogHandler(logging.StreamHandler):
+    def __init__(self):
+        self.lines = []
+        return super().__init__()
+
+    def emit(self, record):
+        self.lines.append([time.time(), record.levelname, self.format(record)])
+
+    def onNewRecord(self, record):
+        pass
+
 
 config = Config(sys.argv)

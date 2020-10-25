@@ -219,6 +219,9 @@ class Sidebar extends Class
 					@wrapper.notifications.add "privatekey", "done", "Saved private key removed", 5000
 			return false
 
+		# Use requested address for browse files urls
+		@tag.find("#browse-files").attr("href", document.location.pathname.replace(/(\/.*?(\/|$)).*$/, "/list$1"))
+
 
 
 	animDrag: (e) =>
@@ -346,6 +349,25 @@ class Sidebar extends Class
 			if res == "ok"
 				@wrapper.notifications.add "sign", "done", "#{inner_path} Signed and published!", 5000
 
+	handleSiteDeleteClick: ->
+		if @wrapper.site_info.privatekey
+			question = "Are you sure?<br>This site has a saved private key"
+			options = ["Forget private key and delete site"]
+		else
+			question = "Are you sure?"
+			options = ["Delete this site", "Blacklist"]
+		@wrapper.displayConfirm question, options, (confirmed) =>
+			if confirmed == 1
+				@tag.find("#button-delete").addClass("loading")
+				@wrapper.ws.cmd "siteDelete", @wrapper.site_info.address, ->
+					document.location = $(".fixbutton-bg").attr("href")
+			else if confirmed == 2
+				@wrapper.displayPrompt "Blacklist this site", "text", "Delete and Blacklist", "Reason", (reason) =>
+					@tag.find("#button-delete").addClass("loading")
+					@wrapper.ws.cmd "siteblockAdd", [@wrapper.site_info.address, reason]
+					@wrapper.ws.cmd "siteDelete", @wrapper.site_info.address, ->
+						document.location = $(".fixbutton-bg").attr("href")
+
 	onOpened: ->
 		@log "Opened"
 		@scrollable()
@@ -417,26 +439,23 @@ class Sidebar extends Class
 
 		# Delete site
 		@tag.find("#button-delete").off("click touchend").on "click touchend", =>
-			@wrapper.displayConfirm "Are you sure?", ["Delete this site", "Blacklist"], (confirmed) =>
-				if confirmed == 1
-					@tag.find("#button-delete").addClass("loading")
-					@wrapper.ws.cmd "siteDelete", @wrapper.site_info.address, ->
-						document.location = $(".fixbutton-bg").attr("href")
-				else if confirmed == 2
-					@wrapper.displayPrompt "Blacklist this site", "text", "Delete and Blacklist", "Reason", (reason) =>
-						@tag.find("#button-delete").addClass("loading")
-						@wrapper.ws.cmd "siteblockAdd", [@wrapper.site_info.address, reason]
-						@wrapper.ws.cmd "siteDelete", @wrapper.site_info.address, ->
-							document.location = $(".fixbutton-bg").attr("href")
-
-
+			@handleSiteDeleteClick()
 			return false
 
 		# Owned checkbox
 		@tag.find("#checkbox-owned").off("click touchend").on "click touchend", =>
-			@wrapper.ws.cmd "siteSetOwned", [@tag.find("#checkbox-owned").is(":checked")]
+			owned = @tag.find("#checkbox-owned").is(":checked")
+			@wrapper.ws.cmd "siteSetOwned", [owned], (res_set_owned) =>
+				@log "Owned", owned
+				if owned
+					@wrapper.ws.cmd "siteRecoverPrivatekey", [], (res_recover) =>
+						if res_recover == "ok"
+							@wrapper.notifications.add("recover", "done", "Private key recovered from master seed", 5000)
+						else
+							@log "Unable to recover private key: #{res_recover.error}"
 
-		# Owned checkbox
+
+		# Owned auto download checkbox
 		@tag.find("#checkbox-autodownloadoptional").off("click touchend").on "click touchend", =>
 			@wrapper.ws.cmd "siteSetAutodownloadoptional", [@tag.find("#checkbox-autodownloadoptional").is(":checked")]
 

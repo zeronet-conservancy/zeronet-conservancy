@@ -334,15 +334,44 @@ class UiRequest(object):
 
         return template_rendered.encode("utf8")
 
+    def isWrapperNecessary(self, path):
+        match = re.match(r"/(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
+
+        if not match:
+            return True
+
+        inner_path = match.group("inner_path").lstrip("/")
+        if not inner_path or path.endswith("/"):  # It's a directory
+            content_type = self.getContentType("index.html")
+        else:  # It's a file
+            content_type = self.getContentType(inner_path)
+
+        is_html_file = "html" in content_type or "xhtml" in content_type
+
+        return is_html_file
+
+    @helper.encodeResponse
+    def formatRedirect(self, url):
+        return """
+            <html>
+            <body>
+            Redirecting to <a href="{0}" target="_top">{0}</a>
+            <script>
+            window.top.location = "{0}"
+            </script>
+            </body>
+            </html>
+        """.format(html.escape(url))
+
     # - Actions -
 
     # Redirect to an url
     def actionRedirect(self, url):
         self.start_response('301 Redirect', [('Location', str(url))])
-        yield b"Location changed: " + url.encode("utf8")
+        yield self.formatRedirect(url)
 
     def actionIndex(self):
-        return self.actionRedirect("/" + config.homepage)
+        return self.actionRedirect("/" + config.homepage + "/")
 
     # Render a file from media with iframe site wrapper
     def actionWrapper(self, path, extra_headers=None):
@@ -356,14 +385,7 @@ class UiRequest(object):
             address = match.group("address")
             inner_path = match.group("inner_path").lstrip("/")
 
-            if not inner_path or path.endswith("/"):  # It's a directory
-                content_type = self.getContentType("index.html")
-            else:  # It's a file
-                content_type = self.getContentType(inner_path)
-
-            is_html_file = "html" in content_type or "xhtml" in content_type
-
-            if not is_html_file:
+            if not self.isWrapperNecessary(path):
                 return self.actionSiteMedia("/media" + path)  # Serve non-html files without wrapper
 
             if self.isAjaxRequest():
@@ -471,12 +493,15 @@ class UiRequest(object):
         wrapper_nonce = self.getWrapperNonce()
         inner_query_string = self.processQueryString(site, self.env.get("QUERY_STRING", ""))
 
-        if inner_query_string:
-            inner_query_string = "?%s&wrapper_nonce=%s" % (inner_query_string, wrapper_nonce)
-        elif "?" in inner_path:
-            inner_query_string = "&wrapper_nonce=%s" % wrapper_nonce
+        if "?" in inner_path:
+            sep = "&"
         else:
-            inner_query_string = "?wrapper_nonce=%s" % wrapper_nonce
+            sep = "?"
+
+        if inner_query_string:
+            inner_query_string = "%s%s&wrapper_nonce=%s" % (sep, inner_query_string, wrapper_nonce)
+        else:
+            inner_query_string = "%swrapper_nonce=%s" % (sep, wrapper_nonce)
 
         if self.isProxyRequest():  # Its a remote proxy request
             homepage = "http://zero/" + config.homepage
@@ -654,7 +679,7 @@ class UiRequest(object):
                 return self.actionFile(file_path, header_length=header_length, header_noscript=header_noscript, header_allow_ajax=header_allow_ajax, file_size=file_size, path_parts=path_parts)
             else:
                 self.log.debug("File not found: %s" % path_parts["inner_path"])
-                return self.error404(path_parts["inner_path"])
+                return self.error404(path)
 
     # Serve a media for ui
     def actionUiMedia(self, path):

@@ -9,7 +9,7 @@ from Config import config
 
 lib_verify_best = "sslcrypto"
 
-import sslcrypto
+from lib import sslcrypto
 sslcurve_native = sslcrypto.ecc.get_curve("secp256k1")
 sslcurve_fallback = sslcrypto.fallback.ecc.get_curve("secp256k1")
 sslcurve = sslcurve_native
@@ -60,7 +60,7 @@ def privatekeyToAddress(privatekey):  # Return address from private key
             privatekey_bin = bytes.fromhex(privatekey)
         else:
             privatekey_bin = sslcurve.wif_to_private(privatekey.encode())
-        return sslcurve.private_to_address(privatekey_bin, is_compressed=False).decode()
+        return sslcurve.private_to_address(privatekey_bin).decode()
     except Exception:  # Invalid privatekey
         return False
 
@@ -71,7 +71,6 @@ def sign(data, privatekey):  # Return sign to data using private key
     return base64.b64encode(sslcurve.sign(
         data.encode(),
         sslcurve.wif_to_private(privatekey.encode()),
-        is_compressed=False,
         recoverable=True,
         hash=dbl_format
     )).decode()

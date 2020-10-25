@@ -391,8 +391,8 @@ class ContentManagerPlugin(object):
     def verifyPiece(self, inner_path, pos, piece):
         try:
             piecemap = self.getPiecemap(inner_path)
-        except OSError as err:
-            raise VerifyError("Unable to download piecemap: %s" % err)
+        except Exception as err:
+            raise VerifyError("Unable to download piecemap: %s" % Debug.formatException(err))
 
         piece_i = int(pos / piecemap["piece_size"])
         if CryptHash.sha512sum(piece, format="digest") != piecemap["sha512_pieces"][piece_i]:
@@ -596,6 +596,9 @@ class BigFile(object):
                 pos = self.size + pos  # Use the real size instead of size on the disk
                 whence = 0
             return self.f.seek(pos, whence)
+
+    def seekable(self):
+        return self.f.seekable()
 
     def tell(self):
         return self.f.tell()

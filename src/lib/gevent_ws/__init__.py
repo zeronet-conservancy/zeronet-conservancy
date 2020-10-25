@@ -195,7 +195,10 @@ class WebSocket:
 
     def close(self, status=STATUS_OK):
         self.closed = True
-        self._send_frame(OPCODE_CLOSE, struct.pack("!H", status))
+        try:
+            self._send_frame(OPCODE_CLOSE, struct.pack("!H", status))
+        except (BrokenPipeError, ConnectionResetError):
+            pass
         self.socket.close()
 
 
@@ -210,8 +213,8 @@ class WebSocketHandler(WSGIHandler):
         self.response_length = 0
 
 
-        http_connection = [s.strip() for s in self.environ.get("HTTP_CONNECTION", "").split(",")]
-        if "Upgrade" not in http_connection or self.environ.get("HTTP_UPGRADE", "") != "websocket":
+        http_connection = [s.strip().lower() for s in self.environ.get("HTTP_CONNECTION", "").split(",")]
+        if "upgrade" not in http_connection or self.environ.get("HTTP_UPGRADE", "").lower() != "websocket":
             # Not my problem
             return super(WebSocketHandler, self).handle_one_response()
 
@@ -254,3 +257,23 @@ class WebSocketHandler(WSGIHandler):
         finally:
             self.time_finish = time.time()
             self.log_request()
+            self.close_connection = True
+
+
+    def process_result(self):
+        if "wsgi.websocket" in self.environ:
+            if self.result is None:
+                return
+            # Flushing result is required for werkzeug compatibility
+            for elem in self.result:
+                pass
+        else:
+            super(WebSocketHandler, self).process_result()
+
+
+    @property
+    def version(self):
+        if not self.environ:
+            return None
+
+        return self.environ.get('HTTP_SEC_WEBSOCKET_VERSION')

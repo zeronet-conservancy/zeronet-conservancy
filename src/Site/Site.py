@@ -69,10 +69,6 @@ class Site(object):
 
         self.announcer = SiteAnnouncer(self)  # Announce and get peer list from other nodes
 
-        if not self.settings.get("auth_key"):  # To auth user in site (Obsolete, will be removed)
-            self.settings["auth_key"] = CryptHash.random()
-            self.log.debug("New auth key: %s" % self.settings["auth_key"])
-
         if not self.settings.get("wrapper_key"):  # To auth websocket permissions
             self.settings["wrapper_key"] = CryptHash.random()
             self.log.debug("New wrapper key: %s" % self.settings["wrapper_key"])
@@ -153,6 +149,9 @@ class Site(object):
             if size * 1.2 < size_limit * 1024 * 1024:
                 return size_limit
         return 999999
+
+    def isAddedRecently(self):
+        return time.time() - self.settings.get("added", 0) < 60 * 60 * 24
 
     # Download all file from content.json
     def downloadContent(self, inner_path, download_files=True, peer=None, check_modifications=False, diffs={}):
@@ -333,10 +332,15 @@ class Site(object):
 
         s = time.time()
         self.log.debug(
-            "Start downloading, bad_files: %s, check_size: %s, blind_includes: %s, called by: %s" %
-            (self.bad_files, check_size, blind_includes, Debug.formatStack())
+            "Start downloading, bad_files: %s, check_size: %s, blind_includes: %s, isAddedRecently: %s" %
+            (self.bad_files, check_size, blind_includes, self.isAddedRecently())
         )
-        gevent.spawn(self.announce, force=True)
+
+        if self.isAddedRecently():
+            gevent.spawn(self.announce, mode="start", force=True)
+        else:
+            gevent.spawn(self.announce, mode="update")
+
         if check_size:  # Check the size first
             valid = self.downloadContent("content.json", download_files=False)  # Just download content.json files
             if not valid:
@@ -438,7 +442,7 @@ class Site(object):
 
         # Wait for peers
         if not self.peers:
-            self.announce()
+            self.announce(mode="update")
             for wait in range(10):
                 time.sleep(5 + wait)
                 self.log.debug("CheckModifications: Waiting for peers...")
@@ -495,7 +499,7 @@ class Site(object):
         self.checkBadFiles()
 
         if announce:
-            self.announce(force=True)
+            self.announce(mode="update", force=True)
 
         # Full update, we can reset bad files
         if check_files and since == 0:
@@ -512,7 +516,6 @@ class Site(object):
         if len(queried) == 0:
             # Failed to query modifications
             self.content_updated = False
-            self.bad_files["content.json"] = 1
         else:
             self.content_updated = time.time()
 
@@ -582,7 +585,7 @@ class Site(object):
         publishers = []  # Publisher threads
 
         if not self.peers:
-            self.announce()
+            self.announce(mode="more")
 
         if limit == "default":
             limit = 5
@@ -787,10 +790,10 @@ class Site(object):
         elif not self.isServing():  # Site not serving
             return False
         else:  # Wait until file downloaded
-            self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
             if not self.content_manager.contents.get("content.json"):  # No content.json, download it first!
-                self.log.debug("Need content.json first")
-                gevent.spawn(self.announce)
+                self.log.debug("Need content.json first (inner_path: %s, priority: %s)" % (inner_path, priority))
+                if priority > 0:
+                    gevent.spawn(self.announce)
                 if inner_path != "content.json":  # Prevent double download
                     task = self.worker_manager.addTask("content.json", peer)
                     task["evt"].get()
@@ -815,6 +818,8 @@ class Site(object):
                 if not self.isFileDownloadAllowed(inner_path, file_info):
                     self.log.debug("%s: Download not allowed" % inner_path)
                     return False
+
+            self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
 
             task = self.worker_manager.addTask(inner_path, peer, priority=priority, file_info=file_info)
             if blocking:

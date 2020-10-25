@@ -117,7 +117,7 @@ class UiWebsocketPlugin(object):
         peer_ips = [peer.key for peer in site.getConnectablePeers(20, allow_private=False)]
         peer_ips.sort(key=lambda peer_ip: ".onion:" in peer_ip)
         copy_link = "http://127.0.0.1:43110/%s/?zeronet_peers=%s" % (
-            site.content_manager.contents["content.json"].get("domain", site.address),
+            site.content_manager.contents.get("content.json", {}).get("domain", site.address),
             ",".join(peer_ips)
         )
 
@@ -173,8 +173,10 @@ class UiWebsocketPlugin(object):
             <li>
              <label>
               {_[Files]}
-              <small class="label-right"><a href='#Site+directory' id='link-directory' class='link-right'>{_[Open site directory]}</a>
-              <a href='/ZeroNet-Internal/Zip?address={site.address}' id='link-zip' class='link-right' download='site.zip'>{_[Save as .zip]}</a></small>
+              <a href='/list/{site.address}' class='link-right link-outline' id="browse-files">{_[Browse files]}</a>
+              <small class="label-right">
+               <a href='/ZeroNet-Internal/Zip?address={site.address}' id='link-zip' class='link-right' download='site.zip'>{_[Save as .zip]}</a>
+              </small>
              </label>
              <ul class='graph graph-stacked'>
         """))
@@ -737,10 +739,35 @@ class UiWebsocketPlugin(object):
     @flag.no_multiuser
     def actionSiteSetOwned(self, to, owned):
         if self.site.address == config.updatesite:
-            return self.response(to, "You can't change the ownership of the updater site")
+            return {"error": "You can't change the ownership of the updater site"}
 
         self.site.settings["own"] = bool(owned)
         self.site.updateWebsocket(owned=owned)
+        return "ok"
+
+    @flag.admin
+    @flag.no_multiuser
+    def actionSiteRecoverPrivatekey(self, to):
+        from Crypt import CryptBitcoin
+
+        site_data = self.user.sites[self.site.address]
+        if site_data.get("privatekey"):
+            return {"error": "This site already has saved privated key"}
+
+        address_index = self.site.content_manager.contents.get("content.json", {}).get("address_index")
+        if not address_index:
+            return {"error": "No address_index in content.json"}
+
+        privatekey = CryptBitcoin.hdPrivatekey(self.user.master_seed, address_index)
+        privatekey_address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+        if privatekey_address == self.site.address:
+            site_data["privatekey"] = privatekey
+            self.user.save()
+            self.site.updateWebsocket(recover_privatekey=True)
+            return "ok"
+        else:
+            return {"error": "Unable to deliver private key for this site from current user's master_seed"}
 
     @flag.admin
     @flag.no_multiuser
@@ -748,6 +775,7 @@ class UiWebsocketPlugin(object):
         site_data = self.user.sites[self.site.address]
         site_data["privatekey"] = privatekey
         self.site.updateWebsocket(set_privatekey=bool(privatekey))
+        self.user.save()
 
         return "ok"
 
