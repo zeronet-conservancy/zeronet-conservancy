@@ -141,13 +141,13 @@ class TrackerStorage(object):
         return protocols
 
     def getDefaultFile(self):
-        return {"shared": {}}
+        return {"trackers": {}}
 
-    def onTrackerFound(self, tracker_address, type="shared", my=False, persistent=False):
+    def onTrackerFound(self, tracker_address, my=False, persistent=False):
         if not self.isTrackerAddressValid(tracker_address):
             return False
 
-        trackers = self.getTrackers(type)
+        trackers = self.getTrackers()
         added = False
         if tracker_address not in trackers:
             # "My" trackers never get deleted on announce errors, but aren't saved between restarts.
@@ -212,8 +212,8 @@ class TrackerStorage(object):
             self.log.info("Tracker %s looks down, removing." % tracker_address)
             del trackers[tracker_address]
 
-    def isTrackerWorking(self, tracker_address, type="shared"):
-        trackers = self.getTrackers(type)
+    def isTrackerWorking(self, tracker_address):
+        trackers = self.getTrackers()
         tracker = trackers[tracker_address]
         if not tracker:
             return False
@@ -223,29 +223,29 @@ class TrackerStorage(object):
 
         return False
 
-    def getTrackers(self, type="shared"):
-        return self.file_content.setdefault(type, {})
+    def getTrackers(self):
+        return self.file_content.setdefault("trackers", {})
 
-    def getTrackersPerProtocol(self, type="shared", working_only=False):
+    def getTrackersPerProtocol(self, working_only=False):
         if not self.site_announcer:
             return None
 
-        trackers = self.getTrackers(type)
+        trackers = self.getTrackers()
 
         trackers_per_protocol = {}
         for tracker_address in trackers:
             protocol = self.getNormalizedTrackerProtocol(tracker_address)
             if not protocol:
                 continue
-            if not working_only or self.isTrackerWorking(tracker_address, type=type):
+            if not working_only or self.isTrackerWorking(tracker_address):
                 trackers_per_protocol.setdefault(protocol, []).append(tracker_address)
 
         return trackers_per_protocol
 
-    def getWorkingTrackers(self, type="shared"):
+    def getWorkingTrackers(self):
         trackers = {
-            key: tracker for key, tracker in self.getTrackers(type).items()
-            if self.isTrackerWorking(key, type)
+            key: tracker for key, tracker in self.getTrackers().items()
+            if self.isTrackerWorking(key)
         }
         return trackers
 
@@ -280,12 +280,12 @@ class TrackerStorage(object):
         helper.atomicWrite(self.file_path, json.dumps(self.file_content, indent=2, sort_keys=True).encode("utf8"))
         self.log.debug("Saved in %.3fs" % (time.time() - s))
 
-    def enoughWorkingTrackers(self, type="shared"):
+    def enoughWorkingTrackers(self):
         supported_protocols = self.getSupportedProtocols()
         if not supported_protocols:
             return False
 
-        trackers_per_protocol = self.getTrackersPerProtocol(type="shared", working_only=True)
+        trackers_per_protocol = self.getTrackersPerProtocol(working_only=True)
         if not trackers_per_protocol:
             return False
 
@@ -309,7 +309,7 @@ class TrackerStorage(object):
         return unmet_conditions == 0
 
     def discoverTrackers(self, peers):
-        if self.enoughWorkingTrackers(type="shared"):
+        if self.enoughWorkingTrackers():
             return False
 
         self.log.info("Discovering trackers from %s peers..." % len(peers))
@@ -357,7 +357,7 @@ class SiteAnnouncerPlugin(object):
             tracker_storage.time_discover = time.time()
             gevent.spawn(tracker_storage.discoverTrackers, self.site.getConnectedPeers())
         trackers = super(SiteAnnouncerPlugin, self).getTrackers()
-        shared_trackers = list(tracker_storage.getTrackers("shared").keys())
+        shared_trackers = list(tracker_storage.getTrackers().keys())
         if shared_trackers:
             return trackers + shared_trackers
         else:
@@ -378,7 +378,7 @@ class SiteAnnouncerPlugin(object):
 @PluginManager.registerTo("FileRequest")
 class FileRequestPlugin(object):
     def actionGetTrackers(self, params):
-        shared_trackers = list(tracker_storage.getWorkingTrackers("shared").keys())
+        shared_trackers = list(tracker_storage.getWorkingTrackers().keys())
         random.shuffle(shared_trackers)
         self.response({"trackers": shared_trackers})
 
