@@ -154,13 +154,15 @@ class TrackerStorage(object):
             # They are to be used as automatically added addresses from the Bootstrap plugin.
             # Persistent trackers never get deleted.
             # They are to be used for entries manually added by the user.
+            # Private trackers never listed to other peer in response of the getTrackers command
             trackers[tracker_address] = {
                 "time_added": time.time(),
                 "time_success": 0,
                 "latency": 99.0,
                 "num_error": 0,
                 "my": False,
-                "persistent": False
+                "persistent": False,
+                "private": False
             }
             self.log.info("New tracker found: %s" % tracker_address)
             added = True
@@ -212,9 +214,29 @@ class TrackerStorage(object):
             self.log.info("Tracker %s looks down, removing." % tracker_address)
             del trackers[tracker_address]
 
-    def isTrackerWorking(self, tracker_address):
-        trackers = self.getTrackers()
-        tracker = trackers[tracker_address]
+    # Returns the dict of known trackers.
+    # If condition is None the returned dict can be modified in place, and the
+    # modifications is reflected in the underlying storage.
+    # If condition is a function, the dict if filtered by the function,
+    # and the returned dict has no connection to the underlying storage.
+    def getTrackers(self, condition = None):
+        trackers = self.file_content.setdefault("trackers", {})
+
+        if condition:
+            trackers = {
+                key: tracker for key, tracker in trackers.items()
+                if condition(key)
+            }
+
+        return trackers
+
+    def resolveTracker(self, tracker):
+        if isinstance(tracker, str):
+            tracker = self.getTrackers().get(tracker, None)
+        return tracker
+
+    def isTrackerWorking(self, tracker):
+        tracker = self.resolveTracker(tracker)
         if not tracker:
             return False
 
@@ -223,8 +245,24 @@ class TrackerStorage(object):
 
         return False
 
-    def getTrackers(self):
-        return self.file_content.setdefault("trackers", {})
+    def isTrackerShared(self, tracker):
+        tracker = self.resolveTracker(tracker)
+        if not tracker:
+            return False
+
+        if tracker["private"]:
+            return False
+
+        if tracker["my"]:
+            return True
+
+        return self.isTrackerWorking(tracker)
+
+    def getWorkingTrackers(self):
+        return self.getTrackers(self.isTrackerWorking)
+
+    def getSharedTrackers(self):
+        return self.getTrackers(self.isTrackerShared)
 
     def getTrackersPerProtocol(self, working_only=False):
         if not self.site_announcer:
@@ -241,13 +279,6 @@ class TrackerStorage(object):
                 trackers_per_protocol.setdefault(protocol, []).append(tracker_address)
 
         return trackers_per_protocol
-
-    def getWorkingTrackers(self):
-        trackers = {
-            key: tracker for key, tracker in self.getTrackers().items()
-            if self.isTrackerWorking(key)
-        }
-        return trackers
 
     def getFileContent(self):
         if not os.path.isfile(self.file_path):
@@ -270,6 +301,7 @@ class TrackerStorage(object):
             tracker.setdefault("latency", 99.0)
             tracker.setdefault("my", False)
             tracker.setdefault("persistent", False)
+            tracker.setdefault("private", False)
             tracker["num_error"] = 0
             if tracker["my"]:
                 del trackers[address]
@@ -378,7 +410,7 @@ class SiteAnnouncerPlugin(object):
 @PluginManager.registerTo("FileRequest")
 class FileRequestPlugin(object):
     def actionGetTrackers(self, params):
-        shared_trackers = list(tracker_storage.getWorkingTrackers().keys())
+        shared_trackers = list(tracker_storage.getSharedTrackers().keys())
         random.shuffle(shared_trackers)
         self.response({"trackers": shared_trackers})
 
