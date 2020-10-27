@@ -114,7 +114,7 @@ class TrackerStorage(object):
             t = max(trackers[tracker_address]["time_added"],
                     trackers[tracker_address]["time_success"])
             if tracker_address not in supported_trackers and t < time.time() - self.tracker_down_time_interval:
-                self.log.info("Tracker %s looks unused, removing." % tracker_address)
+                self.log.info("Tracker %s seems to be disabled by the configuration, removing." % tracker_address)
                 del trackers[tracker_address]
 
     def getSupportedProtocols(self):
@@ -158,6 +158,7 @@ class TrackerStorage(object):
             trackers[tracker_address] = {
                 "time_added": time.time(),
                 "time_success": 0,
+                "time_error": 0,
                 "latency": 99.0,
                 "num_error": 0,
                 "my": False,
@@ -173,32 +174,65 @@ class TrackerStorage(object):
         return added
 
     def onTrackerSuccess(self, tracker_address, latency):
-        trackers = self.getTrackers()
-        if tracker_address not in trackers:
-            return False
+        tracker = self.resolveTracker(tracker_address)
+        if not tracker:
+            return
 
-        trackers[tracker_address]["latency"] = latency
-        trackers[tracker_address]["time_success"] = time.time()
-        trackers[tracker_address]["num_error"] = 0
+        tracker["latency"] = latency
+        tracker["time_success"] = time.time()
+        tracker["num_error"] = 0
 
         self.time_success = time.time()
 
     def onTrackerError(self, tracker_address):
-        trackers = self.getTrackers()
-        if tracker_address not in trackers:
-            return False
-
-        trackers[tracker_address]["time_error"] = time.time()
-        trackers[tracker_address]["num_error"] += 1
-
-        if trackers[tracker_address]["my"] or trackers[tracker_address]["persistent"]:
+        tracker = self.resolveTracker(tracker_address)
+        if not tracker:
             return
 
-        if self.time_success < time.time() - self.tracker_down_time_interval / 2:
-            # Don't drop trackers from the list, if there haven't been any successful announces recently.
-            # There may be network connectivity issues.
+        tracker["time_error"] = time.time()
+        tracker["num_error"] += 1
+
+        self.considerTrackerDeletion(tracker_address)
+
+    def considerTrackerDeletion(self, tracker_address):
+        tracker = self.resolveTracker(tracker_address)
+        if not tracker:
             return
 
+        if tracker["my"] or tracker["persistent"]:
+            return
+
+        error_limit = self.getSuccessiveErrorLimit(tracker_address)
+
+        if tracker["num_error"] > error_limit:
+            if self.isTrackerDown(tracker_address):
+                self.log.info("Tracker %s looks down, removing." % tracker_address)
+                self.deleteTracker(tracker_address)
+            elif self.areWayTooManyTrackers(tracker_address):
+                self.log.info(
+                    "Tracker %s has %d successive errors. Looks like we have too many trackers, so removing." % (
+                        tracker_address,
+                        tracker["num_error"]))
+                self.deleteTracker(tracker_address)
+
+    def areWayTooManyTrackers(self, tracker_address):
+        # Prevent the tracker list overgrowth by hard limiting the maximum size
+
+        protocol = self.getNormalizedTrackerProtocol(tracker_address) or ""
+
+        nr_trackers_for_protocol = len(self.getTrackersPerProtocol().get(protocol, []))
+        nr_trackers = len(self.getTrackers())
+
+        hard_limit_mult = 5
+        hard_limit_for_protocol = self.getTrackerLimitForProtocol(protocol) * hard_limit_mult
+        hard_limit = config.shared_trackers_limit * hard_limit_mult
+
+        if (nr_trackers_for_protocol > hard_limit_for_protocol) and (nr_trackers > hard_limit):
+            return True
+
+        return False
+
+    def getSuccessiveErrorLimit(self, tracker_address):
         protocol = self.getNormalizedTrackerProtocol(tracker_address) or ""
 
         nr_working_trackers_for_protocol = len(self.getTrackersPerProtocol(working_only=True).get(protocol, []))
@@ -210,9 +244,7 @@ class TrackerStorage(object):
             if nr_working_trackers >= config.shared_trackers_limit:
                 error_limit = 5
 
-        if trackers[tracker_address]["num_error"] > error_limit and trackers[tracker_address]["time_success"] < time.time() - self.tracker_down_time_interval:
-            self.log.info("Tracker %s looks down, removing." % tracker_address)
-            del trackers[tracker_address]
+        return error_limit
 
     # Returns the dict of known trackers.
     # If condition is None the returned dict can be modified in place, and the
@@ -230,10 +262,44 @@ class TrackerStorage(object):
 
         return trackers
 
+    def deleteTracker(self, tracker):
+        trackers = self.getTrackers()
+        if isinstance(tracker, str):
+            if trackers[tracker]:
+                del trackers[tracker]
+        else:
+            trackers.remove(tracker)
+
     def resolveTracker(self, tracker):
         if isinstance(tracker, str):
             tracker = self.getTrackers().get(tracker, None)
         return tracker
+
+    def isTrackerDown(self, tracker):
+        tracker = self.resolveTracker(tracker)
+        if not tracker:
+            return False
+
+        # Don't consider any trackers down if there haven't been any successful announces at all
+        if self.time_success < 1:
+            return False
+
+        time_success = max(tracker["time_added"], tracker["time_success"])
+        time_error = max(tracker["time_added"], tracker["time_error"])
+
+        if time_success >= time_error:
+            return False
+
+        # Deadline is calculated based on the time of the last successful announce,
+        # not based on the current time.
+        # There may be network connectivity issues, if there haven't been any
+        # successful announces recently.
+
+        deadline = self.time_success - self.tracker_down_time_interval
+        if time_success >= deadline:
+            return False
+
+        return True
 
     def isTrackerWorking(self, tracker):
         tracker = self.resolveTracker(tracker)
@@ -298,6 +364,7 @@ class TrackerStorage(object):
         for address, tracker in list(trackers.items()):
             tracker.setdefault("time_added", time.time())
             tracker.setdefault("time_success", 0)
+            tracker.setdefault("time_error", 0)
             tracker.setdefault("latency", 99.0)
             tracker.setdefault("my", False)
             tracker.setdefault("persistent", False)
