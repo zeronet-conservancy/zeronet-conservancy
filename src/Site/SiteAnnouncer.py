@@ -1,6 +1,7 @@
 import random
 import time
 import hashlib
+import logging
 import re
 import collections
 
@@ -24,6 +25,8 @@ global_stats = collections.defaultdict(lambda: collections.defaultdict(int))
 class SiteAnnouncer(object):
     def __init__(self, site):
         self.site = site
+        self.log = logging.getLogger("Site:%s SiteAnnouncer" % self.site.address_short)
+
         self.stats = {}
         self.fileserver_port = config.fileserver_port
         self.peer_id = self.site.connection_server.peer_id
@@ -74,7 +77,7 @@ class SiteAnnouncer(object):
         if time.time() - self.time_last_announce < 30 and not force:
             return  # No reannouncing within 30 secs
         if force:
-            self.site.log.debug("Force reannounce in mode %s" % mode)
+            self.log.debug("Force reannounce in mode %s" % mode)
 
         self.fileserver_port = config.fileserver_port
         self.time_last_announce = time.time()
@@ -82,7 +85,7 @@ class SiteAnnouncer(object):
         trackers = self.getAnnouncingTrackers(mode)
 
         if config.verbose:
-            self.site.log.debug("Tracker announcing, trackers: %s" % trackers)
+            self.log.debug("Tracker announcing, trackers: %s" % trackers)
 
         errors = []
         slow = []
@@ -96,7 +99,7 @@ class SiteAnnouncer(object):
             time_announce_allowed = time.time() - 60 * min(30, tracker_stats["num_error"])
             if tracker_stats["num_error"] > 5 and tracker_stats["time_request"] > time_announce_allowed and not force:
                 if config.verbose:
-                    self.site.log.debug("Tracker %s looks unreliable, announce skipped (error: %s)" % (tracker, tracker_stats["num_error"]))
+                    self.log.debug("Tracker %s looks unreliable, announce skipped (error: %s)" % (tracker, tracker_stats["num_error"]))
                 continue
             thread = self.site.greenlet_manager.spawn(self.announceTracker, tracker, mode=mode)
             threads.append(thread)
@@ -129,15 +132,15 @@ class SiteAnnouncer(object):
             else:
                 announced_to = "%s/%s trackers" % (num_announced, len(threads))
             if mode != "update" or config.verbose:
-                self.site.log.debug(
+                self.log.debug(
                     "Announced in mode %s to %s in %.3fs, errors: %s, slow: %s" %
                     (mode, announced_to, time.time() - s, errors, slow)
                 )
         else:
             if len(threads) > 1:
-                self.site.log.error("Announce to %s trackers in %.3fs, failed" % (len(threads), time.time() - s))
+                self.log.error("Announce to %s trackers in %.3fs, failed" % (len(threads), time.time() - s))
             if len(threads) == 1 and mode != "start":  # Move to next tracker
-                self.site.log.debug("Tracker failed, skipping to next one...")
+                self.log.debug("Tracker failed, skipping to next one...")
                 self.site.greenlet_manager.spawnLater(1.0, self.announce, force=force, mode=mode, pex=pex)
 
         self.updateWebsocket(trackers="announced")
@@ -177,7 +180,7 @@ class SiteAnnouncer(object):
         s = time.time()
         address_parts = self.getAddressParts(tracker)
         if not address_parts:
-            self.site.log.warning("Tracker %s error: Invalid address" % tracker)
+            self.log.warning("Tracker %s error: Invalid address" % tracker)
             return False
 
         if tracker not in self.stats:
@@ -188,7 +191,7 @@ class SiteAnnouncer(object):
         self.stats[tracker]["time_request"] = time.time()
         global_stats[tracker]["time_request"] = time.time()
         if config.verbose:
-            self.site.log.debug("Tracker announcing to %s (mode: %s)" % (tracker, mode))
+            self.log.debug("Tracker announcing to %s (mode: %s)" % (tracker, mode))
         if mode == "update":
             num_want = 10
         else:
@@ -202,7 +205,7 @@ class SiteAnnouncer(object):
             else:
                 raise AnnounceError("Unknown protocol: %s" % address_parts["protocol"])
         except Exception as err:
-            self.site.log.warning("Tracker %s announce failed: %s in mode %s" % (tracker, Debug.formatException(err), mode))
+            self.log.warning("Tracker %s announce failed: %s in mode %s" % (tracker, Debug.formatException(err), mode))
             error = err
 
         if error:
@@ -249,7 +252,7 @@ class SiteAnnouncer(object):
             self.site.updateWebsocket(peers_added=added)
 
         if config.verbose:
-            self.site.log.debug(
+            self.log.debug(
                 "Tracker result: %s://%s (found %s peers, new: %s, total: %s)" %
                 (address_parts["protocol"], address_parts["address"], len(peers), added, len(self.site.peers))
             )
@@ -281,7 +284,7 @@ class SiteAnnouncer(object):
                 time.sleep(0.1)
             if done == query_num:
                 break
-        self.site.log.debug("Pex result: from %s peers got %s new peers." % (done, total_added))
+        self.log.debug("Pex result: from %s peers got %s new peers." % (done, total_added))
 
     def updateWebsocket(self, **kwargs):
         if kwargs:
