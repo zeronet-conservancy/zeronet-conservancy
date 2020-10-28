@@ -46,6 +46,7 @@ class Peer(object):
         self.is_tracker_connection = False  # Tracker connection instead of normal peer
         self.reputation = 0  # More likely to connect if larger
         self.last_content_json_update = 0.0  # Modify date of last received content.json
+        self.protected = 0
 
         self.connection_error = 0  # Series of connection error
         self.hash_failed = 0  # Number of bad files from peer
@@ -74,8 +75,25 @@ class Peer(object):
 
         logger.log(self.log_level, "%s:%s %s" % (self.ip, self.port, text))
 
+    # Site marks its Peers protected, if it has not enough peers connected.
+    # This is to be used to prevent disconnecting from peers when doing
+    # a periodic cleanup.
+    def markProtected(self, interval=60*20):
+        self.protected = time.time() + interval
+
+    def isProtected(self):
+        if self.protected > 0:
+            if self.protected < time.time():
+                self.protected = 0
+        return self.protected > 0
+
     def isConnected(self):
+        if self.connection and not self.connection.connected:
+            self.connection = None
         return self.connection and self.connection.connected
+
+    def isTtlExpired(self, ttl):
+        return (time.time() - self.time_found) > ttl
 
     # Connect to host
     def connect(self, connection=None):
@@ -114,6 +132,11 @@ class Peer(object):
                          (Debug.formatException(err), self.connection_error, self.hash_failed))
                 self.connection = None
         return self.connection
+
+    def disconnect(self, reason="Unknown"):
+        if self.connection:
+            self.connection.close(reason)
+            self.connection = None
 
     # Check if we have connection to peer
     def findConnection(self):
@@ -400,8 +423,7 @@ class Peer(object):
         if self.site and self in self.site.peers_recent:
             self.site.peers_recent.remove(self)
 
-        if self.connection:
-            self.connection.close(reason)
+        self.disconnect(reason)
 
     # - EVENTS -
 

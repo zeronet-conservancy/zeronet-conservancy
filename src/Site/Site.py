@@ -40,6 +40,9 @@ class Site(object):
         self.log = logging.getLogger("Site:%s" % self.address_short)
         self.addEventListeners()
 
+        self.periodic_maintenance_interval = 60 * 20
+        self.periodic_maintenance_timestamp = 0
+
         self.content = None  # Load content.json
         self.peers = {}  # Key: ip:port, Value: Peer.Peer
         self.peers_recent = collections.deque(maxlen=150)
@@ -853,6 +856,11 @@ class Site(object):
         if self.isServing():
             self.announcer.announce(*args, **kwargs)
 
+    # The engine tries to maintain the number of active connections:
+    # >= getPreferableActiveConnectionCount()
+    # and
+    # <= getActiveConnectionCountLimit()
+
     def getPreferableActiveConnectionCount(self):
         if not self.isServing():
             return 0
@@ -874,7 +882,15 @@ class Site(object):
         if len(self.peers) < 50:
             count = max(count, 5)
 
+        count = min(count, config.connected_limit)
+
         return count
+
+    def getActiveConnectionCountLimit(self):
+        count_above_preferable = 2
+        limit = self.getPreferableActiveConnectionCount() + count_above_preferable
+        limit = min(limit, config.connected_limit)
+        return limit
 
     def tryConnectingToMorePeers(self, more=1, pex=True, try_harder=False):
         max_peers = more * 2 + 10
@@ -920,7 +936,7 @@ class Site(object):
         if num is None:
             num = self.getPreferableActiveConnectionCount()
 
-        need = min(len(self.peers), num, config.connected_limit)
+        need = min(len(self.peers), num)
 
         connected = self.bringConnections(
             need=need,
@@ -935,7 +951,14 @@ class Site(object):
                 pex=pex,
                 try_harder=True)
 
+        if connected < num:
+            self.markConnectedPeersProtected()
+
         return connected
+
+    def markConnectedPeersProtected(self):
+        for peer in site.getConnectedPeers():
+            peer.markProtected()
 
     # Return: Probably peers verified to be connectable recently
     def getConnectablePeers(self, need_num=5, ignore=[], allow_private=True):
@@ -1022,53 +1045,87 @@ class Site(object):
                 back.append(peer)
         return back
 
-    # Cleanup probably dead peers and close connection if too much
-    def cleanupPeers(self, peers_protected=[]):
+    def removeDeadPeers(self):
         peers = list(self.peers.values())
-        if len(peers) > 20:
-            # Cleanup old peers
-            removed = 0
-            if len(peers) > 1000:
-                ttl = 60 * 60 * 1
-            else:
-                ttl = 60 * 60 * 4
+        if len(peers) <= 20:
+            return
 
-            for peer in peers:
-                if peer.connection and peer.connection.connected:
-                    continue
-                if peer.connection and not peer.connection.connected:
-                    peer.connection = None  # Dead connection
-                if time.time() - peer.time_found > ttl:  # Not found on tracker or via pex in last 4 hour
-                    peer.remove("Time found expired")
-                    removed += 1
-                if removed > len(peers) * 0.1:  # Don't remove too much at once
-                    break
+        removed = 0
+        if len(peers) > 1000:
+            ttl = 60 * 60 * 1
+        elif len(peers) > 100:
+            ttl = 60 * 60 * 4
+        else:
+            ttl = 60 * 60 * 8
 
-            if removed:
-                self.log.debug("Cleanup peers result: Removed %s, left: %s" % (removed, len(self.peers)))
+        for peer in peers:
+            if peer.isConnected() or peer.isProtected():
+                continue
+            if peer.isTtlExpired(ttl):
+                peer.remove("TTL expired")
+                removed += 1
+            if removed > len(peers) * 0.1:  # Don't remove too much at once
+                break
 
-        # Close peers over the limit
-        closed = 0
-        connected_peers = [peer for peer in self.getConnectedPeers() if peer.connection.connected]  # Only fully connected peers
-        need_to_close = len(connected_peers) - config.connected_limit
+        if removed:
+            self.log.debug("Cleanup peers result: Removed %s, left: %s" % (removed, len(self.peers)))
 
-        if closed < need_to_close:
-            # Try to keep connections with more sites
+    # Cleanup probably dead peers and close connection if too much
+    def cleanupPeers(self):
+        self.removeDeadPeers()
+
+        limit = self.getActiveConnectionCountLimit()
+        connected_peers = [peer for peer in self.getConnectedPeers() if peer.isConnected()]  # Only fully connected peers
+        need_to_close = len(connected_peers) - limit
+
+        if need_to_close > 0:
+            closed = 0
             for peer in sorted(connected_peers, key=lambda peer: min(peer.connection.sites, 5)):
-                if not peer.connection:
+                if not peer.isConnected():
                     continue
-                if peer.key in peers_protected:
+                if peer.isProtected():
                     continue
                 if peer.connection.sites > 5:
                     break
-                peer.connection.close("Cleanup peers")
-                peer.connection = None
+                peer.disconnect("Cleanup peers")
                 closed += 1
                 if closed >= need_to_close:
                     break
 
-        if need_to_close > 0:
-            self.log.debug("Connected: %s, Need to close: %s, Closed: %s" % (len(connected_peers), need_to_close, closed))
+            self.log.debug("Connected: %s, Need to close: %s, Closed: %s" % (
+                len(connected_peers), need_to_close, closed))
+
+    def runPeriodicMaintenance(self, startup=False, force=False):
+        if not self.isServing():
+            return False
+
+        scheduled_time = self.periodic_maintenance_timestamp + self.periodic_maintenance_interval
+
+        if time.time() < scheduled_time and not force:
+            return False
+
+        self.periodic_maintenance_timestamp = time.time()
+
+        self.log.debug("runPeriodicMaintenance: startup=%s" % startup)
+
+        if not startup:
+            self.cleanupPeers()
+
+        if self.peers:
+            with gevent.Timeout(10, exception=False):
+                self.announcer.announcePex()
+
+        # Last check modification failed
+        if self.content_updated is False:
+            self.update()
+        elif self.bad_files:
+            self.retryBadFiles()
+
+        self.needConnections(check_site_on_reconnect=True)
+
+        self.periodic_maintenance_timestamp = time.time()
+
+        return True
 
     # Send hashfield to peers
     def sendMyHashfield(self, limit=5):

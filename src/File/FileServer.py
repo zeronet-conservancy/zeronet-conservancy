@@ -10,6 +10,7 @@ from gevent.server import StreamServer
 
 import util
 from util import helper
+from util import CircularIterator
 from Config import config
 from .FileRequest import FileRequest
 from Peer import PeerPortchecker
@@ -17,7 +18,6 @@ from Site import SiteManager
 from Connection import ConnectionServer
 from Plugin import PluginManager
 from Debug import Debug
-
 
 @PluginManager.acceptPlugins
 class FileServer(ConnectionServer):
@@ -259,55 +259,35 @@ class FileServer(ConnectionServer):
                     check_thread.join(timeout=5)
         self.log.debug("Checksites done in %.3fs" % (time.time() - s))
 
-    def cleanupSites(self):
+    def sitesMaintenanceThread(self):
         import gc
         startup = True
-        time.sleep(5 * 60)  # Sites already cleaned up on startup
-        peers_protected = set([])
+
+        short_timeout = 2
+        long_timeout = 60 * 5
+
+        circular_iterator = CircularIterator()
+
         while 1:
-            # Sites health care every 20 min
+            if circular_iterator.isWrapped():
+                time.sleep(long_timeout)
+                circular_iterator.resetSuccessiveCount()
+                gc.collect()  # Explicit garbage collection
+
             self.log.debug(
-                "Running site cleanup, connections: %s, internet: %s, protected peers: %s" %
-                (len(self.connections), self.has_internet, len(peers_protected))
+                "Running site cleanup, connections: %s, internet: %s" %
+                (len(self.connections), self.has_internet)
             )
 
-            for address, site in list(self.sites.items()):
-                if not site.isServing():
-                    continue
+            site = circular_iterator.next(list(self.sites.values()))
+            if site:
+                done = site.runPeriodicMaintenance(startup=startup)
+                if done:
+                    time.sleep(short_timeout)
+                site = None
 
-                if not startup:
-                    site.cleanupPeers(peers_protected)
-
-                time.sleep(1)  # Prevent too quick request
-
-            peers_protected = set([])
-            for address, site in list(self.sites.items()):
-                if not site.isServing():
-                    continue
-
-                if site.peers:
-                    with gevent.Timeout(10, exception=False):
-                        site.announcer.announcePex()
-
-                # Last check modification failed
-                if site.content_updated is False:
-                    site.update()
-                elif site.bad_files:
-                    site.retryBadFiles()
-
-                # Keep active connections
-                connected_num = site.needConnections(check_site_on_reconnect=True)
-
-                if connected_num < config.connected_limit:
-                    # This site has small amount of peers, protect them from closing
-                    peers_protected.update([peer.key for peer in site.getConnectedPeers()])
-
-                time.sleep(1)  # Prevent too quick request
-
-            site = None
-            gc.collect()  # Implicit garbage collection
-            startup = False
-            time.sleep(60 * 20)
+            if circular_iterator.isWrapped():
+                startup = False
 
     def announceSite(self, site):
         site.announce(mode="update", pex=False)
@@ -399,7 +379,7 @@ class FileServer(ConnectionServer):
 
         thread_reaload_tracker_files = gevent.spawn(self.reloadTrackerFilesThread)
         thread_announce_sites = gevent.spawn(self.announceSites)
-        thread_cleanup_sites = gevent.spawn(self.cleanupSites)
+        thread_sites_maintenance = gevent.spawn(self.sitesMaintenanceThread)
         thread_wakeup_watcher = gevent.spawn(self.wakeupWatcher)
 
         ConnectionServer.listen(self)
