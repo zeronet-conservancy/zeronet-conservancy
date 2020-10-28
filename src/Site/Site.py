@@ -853,36 +853,87 @@ class Site(object):
         if self.isServing():
             self.announcer.announce(*args, **kwargs)
 
-    # Keep connections to get the updates
-    def needConnections(self, num=None, check_site_on_reconnect=False):
-        if num is None:
-            if len(self.peers) < 50:
-                num = 3
-            else:
-                num = 6
-        need = min(len(self.peers), num, config.connected_limit)  # Need 5 peer, but max total peers
+    def getPreferableActiveConnectionCount(self):
+        if not self.isServing():
+            return 0
 
+        age = time.time() - self.settings.get("modified", 0)
+        count = 0
+
+        if age < 60 * 60:
+            count = 10
+        elif age < 60 * 60 * 5:
+            count = 8
+        elif age < 60 * 60 * 24:
+            count = 6
+        elif age < 60 * 60 * 24 * 3:
+            count = 4
+        elif age < 60 * 60 * 24 * 7:
+            count = 2
+
+        if len(self.peers) < 50:
+            count = max(count, 5)
+
+        return count
+
+    def tryConnectingToMorePeers(self, more=1, pex=True, try_harder=False):
+        max_peers = more * 2 + 10
+        if try_harder:
+            max_peers += 10000
+
+        connected = 0
+        for peer in self.getRecentPeers(max_peers):
+            if not peer.isConnected():
+                if pex:
+                    peer.pex()
+                else:
+                    peer.ping(timeout=2.0, tryes=1)
+
+                if peer.isConnected():
+                    connected += 1
+
+                if connected >= more:
+                    break
+
+        return connected
+
+    def bringConnections(self, need=1, check_site_on_reconnect=False, pex=True, try_harder=False):
         connected = len(self.getConnectedPeers())
-
         connected_before = connected
 
         self.log.debug("Need connections: %s, Current: %s, Total: %s" % (need, connected, len(self.peers)))
 
-        if connected < need:  # Need more than we have
-            for peer in self.getRecentPeers(30):
-                if not peer.connection or not peer.connection.connected:  # No peer connection or disconnected
-                    peer.pex()  # Initiate peer exchange
-                    if peer.connection and peer.connection.connected:
-                        connected += 1  # Successfully connected
-                if connected >= need:
-                    break
+        if connected < need:
+            connected += self.tryConnectingToMorePeers(more=(need-connected), pex=pex, try_harder=try_harder)
             self.log.debug(
                 "Connected before: %s, after: %s. Check site: %s." %
                 (connected_before, connected, check_site_on_reconnect)
             )
 
         if check_site_on_reconnect and connected_before == 0 and connected > 0 and self.connection_server.has_internet:
-            gevent.spawn(self.update, check_files=False)
+            self.greenlet_manager.spawn(self.update, check_files=False)
+
+        return connected
+
+    # Keep connections
+    def needConnections(self, num=None, check_site_on_reconnect=False, pex=True):
+        if num is None:
+            num = self.getPreferableActiveConnectionCount()
+
+        need = min(len(self.peers), num, config.connected_limit)
+
+        connected = self.bringConnections(
+            need=need,
+            check_site_on_reconnect=check_site_on_reconnect,
+            pex=pex,
+            try_harder=False)
+
+        if connected < need:
+            self.greenlet_manager.spawnLater(1.0, self.bringConnections,
+                need=need,
+                check_site_on_reconnect=check_site_on_reconnect,
+                pex=pex,
+                try_harder=True)
 
         return connected
 

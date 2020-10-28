@@ -74,6 +74,9 @@ class Peer(object):
 
         logger.log(self.log_level, "%s:%s %s" % (self.ip, self.port, text))
 
+    def isConnected(self):
+        return self.connection and self.connection.connected
+
     # Connect to host
     def connect(self, connection=None):
         if self.reputation < -10:
@@ -249,11 +252,11 @@ class Peer(object):
         return buff
 
     # Send a ping request
-    def ping(self):
+    def ping(self, timeout=10.0, tryes=3):
         response_time = None
-        for retry in range(1, 3):  # Retry 3 times
+        for retry in range(1, tryes):  # Retry 3 times
             s = time.time()
-            with gevent.Timeout(10.0, False):  # 10 sec timeout, don't raise exception
+            with gevent.Timeout(timeout, False):
                 res = self.request("ping")
 
                 if res and "body" in res and res["body"] == b"Pong!":
