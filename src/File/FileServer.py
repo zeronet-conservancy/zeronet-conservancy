@@ -318,11 +318,21 @@ class FileServer(ConnectionServer):
         site.sendMyHashfield(3)
         site.updateHashfield(3)
 
+    # Periodic reloading of tracker files
+    def reloadTrackerFilesThread(self):
+        # TODO:
+        # This should probably be more sophisticated.
+        # We should check if the files have actually changed,
+        # and do it more often.
+        interval = 60 * 10
+        while 1:
+            time.sleep(interval)
+            config.loadTrackersFile()
+
     # Announce sites every 20 min
     def announceSites(self):
         time.sleep(5 * 60)  # Sites already announced on startup
         while 1:
-            config.loadTrackersFile()
             s = time.time()
             for address, site in list(self.sites.items()):
                 if not site.isServing():
@@ -387,6 +397,7 @@ class FileServer(ConnectionServer):
         if check_sites:  # Open port, Update sites, Check files integrity
             gevent.spawn(self.checkSites)
 
+        thread_reaload_tracker_files = gevent.spawn(self.reloadTrackerFilesThread)
         thread_announce_sites = gevent.spawn(self.announceSites)
         thread_cleanup_sites = gevent.spawn(self.cleanupSites)
         thread_wakeup_watcher = gevent.spawn(self.wakeupWatcher)
