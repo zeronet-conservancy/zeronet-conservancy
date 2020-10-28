@@ -32,6 +32,8 @@ class Peer(object):
         self.site = site
         self.key = "%s:%s" % (ip, port)
 
+        self.log_level = logging.DEBUG
+
         self.connection = None
         self.connection_server = connection_server
         self.has_hashfield = False  # Lazy hashfield object not created yet
@@ -59,12 +61,18 @@ class Peer(object):
             return getattr(self, key)
 
     def log(self, text):
-        if not config.verbose:
-            return  # Only log if we are in debug mode
+        if self.log_level <= logging.DEBUG:
+            if not config.verbose:
+                return  # Only log if we are in debug mode
+
+        logger = None
+
         if self.site:
-            self.site.log.debug("%s:%s %s" % (self.ip, self.port, text))
+            logger = self.site.log
         else:
-            logging.debug("%s:%s %s" % (self.ip, self.port, text))
+            logger = logging.getLogger()
+
+        logger.log(self.log_level, "%s:%s %s" % (self.ip, self.port, text))
 
     # Connect to host
     def connect(self, connection=None):
