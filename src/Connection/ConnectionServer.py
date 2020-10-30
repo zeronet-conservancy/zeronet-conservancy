@@ -41,7 +41,11 @@ class ConnectionServer(object):
         self.ip_incoming = {}  # Incoming connections from ip in the last minute to avoid connection flood
         self.broken_ssl_ips = {}  # Peerids of broken ssl connections
         self.ips = {}  # Connection by ip
+
         self.has_internet = True  # Internet outage detection
+        self.last_outgoing_internet_activity_time = 0 # Last time the application tried to send any data
+        self.last_successful_internet_activity_time = 0 # Last time the application successfully sent or received any data
+        self.internet_outage_threshold = 60 * 2
 
         self.stream_server = None
         self.stream_server_proxy = None
@@ -59,6 +63,8 @@ class ConnectionServer(object):
         self.num_incoming = 0
         self.num_outgoing = 0
         self.had_external_incoming = False
+
+
 
         self.timecorrection = 0.0
         self.pool = Pool(500)  # do not accept more than 500 connections
@@ -252,8 +258,8 @@ class ConnectionServer(object):
         while self.running:
             run_i += 1
             self.ip_incoming = {}  # Reset connected ips counter
-            last_message_time = 0
             s = time.time()
+            self.updateOnlineStatus(None)
             for connection in self.connections[:]:  # Make a copy
                 if connection.ip.endswith(".onion") or config.tor == "always":
                     timeout_multipler = 2
@@ -261,9 +267,6 @@ class ConnectionServer(object):
                     timeout_multipler = 1
 
                 idle = time.time() - max(connection.last_recv_time, connection.start_time, connection.last_message_time)
-                if connection.last_message_time > last_message_time and not connection.is_private_ip:
-                    # Message from local IPs does not means internet connection
-                    last_message_time = connection.last_message_time
 
                 if connection.unpacker and idle > 30:
                     # Delete the unpacker if not needed
@@ -311,18 +314,6 @@ class ConnectionServer(object):
                     # Reset bad action counter every 30 min
                     connection.bad_actions = 0
 
-            # Internet outage detection
-            if time.time() - last_message_time > max(60, 60 * 10 / max(1, float(len(self.connections)) / 50)):
-                # Offline: Last message more than 60-600sec depending on connection number
-                if self.has_internet and last_message_time:
-                    self.has_internet = False
-                    self.onInternetOffline()
-            else:
-                # Online
-                if not self.has_internet:
-                    self.has_internet = True
-                    self.onInternetOnline()
-
             self.timecorrection = self.getTimecorrection()
 
             if time.time() - s > 0.01:
@@ -352,6 +343,48 @@ class ConnectionServer(object):
             num_closed, num_connected_before, config.global_connected_limit, time.time() - s
         ))
         return num_closed
+
+    # Internet outage detection
+    def updateOnlineStatus(self, connection, outgoing_activity=False, successful_activity=False):
+
+        now = time.time()
+
+        if connection and not connection.is_private_ip:
+            if outgoing_activity:
+                self.last_outgoing_internet_activity_time = now
+            if successful_activity:
+                self.last_successful_internet_activity_time = now
+                self.setInternetStatus(True)
+            return
+
+        if not self.last_outgoing_internet_activity_time:
+            return
+
+        if (
+            (self.last_successful_internet_activity_time < now - self.internet_outage_threshold)
+            and
+            (self.last_successful_internet_activity_time < self.last_outgoing_internet_activity_time)
+        ):
+            self.setInternetStatus(False)
+            return
+
+        # This is the old algorithm just in case we missed something
+        idle = now - self.last_successful_internet_activity_time
+        if idle > max(60, 60 * 10 / max(1, float(len(self.connections)) / 50)):
+            # Offline: Last successful activity more than 60-600sec depending on connection number
+            self.setInternetStatus(False)
+            return
+
+    def setInternetStatus(self, status):
+        if self.has_internet == status:
+            return
+
+        self.has_internet = status
+
+        if self.has_internet:
+            gevent.spawn(self.onInternetOnline)
+        else:
+            gevent.spawn(self.onInternetOffline)
 
     def onInternetOnline(self):
         self.log.info("Internet online")

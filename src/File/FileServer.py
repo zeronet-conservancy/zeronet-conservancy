@@ -238,17 +238,50 @@ class FileServer(ConnectionServer):
 
         return res
 
+    # Returns False if Internet is immediately available
+    # Returns True if we've spent some time waiting for Internet
+    def waitForInternetOnline(self):
+        if self.has_internet:
+            return False
+
+        while not self.has_internet:
+            time.sleep(15)
+            if self.has_internet:
+                break
+            if not self.check_pool.full():
+                self.check_pool.spawn(self.updateRandomSite)
+
+        return True
+
+    def updateRandomSite(self, site_addresses=None, check_files=False):
+        if not site_addresses:
+            site_addresses = self.getSiteAddresses()
+
+        site_addresses = random.sample(site_addresses, 1)
+        if len(site_addresses) < 1:
+            return
+
+        address = site_addresses[0]
+        site = self.sites.get(address, None)
+
+        if not site or not site.isServing():
+            return
+
+        log.debug("Checking randomly chosen site: %s", site.address_short)
+
+        self.checkSite(site, check_files=check_files)
+
     # Check site file integrity
     def checkSite(self, site, check_files=False):
-        if not site.isServing():
+        if not site or not site.isServing():
             return
 
         quick_start = len(site.peers) >= 50
 
         if quick_start:
-            log.debug("Checking site: %s (quick start)" % (site.address))
+            log.debug("Checking site: %s (quick start)", site.address_short)
         else:
-            log.debug("Checking site: %s" % (site.address))
+            log.debug("Checking site: %s", site.address_short)
 
         if quick_start:
             site.setDelayedStartupAnnounce()
@@ -291,7 +324,12 @@ class FileServer(ConnectionServer):
 
             if (not site) or (not site.isServing()):
                 continue
-            check_thread = self.check_pool.spawn(self.checkSite, site, check_files)  # Check in new thread
+
+            while 1:
+                self.waitForInternetOnline()
+                self.check_pool.spawn(self.checkSite, site, check_files)
+                if not self.waitForInternetOnline():
+                    break
 
             if time.time() - progress_print_time > 60:
                 progress_print_time = time.time()
@@ -313,21 +351,25 @@ class FileServer(ConnectionServer):
             else:
                 time.sleep(1)
 
-        log.info("Checking sites: finished in %.3fs" % (time.time() - start_time))
+        log.info("Checking sites: finished in %.2fs" % (time.time() - start_time))
 
-    def sitesMaintenanceThread(self):
-        import gc
+    def sitesMaintenanceThread(self, mode="full"):
         startup = True
 
         short_timeout = 2
-        long_timeout = 60 * 2
+        min_long_timeout = 10
+        max_long_timeout = 60 * 10
+        long_timeout = min_long_timeout
+        short_cycle_time_limit = 60 * 2
 
         while 1:
             time.sleep(long_timeout)
-            gc.collect()  # Explicit garbage collection
+
+            start_time = time.time()
 
             log.debug(
-                "Starting maintenance cycle: connections=%s, internet=%s",
+                "Starting <%s> maintenance cycle: connections=%s, internet=%s",
+                mode,
                 len(self.connections), self.has_internet
             )
             start_time = time.time()
@@ -341,7 +383,7 @@ class FileServer(ConnectionServer):
                 if (not site) or (not site.isServing()):
                     continue
 
-                log.debug("Running maintenance for site: %s", site.address)
+                log.debug("Running maintenance for site: %s", site.address_short)
 
                 done = site.runPeriodicMaintenance(startup=startup)
                 site = None
@@ -349,14 +391,67 @@ class FileServer(ConnectionServer):
                     sites_processed += 1
                     time.sleep(short_timeout)
 
-            log.debug("Maintenance cycle finished in %.3fs. Total sites: %d. Processed sites: %d",
+                # If we host hundreds of sites, the full maintenance cycle may take very
+                # long time, especially on startup ( > 1 hour).
+                # This means we are not able to run the maintenance procedure for active
+                # sites frequently enough using just a single maintenance thread.
+                # So we run 2 maintenance threads:
+                #  * One running full cycles.
+                #  * And one running short cycles for the most active sites.
+                # When the short cycle runs out of the time limit, it restarts
+                # from the beginning of the site list.
+                if mode == "short" and time.time() - start_time > short_cycle_time_limit:
+                    break
+
+            log.debug("<%s> maintenance cycle finished in %.2fs. Total sites: %d. Processed sites: %d. Timeout: %d",
+                mode,
                 time.time() - start_time,
                 len(site_addresses),
-                sites_processed
+                sites_processed,
+                long_timeout
             )
+
+            if sites_processed:
+                long_timeout = max(int(long_timeout / 2), min_long_timeout)
+            else:
+                long_timeout = min(long_timeout + 1, max_long_timeout)
 
             site_addresses = None
             startup = False
+
+    def keepAliveThread(self):
+        # This thread is mostly useless on a loaded system, since it never does
+        # any works, if we have active traffic.
+        #
+        # We should initiate some network activity to detect the Internet outage
+        # and avoid false positives. We normally have some network activity
+        # initiated by various parts on the application as well as network peers.
+        # So it's not a problem.
+        #
+        # However, if it actually happens that we have no network traffic for
+        # some time (say, we host just a couple of inactive sites, and no peers
+        # are interested in connecting to them), we initiate some traffic by
+        # performing the update for a random site. It's way better than just
+        # silly pinging a random peer for no profit.
+        while 1:
+            threshold = self.internet_outage_threshold / 2.0
+            time.sleep(threshold / 2.0)
+            self.waitForInternetOnline()
+            last_activity_time = max(
+                self.last_successful_internet_activity_time,
+                self.last_outgoing_internet_activity_time)
+            now = time.time()
+            if not len(self.sites):
+                continue
+            if last_activity_time > now - threshold:
+                continue
+            if self.check_pool.full():
+                continue
+
+            log.info("No network activity for %.2fs. Running an update for a random site.",
+                now - last_activity_time
+            )
+            self.check_pool.spawn(self.updateRandomSite)
 
     # Periodic reloading of tracker files
     def reloadTrackerFilesThread(self):
@@ -420,7 +515,9 @@ class FileServer(ConnectionServer):
             gevent.spawn(self.checkSites)
 
         thread_reaload_tracker_files = gevent.spawn(self.reloadTrackerFilesThread)
-        thread_sites_maintenance = gevent.spawn(self.sitesMaintenanceThread)
+        thread_sites_maintenance_full = gevent.spawn(self.sitesMaintenanceThread, mode="full")
+        thread_sites_maintenance_short = gevent.spawn(self.sitesMaintenanceThread, mode="short")
+        thread_keep_alive = gevent.spawn(self.keepAliveThread)
         thread_wakeup_watcher = gevent.spawn(self.wakeupWatcher)
 
         ConnectionServer.listen(self)

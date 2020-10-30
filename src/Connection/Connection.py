@@ -442,6 +442,7 @@ class Connection(object):
     def handleMessage(self, message):
         cmd = message["cmd"]
 
+        self.updateOnlineStatus(successful_activity=True)
         self.last_message_time = time.time()
         self.last_cmd_recv = cmd
         if cmd == "response":  # New style response
@@ -504,6 +505,7 @@ class Connection(object):
 
     # Send data to connection
     def send(self, message, streaming=False):
+        self.updateOnlineStatus(outgoing_activity=True)
         self.last_send_time = time.time()
         if config.debug_socket:
             self.log("Send: %s, to: %s, streaming: %s, site: %s, inner_path: %s, req_id: %s" % (
@@ -543,6 +545,11 @@ class Connection(object):
                 message = None
                 with self.send_lock:
                     self.sock.sendall(data)
+            # XXX: Should not be used here:
+            # self.updateOnlineStatus(successful_activity=True)
+            # Looks like self.sock.sendall() returns normally, instead of
+            # raising an Exception (at least, some times).
+            # So the only way of detecting the network activity is self.handleMessage()
         except Exception as err:
             self.close("Send error: %s (cmd: %s)" % (err, stat_key))
             return False
@@ -633,3 +640,8 @@ class Connection(object):
         self.sock = None
         self.unpacker = None
         self.event_connected = None
+
+    def updateOnlineStatus(self, outgoing_activity=False, successful_activity=False):
+        self.server.updateOnlineStatus(self,
+            outgoing_activity=outgoing_activity,
+            successful_activity=successful_activity)

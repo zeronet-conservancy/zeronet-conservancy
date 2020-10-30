@@ -1177,6 +1177,7 @@ class Site(object):
             self.log.debug("Connected: %s, Need to close: %s, Closed: %s" % (
                 len(connected_peers), need_to_close, closed))
 
+    @util.Noparallel(queue=True)
     def runPeriodicMaintenance(self, startup=False, force=False):
         if not self.isServing():
             return False
