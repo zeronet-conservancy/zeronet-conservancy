@@ -33,6 +33,7 @@ class SiteAnnouncer(object):
         self.peer_id = self.site.connection_server.peer_id
         self.tracker_circular_iterator = CircularIterator()
         self.time_last_announce = 0
+        self.supported_tracker_count = 0
 
     def getTrackers(self):
         return config.trackers
@@ -49,6 +50,12 @@ class SiteAnnouncer(object):
             trackers = [tracker for tracker in trackers if helper.getIpType(self.getAddressParts(tracker)["ip"]) != "ipv6"]
 
         return trackers
+
+    # Returns a cached value of len(self.getSupportedTrackers()), which can be
+    # inacurate.
+    # To be used from Site for estimating available tracker count.
+    def getSupportedTrackerCount(self):
+        return self.supported_tracker_count
 
     def shouldTrackerBeTemporarilyIgnored(self, tracker, mode, force):
         if not tracker:
@@ -70,6 +77,8 @@ class SiteAnnouncer(object):
 
     def getAnnouncingTrackers(self, mode, force):
         trackers = self.getSupportedTrackers()
+
+        self.supported_tracker_count = len(trackers)
 
         if trackers and (mode == "update" or mode == "more"):
 
@@ -116,7 +125,7 @@ class SiteAnnouncer(object):
             back.append("onion")
         return back
 
-    @util.Noparallel(blocking=False)
+    @util.Noparallel()
     def announce(self, force=False, mode="start", pex=True):
         if time.time() - self.time_last_announce < 30 and not force:
             return  # No reannouncing within 30 secs

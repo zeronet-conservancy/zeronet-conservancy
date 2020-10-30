@@ -28,6 +28,38 @@ from File import FileServer
 from .SiteAnnouncer import SiteAnnouncer
 from . import SiteManager
 
+class ScaledTimeoutHandler:
+    def __init__(self, val_min, val_max, handler=None, scaler=None):
+        self.val_min = val_min
+        self.val_max = val_max
+        self.timestamp = 0
+        self.handler = handler
+        self.scaler = scaler
+        self.log = logging.getLogger("ScaledTimeoutHandler")
+
+    def isExpired(self, scale):
+        interval = scale * (self.val_max - self.val_min) + self.val_min
+        expired_at = self.timestamp + interval
+        now = time.time()
+        expired = (now > expired_at)
+        if expired:
+            self.log.debug(
+                "Expired: [%d..%d]: scale=%f, interval=%f",
+                self.val_min, self.val_max, scale, interval)
+        return expired
+
+    def done(self):
+        self.timestamp = time.time()
+
+    def run(self, *args, **kwargs):
+        do_run = kwargs["force"] or self.isExpired(self.scaler())
+        if do_run:
+            result = self.handler(*args, **kwargs)
+            if result:
+                self.done()
+            return result
+        else:
+            return None
 
 @PluginManager.acceptPlugins
 class Site(object):
@@ -40,8 +72,16 @@ class Site(object):
         self.log = logging.getLogger("Site:%s" % self.address_short)
         self.addEventListeners()
 
-        self.periodic_maintenance_interval = 60 * 20
-        self.periodic_maintenance_timestamp = 0
+        self.periodic_maintenance_handlers = [
+            ScaledTimeoutHandler(60 * 30, 60 * 2,
+                handler=self.periodicMaintenanceHandler_announce,
+                scaler=self.getAnnounceRating),
+            ScaledTimeoutHandler(60 * 20, 60 * 10,
+                handler=self.periodicMaintenanceHandler_general,
+                scaler=self.getActivityRating)
+        ]
+
+        self.delayed_startup_announce = False
 
         self.content = None  # Load content.json
         self.peers = {}  # Key: ip:port, Value: Peer.Peer
@@ -852,9 +892,62 @@ class Site(object):
             peer.found(source)
             return peer
 
+    def setDelayedStartupAnnounce(self):
+        self.delayed_startup_announce = True
+
+    def applyDelayedStartupAnnounce(self):
+        if self.delayed_startup_announce:
+            self.delayed_startup_announce = False
+            self.announce(mode="startup")
+            return True
+        return False
+
     def announce(self, *args, **kwargs):
         if self.isServing():
             self.announcer.announce(*args, **kwargs)
+
+    def getActivityRating(self, force_safe=False):
+        age = time.time() - self.settings.get("modified", 0)
+
+        if age < 60 * 60:
+            rating = 1.0
+        elif age < 60 * 60 * 5:
+            rating = 0.8
+        elif age < 60 * 60 * 24:
+            rating = 0.6
+        elif age < 60 * 60 * 24 * 3:
+            rating = 0.4
+        elif age < 60 * 60 * 24 * 7:
+            rating = 0.2
+        else:
+            rating = 0.0
+
+        force_safe = force_safe or config.expose_no_ownership
+
+        if (not force_safe) and self.settings["own"]:
+            rating = min(rating, 0.6)
+
+        return rating
+
+    def getAnnounceRating(self):
+        # rare          frequent
+        # announces    announces
+        # 0 ------------------- 1
+        # activity ------------->    -- active site   ==> frequent announces
+        # <---------------- peers    -- many peers    ==> rare announces
+        # trackers ------------->    -- many trackers ==> frequent announces to iterate over more trackers
+
+        activity_rating = self.getActivityRating(force_safe=True)
+
+        peer_count = len(self.peers)
+        peer_rating = 1.0 - min(peer_count, 50) / 50.0
+
+        tracker_count = self.announcer.getSupportedTrackerCount()
+        tracker_count = max(tracker_count, 1)
+        tracker_rating = 1.0 - (1.0 / tracker_count)
+
+        v = [activity_rating, peer_rating, tracker_rating]
+        return sum(v) / float(len(v))
 
     # The engine tries to maintain the number of active connections:
     # >= getPreferableActiveConnectionCount()
@@ -866,18 +959,7 @@ class Site(object):
             return 0
 
         age = time.time() - self.settings.get("modified", 0)
-        count = 0
-
-        if age < 60 * 60:
-            count = 10
-        elif age < 60 * 60 * 5:
-            count = 8
-        elif age < 60 * 60 * 24:
-            count = 6
-        elif age < 60 * 60 * 24 * 3:
-            count = 4
-        elif age < 60 * 60 * 24 * 7:
-            count = 2
+        count = int(10 * self.getActivityRating(force_safe=True))
 
         if len(self.peers) < 50:
             count = max(count, 5)
@@ -957,7 +1039,7 @@ class Site(object):
         return connected
 
     def markConnectedPeersProtected(self):
-        for peer in site.getConnectedPeers():
+        for peer in self.getConnectedPeers():
             peer.markProtected()
 
     # Return: Probably peers verified to be connectable recently
@@ -1099,32 +1181,54 @@ class Site(object):
         if not self.isServing():
             return False
 
-        scheduled_time = self.periodic_maintenance_timestamp + self.periodic_maintenance_interval
+        self.log.debug("runPeriodicMaintenance: startup=%s, force=%s" % (startup, force))
 
-        if time.time() < scheduled_time and not force:
+        result = False
+
+        for handler in self.periodic_maintenance_handlers:
+            result = result | bool(handler.run(startup=startup, force=force))
+
+        return result
+
+    def periodicMaintenanceHandler_general(self, startup=False, force=False):
+        if not self.isServing():
             return False
 
-        self.periodic_maintenance_timestamp = time.time()
+        self.applyDelayedStartupAnnounce()
 
-        self.log.debug("runPeriodicMaintenance: startup=%s" % startup)
+        if not self.peers:
+            return False
+
+        self.log.debug("periodicMaintenanceHandler_general: startup=%s, force=%s" % (startup, force))
 
         if not startup:
             self.cleanupPeers()
 
-        if self.peers:
-            with gevent.Timeout(10, exception=False):
-                self.announcer.announcePex()
+        self.needConnections(check_site_on_reconnect=True)
 
-        # Last check modification failed
-        if self.content_updated is False:
+        with gevent.Timeout(10, exception=False):
+            self.announcer.announcePex()
+
+        self.sendMyHashfield(3)
+        self.updateHashfield(3)
+
+        if self.content_updated is False: # Last check modification failed
             self.update()
         elif self.bad_files:
             self.retryBadFiles()
 
-        self.needConnections(check_site_on_reconnect=True)
+        return True
 
-        self.periodic_maintenance_timestamp = time.time()
+    def periodicMaintenanceHandler_announce(self, startup=False, force=False):
+        if not self.isServing():
+            return False
 
+        self.log.debug("periodicMaintenanceHandler_announce: startup=%s, force=%s" % (startup, force))
+
+        if self.applyDelayedStartupAnnounce():
+            return True
+
+        self.announce(mode="update", pex=False)
         return True
 
     # Send hashfield to peers
