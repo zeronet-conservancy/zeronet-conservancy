@@ -386,6 +386,9 @@ class ConnectionServer(object):
         else:
             gevent.spawn(self.onInternetOffline)
 
+    def isInternetOnline(self):
+        return self.has_internet
+
     def onInternetOnline(self):
         self.log.info("Internet online")
 

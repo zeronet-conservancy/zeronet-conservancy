@@ -76,7 +76,7 @@ class Site(object):
             ScaledTimeoutHandler(60 * 30, 60 * 2,
                 handler=self.periodicMaintenanceHandler_announce,
                 scaler=self.getAnnounceRating),
-            ScaledTimeoutHandler(60 * 20, 60 * 10,
+            ScaledTimeoutHandler(60 * 30, 60 * 5,
                 handler=self.periodicMaintenanceHandler_general,
                 scaler=self.getActivityRating)
         ]
@@ -91,6 +91,8 @@ class Site(object):
         self.worker_manager = WorkerManager(self)  # Handle site download from other peers
         self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
         self.content_updated = None  # Content.js update time
+        self.last_check_files_time = 0
+        self.last_online_update = 0
         self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
         self.page_requested = False  # Page viewed in browser
         self.websockets = []  # Active site websocket connections
@@ -564,6 +566,44 @@ class Site(object):
 
         self.updateWebsocket(updated=True)
 
+    def considerUpdate(self):
+        if not self.isServing():
+            return
+
+        online = self.connection_server.isInternetOnline()
+
+        if online and time.time() - self.last_online_update < 60 * 10:
+            with gevent.Timeout(10, exception=False):
+                self.announcer.announcePex()
+            return
+
+        # TODO: there should be a configuration options controlling:
+        # * whether to check files on the program startup
+        # * whether to check files during the run time and how often
+        check_files = self.last_check_files_time == 0
+
+        self.last_check_files_time = time.time()
+
+        # quick start, avoiding redundant announces
+        if len(self.peers) >= 50:
+            if len(self.getConnectedPeers()) > 4:
+                pass # Don't run announce() at all
+            else:
+                self.setDelayedStartupAnnounce()
+        else:
+            self.announce(mode="startup")
+
+        online = online and self.connection_server.isInternetOnline()
+
+        self.update(check_files=check_files)
+        self.sendMyHashfield()
+        self.updateHashfield()
+
+        online = online and self.connection_server.isInternetOnline()
+
+        if online:
+            self.last_online_update = time.time()
+
     # Update site by redownload all content.json
     def redownloadContents(self):
         # Download all content.json again
@@ -927,6 +967,14 @@ class Site(object):
         if (not force_safe) and self.settings["own"]:
             rating = min(rating, 0.6)
 
+        if self.content_updated is False: # Last check modification failed
+            rating += 0.1
+        elif self.bad_files:
+            rating += 0.1
+
+        if rating > 1.0:
+            rating = 1.0
+
         return rating
 
     def getAnnounceRating(self):
@@ -1210,13 +1258,9 @@ class Site(object):
         with gevent.Timeout(10, exception=False):
             self.announcer.announcePex()
 
+        self.update()
         self.sendMyHashfield(3)
         self.updateHashfield(3)
-
-        if self.content_updated is False: # Last check modification failed
-            self.update()
-        elif self.bad_files:
-            self.retryBadFiles()
 
         return True
 
