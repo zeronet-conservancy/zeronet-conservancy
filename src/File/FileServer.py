@@ -33,8 +33,11 @@ class FileServer(ConnectionServer):
         # self.log = logging.getLogger("FileServer")
         # The value of self.log will be overwritten in ConnectionServer.__init__()
 
+        self.recheck_port = True
+
         self.update_pool = gevent.pool.Pool(5)
         self.update_start_time = 0
+        self.update_sites_task_next_nr = 1
 
         self.supported_ip_types = ["ipv4"]  # Outgoing ip_type support
         if helper.getIpType(ip) == "ipv6" or self.isIpv6Supported():
@@ -158,7 +161,13 @@ class FileServer(ConnectionServer):
 
     def onInternetOnline(self):
         log.info("Internet online")
-        gevent.spawn(self.updateSites, force_port_check=True)
+        invalid_interval=(
+            self.internet_offline_since - self.internet_outage_threshold - random.randint(60 * 5, 60 * 10),
+            time.time()
+        )
+        self.invalidateUpdateTime(invalid_interval)
+        self.recheck_port = True
+        gevent.spawn(self.updateSites)
 
     # Reload the FileRequest class to prevent restarts in debug mode
     def reload(self):
@@ -237,6 +246,17 @@ class FileServer(ConnectionServer):
 
         return res
 
+    @util.Noparallel(queue=True)
+    def recheckPort(self):
+        if not self.recheck_port:
+            return
+
+        if not self.port_opened or self.recheck_port:
+            self.portCheck()
+            if not self.port_opened["ipv4"]:
+                self.tor_manager.startOnions()
+            self.recheck_port = False
+
     # Returns False if Internet is immediately available
     # Returns True if we've spent some time waiting for Internet
     def waitForInternetOnline(self):
@@ -250,6 +270,7 @@ class FileServer(ConnectionServer):
             if not self.update_pool.full():
                 self.update_pool.spawn(self.updateRandomSite)
 
+        self.recheckPort()
         return True
 
     def updateRandomSite(self, site_addresses=None):
@@ -270,46 +291,68 @@ class FileServer(ConnectionServer):
 
         self.updateSite(site)
 
-    def updateSite(self, site):
+    def updateSite(self, site, check_files=False, dry_run=False):
         if not site or not site.isServing():
-            return
-        site.considerUpdate()
+            return False
+        return site.considerUpdate(check_files=check_files, dry_run=dry_run)
 
-    @util.Noparallel()
-    def updateSites(self, force_port_check=False):
-        log.info("Checking sites: force_port_check=%s", force_port_check)
+    def getSite(self, address):
+        return self.sites.get(address, None)
+
+    def invalidateUpdateTime(self, invalid_interval):
+        for address in self.getSiteAddresses():
+            site = self.getSite(address)
+            if site:
+                site.invalidateUpdateTime(invalid_interval)
+
+    def updateSites(self, check_files=False):
+        task_nr = self.update_sites_task_next_nr
+        self.update_sites_task_next_nr += 1
+
+        task_description = "updateSites: #%d, check_files=%s" % (task_nr, check_files)
+        log.info("%s: started", task_description)
 
         # Don't wait port opening on first startup. Do the instant check now.
         if len(self.sites) <= 2:
-            sites_checking = True
             for address, site in list(self.sites.items()):
-                gevent.spawn(self.updateSite, site)
+                self.updateSite(site, check_files=check_files)
 
-        # Test and open port if not tested yet
-        if not self.port_opened or force_port_check:
-            self.portCheck()
-            if not self.port_opened["ipv4"]:
-                self.tor_manager.startOnions()
+        all_site_addresses = self.getSiteAddresses()
+        site_addresses = [
+            address for address in all_site_addresses
+            if self.updateSite(self.getSite(address), check_files=check_files, dry_run=True)
+        ]
 
-        site_addresses = self.getSiteAddresses()
+        log.info("%s: chosen %d sites (of %d)", task_description, len(site_addresses), len(all_site_addresses))
 
         sites_processed = 0
+        sites_skipped = 0
         start_time = time.time()
         self.update_start_time = start_time
         progress_print_time = time.time()
 
         # Check sites integrity
         for site_address in site_addresses:
-            site = self.sites.get(site_address, None)
+            if check_files:
+                time.sleep(10)
+            else:
+                time.sleep(1)
+
+            site = self.getSite(site_address)
+            if not self.updateSite(site, check_files=check_files, dry_run=True):
+                sites_skipped += 1
+                continue
 
             sites_processed += 1
 
-            if (not site) or (not site.isServing()):
-                continue
-
             while 1:
                 self.waitForInternetOnline()
-                self.update_pool.spawn(self.updateSite, site)
+                thread = self.update_pool.spawn(self.updateSite,
+                    site, check_files=check_files)
+                if check_files:
+                    # Limit the concurency
+                    # ZeroNet may be laggy when running from HDD.
+                    thread.join(timeout=60)
                 if not self.waitForInternetOnline():
                     break
 
@@ -319,21 +362,17 @@ class FileServer(ConnectionServer):
                 time_per_site = time_spent / float(sites_processed)
                 sites_left = len(site_addresses) - sites_processed
                 time_left = time_per_site * sites_left
-                log.info("Checking sites: DONE: %d sites in %.2fs (%.2fs per site); LEFT: %d sites in %.2fs",
+                log.info("%s: DONE: %d sites in %.2fs (%.2fs per site); SKIPPED: %d sites; LEFT: %d sites in %.2fs",
+                    task_description,
                     sites_processed,
                     time_spent,
                     time_per_site,
+                    sites_skipped,
                     sites_left,
                     time_left
                 )
 
-            if (self.update_start_time != start_time) and self.update_pool.full():
-                # Another updateSites() is running, throttling now...
-                time.sleep(5)
-            else:
-                time.sleep(1)
-
-        log.info("Checking sites: finished in %.2fs" % (time.time() - start_time))
+        log.info("%s: finished in %.2fs", task_description, time.time() - start_time)
 
     def sitesMaintenanceThread(self, mode="full"):
         startup = True
@@ -402,7 +441,7 @@ class FileServer(ConnectionServer):
             startup = False
 
     def keepAliveThread(self):
-        # This thread is mostly useless on a loaded system, since it never does
+        # This thread is mostly useless on a system under load, since it never does
         # any works, if we have active traffic.
         #
         # We should initiate some network activity to detect the Internet outage
@@ -466,7 +505,13 @@ class FileServer(ConnectionServer):
                 log.info("IP change detected from %s to %s" % (last_my_ips, my_ips))
 
             if is_time_changed or is_ip_changed:
-                self.updateSites(force_port_check=True)
+                invalid_interval=(
+                    last_time - self.internet_outage_threshold - random.randint(60 * 5, 60 * 10),
+                    time.time()
+                )
+                self.invalidateUpdateTime(invalid_interval)
+                self.recheck_port = True
+                gevent.spawn(self.updateSites)
 
             last_time = time.time()
             last_my_ips = my_ips
@@ -494,7 +539,9 @@ class FileServer(ConnectionServer):
             DebugReloader.watcher.addCallback(self.reload)
 
         if check_sites:  # Open port, Update sites, Check files integrity
-            gevent.spawn(self.updateSites)
+            gevent.spawn(self.updateSites, check_files=True)
+
+        gevent.spawn(self.updateSites)
 
         thread_reaload_tracker_files = gevent.spawn(self.reloadTrackerFilesThread)
         thread_sites_maintenance_full = gevent.spawn(self.sitesMaintenanceThread, mode="full")

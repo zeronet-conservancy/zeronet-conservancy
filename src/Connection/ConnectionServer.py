@@ -43,6 +43,8 @@ class ConnectionServer(object):
         self.ips = {}  # Connection by ip
 
         self.has_internet = True  # Internet outage detection
+        self.internet_online_since = 0
+        self.internet_offline_since = 0
         self.last_outgoing_internet_activity_time = 0 # Last time the application tried to send any data
         self.last_successful_internet_activity_time = 0 # Last time the application successfully sent or received any data
         self.internet_outage_threshold = 60 * 2
@@ -382,8 +384,10 @@ class ConnectionServer(object):
         self.has_internet = status
 
         if self.has_internet:
+            self.internet_online_since = time.time()
             gevent.spawn(self.onInternetOnline)
         else:
+            self.internet_offline_since = time.time()
             gevent.spawn(self.onInternetOffline)
 
     def isInternetOnline(self):

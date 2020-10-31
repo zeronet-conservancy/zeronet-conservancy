@@ -81,8 +81,6 @@ class Site(object):
                 scaler=self.getActivityRating)
         ]
 
-        self.delayed_startup_announce = False
-
         self.content = None  # Load content.json
         self.peers = {}  # Key: ip:port, Value: Peer.Peer
         self.peers_recent = collections.deque(maxlen=150)
@@ -93,6 +91,7 @@ class Site(object):
         self.content_updated = None  # Content.js update time
         self.last_check_files_time = 0
         self.last_online_update = 0
+        self.startup_announce_done = 0
         self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
         self.page_requested = False  # Page viewed in browser
         self.websockets = []  # Active site websocket connections
@@ -525,6 +524,28 @@ class Site(object):
         time.sleep(0.1)
         return queried
 
+    def invalidateUpdateTime(self, invalid_interval):
+        a, b = invalid_interval
+        if b is None:
+            b = time.time()
+        if a is None:
+            a = b
+        if a <= self.last_online_update and self.last_online_update <= b:
+            self.last_online_update = 0
+            self.log.info("Update time invalidated")
+
+    def isUpdateTimeValid(self):
+        if not self.last_online_update:
+            return False
+        expirationThreshold = 60 * 60 * 6
+        return self.last_online_update > time.time() - expirationThreshold
+
+    def refreshUpdateTime(self, valid=True):
+        if valid:
+            self.last_online_update = time.time()
+        else:
+            self.last_online_update = 0
+
     # Update content.json from peers and download changed files
     # Return: None
     @util.Noparallel()
@@ -564,45 +585,56 @@ class Site(object):
         else:
             self.content_updated = time.time()
 
+        self.sendMyHashfield()
+        self.updateHashfield()
+
+        self.refreshUpdateTime(valid=self.connection_server.isInternetOnline())
+
         self.updateWebsocket(updated=True)
 
-    def considerUpdate(self):
+    @util.Noparallel(queue=True, ignore_args=True)
+    def considerUpdate(self, check_files=False, dry_run=False):
         if not self.isServing():
-            return
+            return False
 
         online = self.connection_server.isInternetOnline()
 
-        if online and time.time() - self.last_online_update < 60 * 10:
-            with gevent.Timeout(10, exception=False):
-                self.announcer.announcePex()
-            return
+        run_update = False
+        msg = None
+
+        if not online:
+            run_update = True
+            msg = "network connection seems broken, trying to update the site to check if the network is up"
+        elif check_files:
+            run_update = True
+            msg = "checking site's files..."
+        elif not self.isUpdateTimeValid():
+            run_update = True
+            msg = "update time is not invalid, updating now..."
+
+        if not run_update:
+            return False
+
+        if dry_run:
+            return True
+
+        self.log.debug(msg)
 
         # TODO: there should be a configuration options controlling:
         # * whether to check files on the program startup
         # * whether to check files during the run time and how often
-        check_files = self.last_check_files_time == 0
-
+        check_files = check_files and (self.last_check_files_time == 0)
         self.last_check_files_time = time.time()
 
-        # quick start, avoiding redundant announces
-        if len(self.peers) >= 50:
-            if len(self.getConnectedPeers()) > 4:
-                pass # Don't run announce() at all
-            else:
-                self.setDelayedStartupAnnounce()
-        else:
-            self.announce(mode="startup")
-
-        online = online and self.connection_server.isInternetOnline()
+        if len(self.peers) < 50:
+            self.announce(mode="update")
 
         self.update(check_files=check_files)
-        self.sendMyHashfield()
-        self.updateHashfield()
 
         online = online and self.connection_server.isInternetOnline()
+        self.refreshUpdateTime(valid=online)
 
-        if online:
-            self.last_online_update = time.time()
+        return True
 
     # Update site by redownload all content.json
     def redownloadContents(self):
@@ -932,16 +964,6 @@ class Site(object):
             peer.found(source)
             return peer
 
-    def setDelayedStartupAnnounce(self):
-        self.delayed_startup_announce = True
-
-    def applyDelayedStartupAnnounce(self):
-        if self.delayed_startup_announce:
-            self.delayed_startup_announce = False
-            self.announce(mode="startup")
-            return True
-        return False
-
     def announce(self, *args, **kwargs):
         if self.isServing():
             self.announcer.announce(*args, **kwargs)
@@ -1243,8 +1265,6 @@ class Site(object):
         if not self.isServing():
             return False
 
-        self.applyDelayedStartupAnnounce()
-
         if not self.peers:
             return False
 
@@ -1259,8 +1279,6 @@ class Site(object):
             self.announcer.announcePex()
 
         self.update()
-        self.sendMyHashfield(3)
-        self.updateHashfield(3)
 
         return True
 
@@ -1270,10 +1288,11 @@ class Site(object):
 
         self.log.debug("periodicMaintenanceHandler_announce: startup=%s, force=%s" % (startup, force))
 
-        if self.applyDelayedStartupAnnounce():
-            return True
+        if startup and len(self.peers) < 10:
+            self.announce(mode="startup")
+        else:
+            self.announce(mode="update", pex=False)
 
-        self.announce(mode="update", pex=False)
         return True
 
     # Send hashfield to peers
