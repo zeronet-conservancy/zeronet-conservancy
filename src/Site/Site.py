@@ -610,7 +610,7 @@ class Site(object):
             msg = "checking site's files..."
         elif not self.isUpdateTimeValid():
             run_update = True
-            msg = "update time is not invalid, updating now..."
+            msg = "update time is not valid, updating now..."
 
         if not run_update:
             return False
