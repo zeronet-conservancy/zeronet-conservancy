@@ -33,6 +33,7 @@ class Peer(object):
         self.key = "%s:%s" % (ip, port)
 
         self.log_level = logging.DEBUG
+        self.connection_error_log_level = logging.DEBUG
 
         self.connection = None
         self.connection_server = connection_server
@@ -61,8 +62,10 @@ class Peer(object):
         else:
             return getattr(self, key)
 
-    def log(self, text):
-        if self.log_level <= logging.DEBUG:
+    def log(self, text, log_level = None):
+        if log_level is None:
+            log_level = self.log_level
+        if log_level <= logging.DEBUG:
             if not config.verbose:
                 return  # Only log if we are in debug mode
 
@@ -73,7 +76,7 @@ class Peer(object):
         else:
             logger = logging.getLogger()
 
-        logger.log(self.log_level, "%s:%s %s" % (self.ip, self.port, text))
+        logger.log(log_level, "%s:%s %s" % (self.ip, self.port, text))
 
     # Site marks its Peers protected, if it has not enough peers connected.
     # This is to be used to prevent disconnecting from peers when doing
@@ -124,12 +127,14 @@ class Peer(object):
                     import main
                     connection_server = main.file_server
                 self.connection = connection_server.getConnection(self.ip, self.port, site=self.site, is_tracker_connection=self.is_tracker_connection)
-                self.reputation += 1
-                self.connection.sites += 1
+                if self.connection and self.connection.connected:
+                    self.reputation += 1
+                    self.connection.sites += 1
             except Exception as err:
                 self.onConnectionError("Getting connection error")
                 self.log("Getting connection error: %s (connection_error: %s, hash_failed: %s)" %
-                         (Debug.formatException(err), self.connection_error, self.hash_failed))
+                         (Debug.formatException(err), self.connection_error, self.hash_failed),
+                         log_level=self.connection_error_log_level)
                 self.connection = None
         return self.connection
 
