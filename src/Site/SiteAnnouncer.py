@@ -127,6 +127,9 @@ class SiteAnnouncer(object):
 
     @util.Noparallel()
     def announce(self, force=False, mode="start", pex=True):
+        if not self.site.isServing():
+            return
+
         if time.time() - self.time_last_announce < 30 and not force:
             return  # No reannouncing within 30 secs
 
@@ -300,6 +303,9 @@ class SiteAnnouncer(object):
 
     @util.Noparallel(blocking=False)
     def announcePex(self, query_num=2, need_num=10):
+        if not self.site.isServing():
+            return
+
         self.updateWebsocket(pex="announcing")
 
         peers = self.site.getConnectedPeers()

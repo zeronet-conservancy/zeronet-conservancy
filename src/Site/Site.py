@@ -172,6 +172,8 @@ class Site(object):
     def isServing(self):
         if config.offline:
             return False
+        elif self.connection_server.stopping:
+            return False
         else:
             return self.settings["serving"]
 
@@ -532,7 +534,7 @@ class Site(object):
             a = b
         if a <= self.last_online_update and self.last_online_update <= b:
             self.last_online_update = 0
-            self.log.info("Update time invalidated")
+            self.log.debug("Update time invalidated")
 
     def isUpdateTimeValid(self):
         if not self.last_online_update:
@@ -593,32 +595,11 @@ class Site(object):
         self.updateWebsocket(updated=True)
 
     @util.Noparallel(queue=True, ignore_args=True)
-    def considerUpdate(self, check_files=False, dry_run=False):
-        if not self.isServing():
+    def _considerUpdate_realJob(self, check_files=False, force=False):
+        if not self._considerUpdate_check(check_files=check_files, force=force, log_reason=True):
             return False
 
         online = self.connection_server.isInternetOnline()
-
-        run_update = False
-        msg = None
-
-        if not online:
-            run_update = True
-            msg = "network connection seems broken, trying to update the site to check if the network is up"
-        elif check_files:
-            run_update = True
-            msg = "checking site's files..."
-        elif not self.isUpdateTimeValid():
-            run_update = True
-            msg = "update time is not valid, updating now..."
-
-        if not run_update:
-            return False
-
-        if dry_run:
-            return True
-
-        self.log.debug(msg)
 
         # TODO: there should be a configuration options controlling:
         # * whether to check files on the program startup
@@ -628,6 +609,7 @@ class Site(object):
 
         if len(self.peers) < 50:
             self.announce(mode="update")
+            online = online and self.connection_server.isInternetOnline()
 
         self.update(check_files=check_files)
 
@@ -635,6 +617,39 @@ class Site(object):
         self.refreshUpdateTime(valid=online)
 
         return True
+
+    def _considerUpdate_check(self, check_files=False, force=False, log_reason=False):
+        if not self.isServing():
+            return False
+
+        online = self.connection_server.isInternetOnline()
+
+        run_update = False
+        msg = None
+
+        if force:
+            run_update = True
+            msg = "forcing site update"
+        elif not online:
+            run_update = True
+            msg = "network connection seems broken, trying to update a site to check if the network is up"
+        elif check_files:
+            run_update = True
+            msg = "checking site's files..."
+        elif not self.isUpdateTimeValid():
+            run_update = True
+            msg = "update time is not valid, updating now..."
+
+        if run_update and log_reason:
+            self.log.debug(msg)
+
+        return run_update
+
+    def considerUpdate(self, check_files=False, force=False, dry_run=False):
+        run_update = self._considerUpdate_check(check_files=check_files, force=force)
+        if run_update and not dry_run:
+            run_update = self._considerUpdate_realJob(check_files=check_files, force=force)
+        return run_update
 
     # Update site by redownload all content.json
     def redownloadContents(self):
@@ -1085,6 +1100,9 @@ class Site(object):
 
     # Keep connections
     def needConnections(self, num=None, check_site_on_reconnect=False, pex=True):
+        if not self.connection_server.allowsCreatingConnections():
+            return
+
         if num is None:
             num = self.getPreferableActiveConnectionCount()
 

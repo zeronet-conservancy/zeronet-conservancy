@@ -8,6 +8,7 @@ import gevent
 import msgpack
 from gevent.server import StreamServer
 from gevent.pool import Pool
+import gevent.event
 
 import util
 from util import helper
@@ -35,6 +36,8 @@ class ConnectionServer(object):
         self.port_opened = {}
         self.peer_blacklist = SiteManager.peer_blacklist
 
+        self.managed_pools = {}
+
         self.tor_manager = TorManager(self.ip, self.port)
         self.connections = []  # Connections
         self.whitelist = config.ip_local  # No flood protection on this ips
@@ -53,7 +56,11 @@ class ConnectionServer(object):
         self.stream_server_proxy = None
         self.running = False
         self.stopping = False
+        self.stopping_event = gevent.event.Event()
         self.thread_checker = None
+
+        self.thread_pool = Pool(None)
+        self.managed_pools["thread"] = self.thread_pool
 
         self.stat_recv = defaultdict(lambda: defaultdict(int))
         self.stat_sent = defaultdict(lambda: defaultdict(int))
@@ -70,6 +77,7 @@ class ConnectionServer(object):
 
         self.timecorrection = 0.0
         self.pool = Pool(500)  # do not accept more than 500 connections
+        self.managed_pools["incoming"] = self.pool
 
         # Bittorrent style peerid
         self.peer_id = "-UT3530-%s" % CryptHash.random(12, "base64")
@@ -90,7 +98,7 @@ class ConnectionServer(object):
             return False
         self.running = True
         if check_connections:
-            self.thread_checker = gevent.spawn(self.checkConnections)
+            self.thread_checker = self.spawn(self.checkConnections)
         CryptConnection.manager.loadCerts()
         if config.tor != "disable":
             self.tor_manager.start()
@@ -114,7 +122,7 @@ class ConnectionServer(object):
             return None
 
         if self.stream_server_proxy:
-            gevent.spawn(self.listenProxy)
+            self.spawn(self.listenProxy)
         try:
             self.stream_server.serve_forever()
         except Exception as err:
@@ -126,10 +134,57 @@ class ConnectionServer(object):
         self.log.debug("Stopping %s" % self.stream_server)
         self.stopping = True
         self.running = False
+        self.stopping_event.set()
+        self.onStop()
+
+    def onStop(self):
+        prev_sizes = {}
+        for i in range(60):
+            sizes = {}
+            total_size = 0
+
+            for name, pool in self.managed_pools.items():
+                pool.join(timeout=1)
+                size = len(pool)
+                sizes[name] = size
+                total_size += size
+
+            if total_size == 0:
+                break
+
+            if prev_sizes != sizes:
+                s = ""
+                for name, size in sizes.items():
+                    s += "%s pool: %s, " % (name, size)
+                s += "total: %s" % total_size
+
+                self.log.info("Waiting for tasks in managed pools to stop: %s", s)
+
+                prev_sizes = sizes
+
+        for name, pool in self.managed_pools.items():
+            size = len(pool)
+            if size:
+                self.log.info("Killing %s tasks in %s pool", size, name)
+                pool.kill()
+
         if self.thread_checker:
             gevent.kill(self.thread_checker)
+            self.thread_checker = None
         if self.stream_server:
             self.stream_server.stop()
+
+    # Sleeps the specified amount of time or until ConnectionServer is stopped
+    def sleep(self, t):
+        if t:
+            self.stopping_event.wait(timeout=t)
+        else:
+            time.sleep(t)
+
+    # Spawns a thread that will be waited for on server being stooped (and killed after a timeout)
+    def spawn(self, *args, **kwargs):
+        thread = self.thread_pool.spawn(*args, **kwargs)
+        return thread
 
     def closeConnections(self):
         self.log.debug("Closing all connection: %s" % len(self.connections))
@@ -137,7 +192,7 @@ class ConnectionServer(object):
             connection.close("Close all connections")
 
     def handleIncomingConnection(self, sock, addr):
-        if config.offline:
+        if self.allowsAcceptingConnections():
             sock.close()
             return False
 
@@ -155,7 +210,7 @@ class ConnectionServer(object):
             self.ip_incoming[ip] += 1
             if self.ip_incoming[ip] > 6:  # Allow 6 in 1 minute from same ip
                 self.log.debug("Connection flood detected from %s" % ip)
-                time.sleep(30)
+                self.sleep(30)
                 sock.close()
                 return False
         else:
@@ -207,7 +262,7 @@ class ConnectionServer(object):
                     return connection
 
         # No connection found
-        if create and not config.offline:  # Allow to create new connection if not found
+        if create and self.allowsCreatingConnections():
             if port == 0:
                 raise Exception("This peer is not connectable")
 
@@ -233,7 +288,7 @@ class ConnectionServer(object):
                 raise err
 
             if len(self.connections) > config.global_connected_limit:
-                gevent.spawn(self.checkMaxConnections)
+                self.spawn(self.checkMaxConnections)
 
             return connection
         else:
@@ -256,7 +311,7 @@ class ConnectionServer(object):
 
     def checkConnections(self):
         run_i = 0
-        time.sleep(15)
+        self.sleep(15)
         while self.running:
             run_i += 1
             self.ip_incoming = {}  # Reset connected ips counter
@@ -321,7 +376,7 @@ class ConnectionServer(object):
             if time.time() - s > 0.01:
                 self.log.debug("Connection cleanup in %.3fs" % (time.time() - s))
 
-            time.sleep(15)
+            self.sleep(15)
         self.log.debug("Checkconnections ended")
 
     @util.Noparallel(blocking=False)
@@ -385,10 +440,10 @@ class ConnectionServer(object):
 
         if self.has_internet:
             self.internet_online_since = time.time()
-            gevent.spawn(self.onInternetOnline)
+            self.spawn(self.onInternetOnline)
         else:
             self.internet_offline_since = time.time()
-            gevent.spawn(self.onInternetOffline)
+            self.spawn(self.onInternetOffline)
 
     def isInternetOnline(self):
         return self.has_internet
@@ -399,6 +454,20 @@ class ConnectionServer(object):
     def onInternetOffline(self):
         self.had_external_incoming = False
         self.log.info("Internet offline")
+
+    def allowsCreatingConnections(self):
+        if config.offline:
+            return False
+        if self.stopping:
+            return False
+        return True
+
+    def allowsAcceptingConnections(self):
+        if config.offline:
+            return False
+        if self.stopping:
+            return False
+        return True
 
     def getTimecorrection(self):
         corrections = sorted([
