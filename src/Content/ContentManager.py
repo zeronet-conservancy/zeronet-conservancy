@@ -925,7 +925,7 @@ class ContentManager(object):
 
         return True  # All good
 
-    def verifyContentJson(self, inner_path, file, ignore_same=True):
+    def verifyContentFile(self, inner_path, file, ignore_same=True):
         from Crypt import CryptBitcoin
 
         if type(file) is dict:
@@ -1020,7 +1020,7 @@ class ContentManager(object):
     def verifyFile(self, inner_path, file, ignore_same=True):
         try:
             if inner_path.endswith("content.json"):
-                return self.verifyContentJson(inner_path, file, ignore_same)
+                return self.verifyContentFile(inner_path, file, ignore_same)
             else:
                 return self.verifyOrdinaryFile(inner_path, file, ignore_same)
         except Exception as err:
