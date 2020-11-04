@@ -94,7 +94,7 @@ class BackgroundPublisher:
         for stage in self.stages:
             stage["nr"] = i
             stage["limit"] = limit * (2 + i)
-            stage["tries"] = False
+            stage["tries"] = 0
             stage["done"] = False
             stage["thread"] = None
             if i > 0:
