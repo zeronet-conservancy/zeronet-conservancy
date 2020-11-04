@@ -925,102 +925,107 @@ class ContentManager(object):
 
         return True  # All good
 
+    def verifyContentJson(self, inner_path, file, ignore_same=True):
+        from Crypt import CryptBitcoin
+
+        if type(file) is dict:
+            new_content = file
+        else:
+            try:
+                if sys.version_info.major == 3 and sys.version_info.minor < 6:
+                    new_content = json.loads(file.read().decode("utf8"))
+                else:
+                    new_content = json.load(file)
+            except Exception as err:
+                raise VerifyError("Invalid json file: %s" % err)
+        if inner_path in self.contents:
+            old_content = self.contents.get(inner_path, {"modified": 0})
+            # Checks if its newer the ours
+            if old_content["modified"] == new_content["modified"] and ignore_same:  # Ignore, have the same content.json
+                return None
+            elif old_content["modified"] > new_content["modified"]:  # We have newer
+                raise VerifyError(
+                    "We have newer (Our: %s, Sent: %s)" %
+                    (old_content["modified"], new_content["modified"])
+                )
+        if new_content["modified"] > time.time() + 60 * 60 * 24:  # Content modified in the far future (allow 1 day+)
+            raise VerifyError("Modify timestamp is in the far future!")
+        if self.isArchived(inner_path, new_content["modified"]):
+            if inner_path in self.site.bad_files:
+                del self.site.bad_files[inner_path]
+            raise VerifyError("This file is archived!")
+        # Check sign
+        sign = new_content.get("sign")
+        signs = new_content.get("signs", {})
+        if "sign" in new_content:
+            del(new_content["sign"])  # The file signed without the sign
+        if "signs" in new_content:
+            del(new_content["signs"])  # The file signed without the signs
+
+        sign_content = json.dumps(new_content, sort_keys=True)  # Dump the json to string to remove whitepsace
+
+        # Fix float representation error on Android
+        modified = new_content["modified"]
+        if config.fix_float_decimals and type(modified) is float and not str(modified).endswith(".0"):
+            modified_fixed = "{:.6f}".format(modified).strip("0.")
+            sign_content = sign_content.replace(
+                '"modified": %s' % repr(modified),
+                '"modified": %s' % modified_fixed
+            )
+
+        if signs:  # New style signing
+            valid_signers = self.getValidSigners(inner_path, new_content)
+            signs_required = self.getSignsRequired(inner_path, new_content)
+
+            if inner_path == "content.json" and len(valid_signers) > 1:  # Check signers_sign on root content.json
+                signers_data = "%s:%s" % (signs_required, ",".join(valid_signers))
+                if not CryptBitcoin.verify(signers_data, self.site.address, new_content["signers_sign"]):
+                    raise VerifyError("Invalid signers_sign!")
+
+            if inner_path != "content.json" and not self.verifyCert(inner_path, new_content):  # Check if cert valid
+                raise VerifyError("Invalid cert!")
+
+            valid_signs = 0
+            for address in valid_signers:
+                if address in signs:
+                    valid_signs += CryptBitcoin.verify(sign_content, address, signs[address])
+                if valid_signs >= signs_required:
+                    break  # Break if we has enough signs
+            if valid_signs < signs_required:
+                raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
+            else:
+                return self.verifyContent(inner_path, new_content)
+        else:  # Old style signing
+            raise VerifyError("Invalid old-style sign")
+
+    def verifyOrdinaryFile(self, inner_path, file, ignore_same=True):
+        file_info = self.getFileInfo(inner_path)
+        if file_info:
+            if CryptHash.sha512sum(file) != file_info.get("sha512", ""):
+                raise VerifyError("Invalid hash")
+
+            if file_info.get("size", 0) != file.tell():
+                raise VerifyError(
+                    "File size does not match %s <> %s" %
+                    (inner_path, file.tell(), file_info.get("size", 0))
+                )
+
+            return True
+
+        else:  # File not in content.json
+            raise VerifyError("File not in content.json")
+
     # Verify file validity
     # Return: None = Same as before, False = Invalid, True = Valid
     def verifyFile(self, inner_path, file, ignore_same=True):
-        if inner_path.endswith("content.json"):  # content.json: Check using sign
-            from Crypt import CryptBitcoin
-            try:
-                if type(file) is dict:
-                    new_content = file
-                else:
-                    try:
-                        if sys.version_info.major == 3 and sys.version_info.minor < 6:
-                            new_content = json.loads(file.read().decode("utf8"))
-                        else:
-                            new_content = json.load(file)
-                    except Exception as err:
-                        raise VerifyError("Invalid json file: %s" % err)
-                if inner_path in self.contents:
-                    old_content = self.contents.get(inner_path, {"modified": 0})
-                    # Checks if its newer the ours
-                    if old_content["modified"] == new_content["modified"] and ignore_same:  # Ignore, have the same content.json
-                        return None
-                    elif old_content["modified"] > new_content["modified"]:  # We have newer
-                        raise VerifyError(
-                            "We have newer (Our: %s, Sent: %s)" %
-                            (old_content["modified"], new_content["modified"])
-                        )
-                if new_content["modified"] > time.time() + 60 * 60 * 24:  # Content modified in the far future (allow 1 day+)
-                    raise VerifyError("Modify timestamp is in the far future!")
-                if self.isArchived(inner_path, new_content["modified"]):
-                    if inner_path in self.site.bad_files:
-                        del self.site.bad_files[inner_path]
-                    raise VerifyError("This file is archived!")
-                # Check sign
-                sign = new_content.get("sign")
-                signs = new_content.get("signs", {})
-                if "sign" in new_content:
-                    del(new_content["sign"])  # The file signed without the sign
-                if "signs" in new_content:
-                    del(new_content["signs"])  # The file signed without the signs
-
-                sign_content = json.dumps(new_content, sort_keys=True)  # Dump the json to string to remove whitepsace
-
-                # Fix float representation error on Android
-                modified = new_content["modified"]
-                if config.fix_float_decimals and type(modified) is float and not str(modified).endswith(".0"):
-                    modified_fixed = "{:.6f}".format(modified).strip("0.")
-                    sign_content = sign_content.replace(
-                        '"modified": %s' % repr(modified),
-                        '"modified": %s' % modified_fixed
-                    )
-
-                if signs:  # New style signing
-                    valid_signers = self.getValidSigners(inner_path, new_content)
-                    signs_required = self.getSignsRequired(inner_path, new_content)
-
-                    if inner_path == "content.json" and len(valid_signers) > 1:  # Check signers_sign on root content.json
-                        signers_data = "%s:%s" % (signs_required, ",".join(valid_signers))
-                        if not CryptBitcoin.verify(signers_data, self.site.address, new_content["signers_sign"]):
-                            raise VerifyError("Invalid signers_sign!")
-
-                    if inner_path != "content.json" and not self.verifyCert(inner_path, new_content):  # Check if cert valid
-                        raise VerifyError("Invalid cert!")
-
-                    valid_signs = 0
-                    for address in valid_signers:
-                        if address in signs:
-                            valid_signs += CryptBitcoin.verify(sign_content, address, signs[address])
-                        if valid_signs >= signs_required:
-                            break  # Break if we has enough signs
-                    if valid_signs < signs_required:
-                        raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
-                    else:
-                        return self.verifyContent(inner_path, new_content)
-                else:  # Old style signing
-                    raise VerifyError("Invalid old-style sign")
-
-            except Exception as err:
-                self.log.warning("%s: verify sign error: %s" % (inner_path, Debug.formatException(err)))
-                raise err
-
-        else:  # Check using sha512 hash
-            file_info = self.getFileInfo(inner_path)
-            if file_info:
-                if CryptHash.sha512sum(file) != file_info.get("sha512", ""):
-                    raise VerifyError("Invalid hash")
-
-                if file_info.get("size", 0) != file.tell():
-                    raise VerifyError(
-                        "File size does not match %s <> %s" %
-                        (inner_path, file.tell(), file_info.get("size", 0))
-                    )
-
-                return True
-
-            else:  # File not in content.json
-                raise VerifyError("File not in content.json")
+        try:
+            if inner_path.endswith("content.json"):
+                return self.verifyContentJson(inner_path, file, ignore_same)
+            else:
+                return self.verifyOrdinaryFile(inner_path, file, ignore_same)
+        except Exception as err:
+            self.log.info("%s: verify error: %s" % (inner_path, Debug.formatException(err)))
+            raise err
 
     def optionalDelete(self, inner_path):
         self.site.storage.delete(inner_path)
