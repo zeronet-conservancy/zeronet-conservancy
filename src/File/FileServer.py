@@ -498,7 +498,7 @@ class FileServer(ConnectionServer):
             log.info("No network activity for %.2fs. Running an update for a random site.",
                 now - last_activity_time
             )
-            self.update_pool.spawn(self.updateRandomSite)
+            self.update_pool.spawn(self.updateRandomSite, force=True)
 
     # Periodic reloading of tracker files
     def reloadTrackerFilesThread(self):
@@ -575,6 +575,10 @@ class FileServer(ConnectionServer):
             # Auto reload FileRequest on change
             from Debug import DebugReloader
             DebugReloader.watcher.addCallback(self.reload)
+
+        # XXX: for initializing self.sites
+        # Remove this line when self.sites gets completely unused
+        self.getSites()
 
         if not passive_mode:
             self.spawn(self.updateSites)
