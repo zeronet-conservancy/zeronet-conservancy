@@ -492,7 +492,7 @@ class FileServer(ConnectionServer):
                 continue
             if last_activity_time > now - threshold:
                 continue
-            if len(self.update_pool) == 0:
+            if len(self.update_pool) != 0:
                 continue
 
             log.info("No network activity for %.2fs. Running an update for a random site.",
