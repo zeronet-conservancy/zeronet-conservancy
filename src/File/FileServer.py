@@ -260,13 +260,8 @@ class FileServer(ConnectionServer):
 
     @util.Noparallel(queue=True)
     def recheckPort(self):
-        if not self.recheck_port:
-            return
-
-        if not self.port_opened:
+        if self.recheck_port:
             self.portCheck()
-            if not self.port_opened["ipv4"]:
-                self.tor_manager.startOnions()
             self.recheck_port = False
 
     # Returns False if Internet is immediately available
@@ -322,6 +317,8 @@ class FileServer(ConnectionServer):
                 site.invalidateUpdateTime(invalid_interval)
 
     def updateSites(self, check_files=False):
+        self.recheckPort()
+
         task_nr = self.update_sites_task_next_nr
         self.update_sites_task_next_nr += 1
 

@@ -102,6 +102,7 @@ class ConnectionServer(object):
         CryptConnection.manager.loadCerts()
         if config.tor != "disable":
             self.tor_manager.start()
+            self.tor_manager.startOnions()
         if not self.port:
             self.log.info("No port found, not binding")
             return False
