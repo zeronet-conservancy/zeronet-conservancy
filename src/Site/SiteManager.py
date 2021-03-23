@@ -155,6 +155,10 @@ class SiteManager(object):
     def resolveDomainCached(self, domain):
         return self.resolveDomain(domain)
 
+    # Checks if the address is blocked. To be implemented in content filter plugins.
+    def isAddressBlocked(self, address):
+        return False
+
     # Return: Site object or None if not found
     def get(self, address):
         if self.isDomainCached(address):

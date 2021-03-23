@@ -24,6 +24,14 @@ class SiteManagerPlugin(object):
         super(SiteManagerPlugin, self).load(*args, **kwargs)
         filter_storage = ContentFilterStorage(site_manager=self)
 
+    def isAddressBlocked(self, address):
+        # FIXME: code duplication of isSiteblocked(address) or isSiteblocked(address_hashed)
+        # in several places here and below
+        address_hashed = filter_storage.getSiteAddressHashed(address)
+        if filter_storage.isSiteblocked(address) or filter_storage.isSiteblocked(address_hashed):
+            return True
+        return super(SiteManagerPlugin, self).isAddressBlocked(address)
+
     def add(self, address, *args, **kwargs):
         should_ignore_block = kwargs.get("ignore_block") or kwargs.get("settings")
         if should_ignore_block:

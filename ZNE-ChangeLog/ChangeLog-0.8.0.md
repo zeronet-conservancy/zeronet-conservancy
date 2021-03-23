@@ -19,6 +19,7 @@
 **Other:**
 
 * Implemented the log level overriding for separate modules for easier debugging.
+* Make the site block check implemented in `ContentFilter` usable from plugins and core modules via `SiteManager.isAddressBlocked()`.
 
 ## Plugins
 
