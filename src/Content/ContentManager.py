@@ -651,6 +651,25 @@ class ContentManager(object):
                     )
         return files_node, files_optional_node
 
+    def serializeForSigning(self, content):
+        if "sign" in content:
+            del(content["sign"])  # The file signed without the sign
+        if "signs" in content:
+            del(content["signs"])  # The file signed without the signs
+
+        sign_content = json.dumps(content, sort_keys=True)  # Dump the json to string to remove whitespaces
+
+        # Fix float representation error on Android
+        modified = content["modified"]
+        if config.fix_float_decimals and type(modified) is float and not str(modified).endswith(".0"):
+            modified_fixed = "{:.6f}".format(modified).strip("0.")
+            sign_content = sign_content.replace(
+                '"modified": %s' % repr(modified),
+                '"modified": %s' % modified_fixed
+            )
+
+        return sign_content
+
     # Create and sign a content.json
     # Return: The new content if filewrite = False
     def sign(self, inner_path="content.json", privatekey=None, filewrite=True, update_changed_files=False, extend=None, remove_missing_optional=False):
@@ -756,12 +775,7 @@ class ContentManager(object):
 
         self.log.info("Signing %s..." % inner_path)
 
-        if "signs" in new_content:
-            del(new_content["signs"])  # Delete old signs
-        if "sign" in new_content:
-            del(new_content["sign"])  # Delete old sign (backward compatibility)
-
-        sign_content = json.dumps(new_content, sort_keys=True)
+        sign_content = self.serializeForSigning(new_content)
         sign = CryptBitcoin.sign(sign_content, privatekey)
         # new_content["signs"] = content.get("signs", {}) # TODO: Multisig
         if sign:  # If signing is successful (not an old address)
@@ -957,21 +971,7 @@ class ContentManager(object):
         # Check sign
         sign = new_content.get("sign")
         signs = new_content.get("signs", {})
-        if "sign" in new_content:
-            del(new_content["sign"])  # The file signed without the sign
-        if "signs" in new_content:
-            del(new_content["signs"])  # The file signed without the signs
-
-        sign_content = json.dumps(new_content, sort_keys=True)  # Dump the json to string to remove whitepsace
-
-        # Fix float representation error on Android
-        modified = new_content["modified"]
-        if config.fix_float_decimals and type(modified) is float and not str(modified).endswith(".0"):
-            modified_fixed = "{:.6f}".format(modified).strip("0.")
-            sign_content = sign_content.replace(
-                '"modified": %s' % repr(modified),
-                '"modified": %s' % modified_fixed
-            )
+        sign_content = self.serializeForSigning(new_content)
 
         if signs:  # New style signing
             valid_signers = self.getValidSigners(inner_path, new_content)
