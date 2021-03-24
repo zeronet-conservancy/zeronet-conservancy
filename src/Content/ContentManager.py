@@ -995,8 +995,10 @@ class ContentManager(object):
                 raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
             else:
                 return self.verifyContent(inner_path, new_content)
-        else:  # Old style signing
+        elif sign:  # Old style signing
             raise VerifyError("Invalid old-style sign")
+        else:
+            raise VerifyError("Not signed")
 
     def verifyOrdinaryFile(self, inner_path, file, ignore_same=True):
         file_info = self.getFileInfo(inner_path)
