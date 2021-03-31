@@ -193,7 +193,7 @@ class ConnectionServer(object):
             connection.close("Close all connections")
 
     def handleIncomingConnection(self, sock, addr):
-        if self.allowsAcceptingConnections():
+        if not self.allowsAcceptingConnections():
             sock.close()
             return False
 
