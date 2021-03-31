@@ -865,29 +865,46 @@ class Site(object):
                     background_publisher.finalize()
                     del self.background_publishers[inner_path]
 
+    def waitForPeers(self, num_peers, num_connected_peers, time_limit):
+        start_time = time.time()
+        for _ in range(time_limit):
+            if len(self.peers) >= num_peers and len(self.getConnectedPeers()) >= num_connected_peers:
+                return True
+            self.announce(mode="more", force=True)
+            for wait in range(10):
+                self.needConnections(num=num_connected_peers)
+                time.sleep(2)
+                if len(self.peers) >= num_peers and len(self.getConnectedPeers()) >= num_connected_peers:
+                    return True
+                if time.time() - start_time > time_limit:
+                    return True
+
+        return False
+
     # Update content.json on peers
     @util.Noparallel()
     def publish(self, limit="default", inner_path="content.json", diffs={}, cb_progress=None):
         published = []  # Successfully published (Peer)
         publishers = []  # Publisher threads
 
-        if not self.peers:
-            self.announce(mode="more")
-
         if limit == "default":
             limit = 5
         threads = limit
+
+        self.waitForPeers(limit, limit / 2, 10)
+        self.waitForPeers(1, 1, 60)
 
         peers = self.getConnectedPeers()
         num_connected_peers = len(peers)
 
         random.shuffle(peers)
-        peers = sorted(peers, key=lambda peer: peer.connection.handshake.get("rev", 0) < config.rev - 100)  # Prefer newer clients
+        # Prefer newer clients
+        peers = sorted(peers, key=lambda peer: peer.connection.handshake.get("rev", 0) < config.rev - 100)
 
-        if len(peers) < limit * 2 and len(self.peers) > len(peers):  # Add more, non-connected peers if necessary
+        # Add more, non-connected peers if necessary
+        if len(peers) < limit * 2 and len(self.peers) > len(peers):
             peers += self.getRecentPeers(limit * 2)
-
-        peers = set(peers)
+            peers = set(peers)
 
         self.log.info("Publishing %s to %s/%s peers (connected: %s) diffs: %s (%.2fk)..." % (
             inner_path, limit, len(self.peers), num_connected_peers, list(diffs.keys()), float(len(str(diffs))) / 1024
