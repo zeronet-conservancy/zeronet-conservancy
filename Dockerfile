@@ -1,4 +1,4 @@
-FROM alpine:3.11 
+FROM alpine:3.13
 
 # Base settings
 ENV HOME /root
@@ -6,7 +6,7 @@ ENV HOME /root
 # Install packages
 
 RUN apk --update --no-cache --no-progress add \
-    python3 python3-dev \
+    python3 python3-dev py3-pip \
     libffi-dev musl-dev \
     gcc g++ make \
     automake autoconf libtool \
