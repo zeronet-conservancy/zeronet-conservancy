@@ -33,7 +33,7 @@
 
 * 在运行 `zeronet.py` 后，您将可以通过
   `http://127.0.0.1:43110/{zeronet_address}`（例如：
-  `http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D`）访问 zeronet 中的站点
+  `http://127.0.0.1:43110/1HeLLoPVbqF3UEj8aWXErwTxrwkyjwGtZN`）访问 zeronet 中的站点
 * 在您浏览 zeronet 站点时，客户端会尝试通过 BitTorrent 网络来寻找可用的节点，从而下载需要的文件（html，css，js...）
 * 您将会储存每一个浏览过的站点
 * 每个站点都包含一个名为 `content.json` 的文件，它储存了其他所有文件的 sha512 散列值以及一个通过站点私钥生成的签名
@@ -99,7 +99,7 @@
 
 ## 如何创建一个 ZeroNet 站点？
 
- * 点击 [ZeroHello](http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D) 站点的 **⋮** > **「新建空站点」** 菜单项
+ * 点击 [ZeroHello](http://127.0.0.1:43110/1HeLLoPVbqF3UEj8aWXErwTxrwkyjwGtZN) 站点的 **⋮** > **「新建空站点」** 菜单项
  * 您将被**重定向**到一个全新的站点，该站点只能由您修改
  * 您可以在 **data/[您的站点地址]** 目录中找到并修改网站的内容
  * 修改后打开您的网站，将右上角的「0」按钮拖到左侧，然后点击底部的**签名**并**发布**按钮
