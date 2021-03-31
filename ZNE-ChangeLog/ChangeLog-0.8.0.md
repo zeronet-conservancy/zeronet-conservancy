@@ -14,12 +14,24 @@
   * Peer count. More peers  ==> rare announces.
   * Tracker count. More trackers ==> frequent announces to iterate over more trackers.
 * For owned zites, the activity rate doesn't drop below 0.6 to force more frequent checks. This, however, can be used to investigate which peer belongs to the zire owner. A new commnd line option `--expose_no_ownership` is introduced to disable that behavior.
-* `ZeroNet` now tries harder in delivering updates to more peers in the background.
+* When checking for updates, ZeroNet normally asks other peers for new data since the previous update. This however can result in losing some updates in specific conditions. To overcome this, ZeroNet now asks for the full site listing on every Nth update check.
+* When asking a peer for updates, ZeroNet may see that the other peer has an older version of a file. In this case, ZeroNet sends back the notification of the new version available. The logic in 0.8.0 is generally the same, but some randomization is added which may help in distributing the "update waves" among peers.
+* ZeroNet now tries harder in delivering updates to more peers in the background.
+* ZeroNet also make more efforts of searching the peers before publishing updates.
 
 **Other:**
 
 * Implemented the log level overriding for separate modules for easier debugging.
 * Make the site block check implemented in `ContentFilter` usable from plugins and core modules via `SiteManager.isAddressBlocked()`.
+
+## Docker Image
+
+* The base image upgraded from `alpine:3.11` to `alpine:3.13`.
+* Tor upgraded to 0.4.4.8.
+
+## ZeroHello
+
+The default ZeroHello address changed from [1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D/](http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D/) to [1HeLLoPVbqF3UEj8aWXErwTxrwkyjwGtZN/](http://127.0.0.1:43110/1HeLLoPVbqF3UEj8aWXErwTxrwkyjwGtZN/). This is the first step in migrating away from the nofish's infrastructure which development seems to be stalled.
 
 ## Plugins
 
