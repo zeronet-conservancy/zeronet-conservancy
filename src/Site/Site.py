@@ -1357,8 +1357,8 @@ class Site(object):
         else:
             peers = list(self.peers.values())
 
-        self.log.info("%s" % peers)
-        self.log.info("%s" % need_more)
+        self.log.debug("getRecentPeers: peers = %s" % peers)
+        self.log.debug("getRecentPeers: need_more = %s" % need_more)
 
         peers = peers[0:need_more * 50]
 
