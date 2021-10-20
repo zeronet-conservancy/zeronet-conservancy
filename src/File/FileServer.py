@@ -322,7 +322,7 @@ class FileServer(ConnectionServer):
         task_nr = self.update_sites_task_next_nr
         self.update_sites_task_next_nr += 1
 
-        task_description = "updateSites: #%d, check_files=%s" % (task_nr, check_files)
+        task_description = "updateSites [#%d, check_files=%s]" % (task_nr, check_files)
         log.info("%s: started", task_description)
 
         # Don't wait port opening on first startup. Do the instant check now.
@@ -363,6 +363,9 @@ class FileServer(ConnectionServer):
 
             while self.running:
                 self.waitForInternetOnline()
+                if self.stopping:
+                    break
+
                 thread = self.update_pool.spawn(self.updateSite, site, check_files=check_files)
                 if check_files:
                     # Limit the concurency
@@ -370,6 +373,9 @@ class FileServer(ConnectionServer):
                     thread.join(timeout=60)
                 if not self.waitForInternetOnline():
                     break
+
+            if self.stopping:
+                break
 
             if time.time() - progress_print_time > 60:
                 progress_print_time = time.time()
@@ -387,9 +393,14 @@ class FileServer(ConnectionServer):
                     time_left
                 )
 
-        log.info("%s: finished in %.2fs", task_description, time.time() - start_time)
+        if self.stopping:
+            log.info("%s: stopped", task_description)
+        else:
+            log.info("%s: finished in %.2fs", task_description, time.time() - start_time)
 
     def sitesMaintenanceThread(self, mode="full"):
+        log.info("sitesMaintenanceThread(%s) started" % mode)
+
         startup = True
 
         short_timeout = 2
@@ -460,6 +471,7 @@ class FileServer(ConnectionServer):
 
             site_addresses = None
             startup = False
+        log.info("sitesMaintenanceThread(%s) stopped" % mode)
 
     def keepAliveThread(self):
         # This thread is mostly useless on a system under load, since it never does
@@ -475,6 +487,7 @@ class FileServer(ConnectionServer):
         # are interested in connecting to them), we initiate some traffic by
         # performing the update for a random site. It's way better than just
         # silly pinging a random peer for no profit.
+        log.info("keepAliveThread started")
         while self.running:
             self.waitForInternetOnline()
 
@@ -499,6 +512,7 @@ class FileServer(ConnectionServer):
                 now - last_activity_time
             )
             self.update_pool.spawn(self.updateRandomSite, force=True)
+        log.info("keepAliveThread stopped")
 
     # Periodic reloading of tracker files
     def reloadTrackerFilesThread(self):
@@ -506,19 +520,24 @@ class FileServer(ConnectionServer):
         # This should probably be more sophisticated.
         # We should check if the files have actually changed,
         # and do it more often.
+        log.info("reloadTrackerFilesThread started")
         interval = 60 * 10
         while self.running:
             self.sleep(interval)
             if self.stopping:
                 break
             config.loadTrackersFile()
+        log.info("reloadTrackerFilesThread stopped")
 
     # Detects if computer back from wakeup
-    def wakeupWatcher(self):
+    def wakeupWatcherThread(self):
+        log.info("wakeupWatcherThread started")
         last_time = time.time()
         last_my_ips = socket.gethostbyname_ex('')[2]
         while self.running:
             self.sleep(30)
+            if self.stopping:
+                break
             is_time_changed = time.time() - max(self.last_request, last_time) > 60 * 3
             if is_time_changed:
                 # If taken more than 3 minute then the computer was in sleep mode
@@ -543,6 +562,7 @@ class FileServer(ConnectionServer):
 
             last_time = time.time()
             last_my_ips = my_ips
+        log.info("wakeupWatcherThread stopped")
 
     # Bind and start serving sites
     # If passive_mode is False, FileServer starts the full-featured file serving:
@@ -581,20 +601,20 @@ class FileServer(ConnectionServer):
         self.getSites()
 
         if not passive_mode:
-            self.spawn(self.updateSites)
-            thread_reaload_tracker_files = self.spawn(self.reloadTrackerFilesThread)
+            thread_keep_alive = self.spawn(self.keepAliveThread)
+            thread_wakeup_watcher = self.spawn(self.wakeupWatcherThread)
+            thread_reload_tracker_files = self.spawn(self.reloadTrackerFilesThread)
             thread_sites_maintenance_full = self.spawn(self.sitesMaintenanceThread, mode="full")
             thread_sites_maintenance_short = self.spawn(self.sitesMaintenanceThread, mode="short")
-            thread_keep_alive = self.spawn(self.keepAliveThread)
-            thread_wakeup_watcher = self.spawn(self.wakeupWatcher)
 
+            self.sleep(0.1)
+            self.spawn(self.updateSites)
             self.sleep(0.1)
             self.spawn(self.updateSites, check_files=True)
 
-
         ConnectionServer.listen(self)
 
-        log.debug("Stopped.")
+        log.info("Stopped.")
 
     def stop(self):
         if self.running and self.portchecker.upnp_port_opened:

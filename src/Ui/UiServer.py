@@ -166,7 +166,7 @@ class UiServer:
             self.log.error("Web interface bind error, must be running already, exiting.... %s" % err)
             import main
             main.file_server.stop()
-        self.log.debug("Stopped.")
+        self.log.info("Stopped.")
 
     def stop(self):
         self.log.debug("Stopping...")
