@@ -1357,8 +1357,13 @@ class Site(object):
         else:
             peers = list(self.peers.values())
 
+        self.log.info("%s" % peers)
+        self.log.info("%s" % need_more)
+
+        peers = peers[0:need_more * 50]
+
         found_more = sorted(
-            peers[0:need_more * 50],
+            peers,
             key=lambda peer: peer.reputation,
             reverse=True
         )[0:need_more * 2]

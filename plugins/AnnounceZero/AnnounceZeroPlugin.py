@@ -1,3 +1,4 @@
+import logging
 import time
 import itertools
 
@@ -94,6 +95,7 @@ class SiteAnnouncerPlugin(object):
             tracker_ip, tracker_port = tracker_address.rsplit(":", 1)
             tracker_peer = Peer(str(tracker_ip), int(tracker_port), connection_server=self.site.connection_server)
             tracker_peer.is_tracker_connection = True
+            #tracker_peer.log_level = logging.INFO
             connection_pool[tracker_address] = tracker_peer
 
         res = tracker_peer.request("announce", request)
