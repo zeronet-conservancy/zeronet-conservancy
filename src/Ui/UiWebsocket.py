@@ -912,9 +912,9 @@ class UiWebsocket(object):
         self.response(to, "ok")
 
     # Update site content.json
-    def actionSiteUpdate(self, to, address, check_files=False, since=None, announce=False):
+    def actionSiteUpdate(self, to, address, check_files=False, verify_files=False, since=None, announce=False):
         def updateThread():
-            site.update(announce=announce, check_files=check_files, since=since)
+            site.update(announce=announce, check_files=check_files, verify_files=verify_files, since=since)
             self.response(to, "Updated")
 
         site = self.server.sites.get(address)

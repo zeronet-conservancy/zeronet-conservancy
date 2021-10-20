@@ -689,17 +689,27 @@ class Site(object):
     # Update content.json from peers and download changed files
     # Return: None
     @util.Noparallel()
-    def update(self, announce=False, check_files=False, since=None):
+    def update(self, announce=False, check_files=False, verify_files=False, since=None):
         self.content_manager.loadContent("content.json", load_includes=False)  # Reload content.json
         self.content_updated = None  # Reset content updated time
 
-        if check_files:
+        if verify_files:
+            check_files = True
+
+        self.updateWebsocket(updating=True)
+        if verify_files:
+            self.updateWebsocket(verifying=True)
+        elif check_files:
+            self.updateWebsocket(checking=True)
+
+        if verify_files:
+            self.storage.updateBadFiles(quick_check=False)
+        elif check_files:
             self.storage.updateBadFiles(quick_check=True)  # Quick check and mark bad files based on file size
 
         if not self.isServing():
+            self.updateWebsocket(updated=True)
             return False
-
-        self.updateWebsocket(updating=True)
 
         # Remove files that no longer in content.json
         self.checkBadFiles()
@@ -1573,6 +1583,7 @@ class Site(object):
             param = None
         for ws in self.websockets:
             ws.event("siteChanged", self, param)
+        time.sleep(0.001)
 
     def messageWebsocket(self, message, type="info", progress=None):
         for ws in self.websockets:
