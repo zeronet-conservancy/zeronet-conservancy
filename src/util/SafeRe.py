@@ -60,3 +60,34 @@ def compilePattern(pattern):
 def match(pattern, *args, **kwargs):
     cached_pattern = compilePattern(pattern)
     return cached_pattern.match(*args, **kwargs)
+
+################################################################################
+
+# TESTS
+
+def testSafePattern(pattern):
+    try:
+        return isSafePattern(pattern)
+    except UnsafePatternError as err:
+        return False
+
+
+# Some real examples to make sure it works as expected
+assert testSafePattern('(data/mp4/.*|updater/.*)')
+assert testSafePattern('((js|css)/(?!all.(js|css)))|.git')
+
+
+# Unsafe cases:
+
+# ((?!json).)*$ not allowed, because of ) before the * character. Possible fix: .*(?!json)$
+assert not testSafePattern('((?!json).)*$')
+assert testSafePattern('.*(?!json)$')
+
+# (.*.epub|.*.jpg|.*.jpeg|.*.png|data/.*.gif|.*.avi|.*.ogg|.*.webm|.*.mp4|.*.mp3|.*.mkv|.*.eot) not allowed, because it has 12 .* repetition patterns. Possible fix: .*(epub|jpg|jpeg|png|data/gif|avi|ogg|webm|mp4|mp3|mkv|eot)
+assert not testSafePattern('(.*.epub|.*.jpg|.*.jpeg|.*.png|data/.*.gif|.*.avi|.*.ogg|.*.webm|.*.mp4|.*.mp3|.*.mkv|.*.eot)')
+assert testSafePattern('.*(epub|jpg|jpeg|png|data/gif|avi|ogg|webm|mp4|mp3|mkv|eot)')
+
+# FIXME: https://github.com/HelloZeroNet/ZeroNet/issues/2757
+#assert not testSafePattern('a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+
+################################################################################
