@@ -15,9 +15,10 @@ def isSafePattern(pattern):
     if unsafe_pattern_match:
         raise UnsafePatternError("Potentially unsafe part of the pattern: %s in %s" % (unsafe_pattern_match.group(0), pattern))
 
-    repetitions = re.findall(r"\.[\*\{\+]", pattern)
-    if len(repetitions) >= 10:
-        raise UnsafePatternError("More than 10 repetitions of %s in %s" % (repetitions[0], pattern))
+    repetitions1 = re.findall(r"\.[\*\{\+]", pattern)
+    repetitions2 = re.findall(r"[^(][?]", pattern)
+    if len(repetitions1) + len(repetitions2) >= 10:
+        raise UnsafePatternError("More than 10 repetitions in %s" % pattern)
 
     return True
 
