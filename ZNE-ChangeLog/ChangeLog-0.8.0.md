@@ -3,6 +3,8 @@
 
 **Network:**
 
+* Added support of Onion v3 addresses. Thanks to @anonymoose and @zeroseed.
+* Added a few Onion v3 tracker addresses.
 * Reworked the algorithm of checking zite updates on startup / after the network outages / periodically. ZeroNet tries not to spam too many update queries  at once in order to prevent network overload. (Which especially the issue when running over Tor.) At the same time, it tries to keep balance between frequent checks for frequently updating zites and ensuring that all the zites are checked in some reasonable time interval. Tests show that the full check cycle for a peer that hosts 800+ zites and is connected over Tor can take up to several hours. We cannot significantly reduce this time, since the Tor throughput is the bottleneck. Running more checks at once just results in more connections to fail. The other bottleneck is the HDD throughput. Increasing the parallelization doesn't help in this case as well. So the implemented solution **decreases** the concurency.
 * Improved the Internet outage detection and the recovery procedures after the Internet be back. ZeroNet "steps back" and schedules rechecking zites that were checked shortly before the Internet connection get lost. The network outage detection normally has some lag, so the recently checked zites are better to checked again.
 * When the network is down,  reduce the frequency of connection attempts to prevent overloading Tor with hanged connections.
