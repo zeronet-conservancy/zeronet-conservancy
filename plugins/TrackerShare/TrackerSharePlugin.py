@@ -443,6 +443,16 @@ class TrackerStorage(object):
 
         self.log.info("Discovered %s new trackers from %s/%s peers in %.3fs" % (num_trackers_discovered, num_success, len(peers), time.time() - s))
 
+    def checkDiscoveringTrackers(self, peers):
+        if not peers or len(peers) < 1:
+            return
+
+        now = time.time()
+        if self.time_discover + self.tracker_discover_time_interval >= now:
+            return
+
+        self.time_discover = now
+        gevent.spawn(self.discoverTrackers, peers)
 
 if "tracker_storage" not in locals():
     tracker_storage = TrackerStorage()
@@ -452,9 +462,7 @@ if "tracker_storage" not in locals():
 class SiteAnnouncerPlugin(object):
     def getTrackers(self):
         tracker_storage.setSiteAnnouncer(self)
-        if tracker_storage.time_discover < time.time() - tracker_storage.tracker_discover_time_interval:
-            tracker_storage.time_discover = time.time()
-            gevent.spawn(tracker_storage.discoverTrackers, self.site.getConnectedPeers())
+        tracker_storage.checkDiscoveringTrackers(self.site.getConnectedPeers())
         trackers = super(SiteAnnouncerPlugin, self).getTrackers()
         shared_trackers = list(tracker_storage.getTrackers().keys())
         if shared_trackers:
