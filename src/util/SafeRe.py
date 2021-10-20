@@ -21,9 +21,10 @@ def isSafePattern(pattern):
     if unsafe_pattern_match:
         raise UnsafePatternError("Potentially unsafe part of the pattern: %s in %s" % (unsafe_pattern_match.group(0), pattern))
 
-    repetitions = re.findall(r"\.[\*\{\+]", pattern)
-    if len(repetitions) >= 10:
-        raise UnsafePatternError("More than 10 repetitions of %s in %s" % (repetitions[0], pattern))
+    repetitions1 = re.findall(r"\.[\*\{\+]", pattern)
+    repetitions2 = re.findall(r"[^(][?]", pattern)
+    if len(repetitions1) + len(repetitions2) >= 10:
+        raise UnsafePatternError("More than 10 repetitions in %s" % pattern)
 
     return True
 
@@ -87,7 +88,11 @@ assert testSafePattern('.*(?!json)$')
 assert not testSafePattern('(.*.epub|.*.jpg|.*.jpeg|.*.png|data/.*.gif|.*.avi|.*.ogg|.*.webm|.*.mp4|.*.mp3|.*.mkv|.*.eot)')
 assert testSafePattern('.*(epub|jpg|jpeg|png|data/gif|avi|ogg|webm|mp4|mp3|mkv|eot)')
 
-# FIXME: https://github.com/HelloZeroNet/ZeroNet/issues/2757
-#assert not testSafePattern('a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+# https://github.com/HelloZeroNet/ZeroNet/issues/2757
+assert not testSafePattern('a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?a?aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa')
+assert not testSafePattern('a?a?a?a?a?a?a?x.{0,1}x.{0,1}x.{0,1}')
+assert     testSafePattern('a?a?a?a?a?a?a?x.{0,1}x.{0,1}')
+assert not testSafePattern('a?a?a?a?a?a?a?x.*x.*x.*')
+assert     testSafePattern('a?a?a?a?a?a?a?x.*x.*')
 
 ################################################################################
