@@ -36,6 +36,9 @@
 
 The default ZeroHello address changed from [1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D/](http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D/) to [1HeLLoPVbqF3UEj8aWXErwTxrwkyjwGtZN/](http://127.0.0.1:43110/1HeLLoPVbqF3UEj8aWXErwTxrwkyjwGtZN/). This is the first step in migrating away from the nofish's infrastructure which development seems to be stalled.
 
+* Make #Dashboard .tracker-status wider to fit onion v3 addresses.
+* Added link to /Stats to the menu.
+
 ## Plugins
 
 ### TrackerShare
