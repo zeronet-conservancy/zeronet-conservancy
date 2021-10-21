@@ -82,7 +82,7 @@ class Peer(object):
     # This is to be used to prevent disconnecting from peers when doing
     # a periodic cleanup.
     def markProtected(self, interval=60*20):
-        self.protected = time.time() + interval
+        self.protected = max(self.protected, time.time() + interval)
 
     def isProtected(self):
         if self.protected > 0:
