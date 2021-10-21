@@ -318,6 +318,7 @@ class UiWebsocket(object):
             back["updatesite"] = config.updatesite
             back["dist_type"] = config.dist_type
             back["lib_verify_best"] = CryptBitcoin.lib_verify_best
+            back["passive_mode"] = file_server.passive_mode
         return back
 
     def formatAnnouncerInfo(self, site):
@@ -1163,6 +1164,18 @@ class UiWebsocket(object):
         file_server = main.file_server
         file_server.portCheck()
         self.response(to, file_server.port_opened)
+
+    @flag.admin
+    @flag.no_multiuser
+    def actionServerSetPassiveMode(self, to, passive_mode=False):
+        import main
+        file_server = main.file_server
+        file_server.setPassiveMode(passive_mode)
+        if passive_mode:
+            self.cmd("notification", ["info", _["Passive mode enabled"], 5000])
+        else:
+            self.cmd("notification", ["info", _["Passive mode disabled"], 5000])
+        self.server.updateWebsocket()
 
     @flag.admin
     @flag.no_multiuser

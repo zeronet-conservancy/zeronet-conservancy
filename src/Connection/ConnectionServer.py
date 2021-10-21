@@ -142,28 +142,24 @@ class ConnectionServer(object):
         prev_sizes = {}
         for i in range(60):
             sizes = {}
-            total_size = 0
 
-            for name, pool in self.managed_pools.items():
+            for name, pool in list(self.managed_pools.items()):
                 pool.join(timeout=1)
                 size = len(pool)
-                sizes[name] = size
-                total_size += size
+                if size:
+                    sizes[name] = size
 
-            if total_size == 0:
+            if len(sizes) == 0:
                 break
 
             if prev_sizes != sizes:
                 s = ""
                 for name, size in sizes.items():
                     s += "%s pool: %s, " % (name, size)
-                s += "total: %s" % total_size
-
                 self.log.info("Waiting for tasks in managed pools to stop: %s", s)
-
                 prev_sizes = sizes
 
-        for name, pool in self.managed_pools.items():
+        for name, pool in list(self.managed_pools.items()):
             size = len(pool)
             if size:
                 self.log.info("Killing %s tasks in %s pool", size, name)
