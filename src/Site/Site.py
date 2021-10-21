@@ -882,6 +882,28 @@ class Site(object):
 
         return False
 
+    def getPeersForForegroundPublishing(self, limit):
+        # Wait for some peers to appear
+        self.waitForPeers(limit, limit / 2, 10) # some of them...
+        self.waitForPeers(1, 1, 60) # or at least one...
+
+        peers = self.getConnectedPeers()
+        random.shuffle(peers)
+
+        # Prefer newer clients.
+        # Trying to deliver foreground updates to the latest version clients,
+        # expecting that they have better networking facilities.
+        # Note: background updates SHOULD NOT discriminate peers by their rev number,
+        # otherwise it can cause troubles in delivering updates to older versions.
+        peers = sorted(peers, key=lambda peer: peer.connection.handshake.get("rev", 0) < config.rev - 100)
+
+        # Add more, non-connected peers if necessary
+        if len(peers) < limit * 2 and len(self.peers) > len(peers):
+            peers += self.getRecentPeers(limit * 2)
+            peers = set(peers)
+
+        return peers
+
     # Update content.json on peers
     @util.Noparallel()
     def publish(self, limit="default", inner_path="content.json", diffs={}, cb_progress=None):
@@ -892,26 +914,16 @@ class Site(object):
             limit = 5
         threads = limit
 
-        self.waitForPeers(limit, limit / 2, 10)
-        self.waitForPeers(1, 1, 60)
-
-        peers = self.getConnectedPeers()
-        num_connected_peers = len(peers)
-
-        random.shuffle(peers)
-        # Prefer newer clients
-        peers = sorted(peers, key=lambda peer: peer.connection.handshake.get("rev", 0) < config.rev - 100)
-
-        # Add more, non-connected peers if necessary
-        if len(peers) < limit * 2 and len(self.peers) > len(peers):
-            peers += self.getRecentPeers(limit * 2)
-            peers = set(peers)
+        peers = self.getPeersForForegroundPublishing(limit)
 
         self.log.info("Publishing %s to %s/%s peers (connected: %s) diffs: %s (%.2fk)..." % (
-            inner_path, limit, len(self.peers), num_connected_peers, list(diffs.keys()), float(len(str(diffs))) / 1024
+            inner_path,
+            limit, len(self.peers), len(self.getConnectedPeers()),
+            list(diffs.keys()), float(len(str(diffs))) / 1024
         ))
 
         if not peers:
+            self.addBackgroundPublisher(published=published, limit=limit, inner_path=inner_path, diffs=diffs)
             return 0  # No peers found
 
         event_done = gevent.event.AsyncResult()
@@ -925,7 +937,7 @@ class Site(object):
         if len(published) == 0:
             gevent.joinall(publishers)  # No successful publish, wait for all publisher
 
-        # Publish more peers in the backgroup
+        # Publish to more peers in the background
         self.log.info(
             "Published %s to %s peers, publishing to more peers in the background" %
             (inner_path, len(published))
