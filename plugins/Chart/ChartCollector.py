@@ -27,7 +27,7 @@ class ChartCollector(object):
         collectors = {}
         import main
         file_server = main.file_server
-        sites = file_server.sites
+        sites = file_server.getSites()
         if not sites:
             return collectors
         content_db = list(sites.values())[0].content_manager.contents.db
@@ -102,7 +102,7 @@ class ChartCollector(object):
 
     def getUniquePeers(self):
         import main
-        sites = main.file_server.sites
+        sites = main.file_server.getSites()
         return set(itertools.chain.from_iterable(
             [site.peers.keys() for site in sites.values()]
         ))
@@ -171,7 +171,7 @@ class ChartCollector(object):
         collectors = self.getCollectors()
         site_collectors = self.getSiteCollectors()
         import main
-        sites = main.file_server.sites
+        sites = main.file_server.getSites()
         i = 0
         while 1:
             self.collectGlobal(collectors, self.last_values)
