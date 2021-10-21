@@ -479,15 +479,27 @@ class ConnectionServer(object):
         self.had_external_incoming = False
         self.log.info("Internet offline")
 
+    def setOfflineMode(self, offline_mode):
+        if config.offline == offline_mode:
+            return
+        config.offline = offline_mode # Yep, awkward
+        if offline_mode:
+            self.log.info("offline mode is ON")
+        else:
+            self.log.info("offline mode is OFF")
+
+    def isOfflineMode(self):
+        return config.offline
+
     def allowsCreatingConnections(self):
-        if config.offline:
+        if self.isOfflineMode():
             return False
         if self.stopping:
             return False
         return True
 
     def allowsAcceptingConnections(self):
-        if config.offline:
+        if self.isOfflineMode():
             return False
         if self.stopping:
             return False

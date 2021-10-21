@@ -1170,12 +1170,26 @@ class UiWebsocket(object):
     def actionServerSetPassiveMode(self, to, passive_mode=False):
         import main
         file_server = main.file_server
-        file_server.setPassiveMode(passive_mode)
-        if passive_mode:
-            self.cmd("notification", ["info", _["Passive mode enabled"], 5000])
-        else:
-            self.cmd("notification", ["info", _["Passive mode disabled"], 5000])
-        self.server.updateWebsocket()
+        if file_server.isPassiveMode() != passive_mode:
+            file_server.setPassiveMode(passive_mode)
+            if file_server.isPassiveMode():
+                self.cmd("notification", ["info", _["Passive mode enabled"], 5000])
+            else:
+                self.cmd("notification", ["info", _["Passive mode disabled"], 5000])
+            self.server.updateWebsocket()
+
+    @flag.admin
+    @flag.no_multiuser
+    def actionServerSetOfflineMode(self, to, offline_mode=False):
+        import main
+        file_server = main.file_server
+        if file_server.isOfflineMode() != offline_mode:
+            file_server.setOfflineMode(offline_mode)
+            if file_server.isOfflineMode():
+                self.cmd("notification", ["info", _["Offline mode enabled"], 5000])
+            else:
+                self.cmd("notification", ["info", _["Offline mode disabled"], 5000])
+            self.server.updateWebsocket()
 
     @flag.admin
     @flag.no_multiuser

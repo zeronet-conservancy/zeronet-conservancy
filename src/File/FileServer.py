@@ -43,7 +43,9 @@ class FileServer(ConnectionServer):
         self.update_sites_task_next_nr = 1
 
         self.passive_mode = None
+        self.active_mode = None
         self.active_mode_threads = {}
+
 
         self.supported_ip_types = ["ipv4"]  # Outgoing ip_type support
         if helper.getIpType(ip) == "ipv6" or self.isIpv6Supported():
@@ -196,7 +198,7 @@ class FileServer(ConnectionServer):
         FileRequest = imp.load_source("FileRequest", "src/File/FileRequest.py").FileRequest
 
     def portCheck(self):
-        if config.offline:
+        if self.isOfflineMode():
             log.info("Offline mode: port check disabled")
             res = {"ipv4": None, "ipv6": None}
             self.port_opened = res
@@ -276,7 +278,7 @@ class FileServer(ConnectionServer):
     # Returns True if we've spent some time waiting for Internet
     # Returns None if FileServer is stopping or the Offline mode is enabled
     def waitForInternetOnline(self):
-        if config.offline or self.stopping:
+        if self.isOfflineMode() or self.stopping:
             return None
 
         if self.isInternetOnline():
@@ -284,7 +286,7 @@ class FileServer(ConnectionServer):
 
         while not self.isInternetOnline():
             self.sleep(30)
-            if config.offline or self.stopping:
+            if self.isOfflineMode() or self.stopping:
                 return None
             if self.isInternetOnline():
                 break
@@ -364,7 +366,7 @@ class FileServer(ConnectionServer):
             self.sleep(1)
             self.waitForInternetOnline()
 
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
 
             site = self.getSite(site_address)
@@ -376,7 +378,7 @@ class FileServer(ConnectionServer):
 
             thread = self.update_pool.spawn(self.updateSite, site)
 
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
 
             if time.time() - progress_print_time > 60:
@@ -395,7 +397,7 @@ class FileServer(ConnectionServer):
                     time_left
                 )
 
-        if not self.inActiveMode():
+        if not self.isActiveMode():
             log.info("%s: stopped", task_description)
         else:
             log.info("%s: finished in %.2fs", task_description, time.time() - start_time)
@@ -422,11 +424,11 @@ class FileServer(ConnectionServer):
 
         self.sleep(long_timeout)
 
-        while self.inActiveMode():
+        while self.isActiveMode():
             site = None
             self.sleep(short_timeout)
 
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
 
             site_address, mode = self.peekSiteForVerification()
@@ -465,10 +467,10 @@ class FileServer(ConnectionServer):
         long_timeout = min_long_timeout
         short_cycle_time_limit = 60 * 2
 
-        while self.inActiveMode():
+        while self.isActiveMode():
             self.sleep(long_timeout)
 
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
 
             start_time = time.time()
@@ -485,7 +487,7 @@ class FileServer(ConnectionServer):
             sites_processed = 0
 
             for site_address in site_addresses:
-                if not self.inActiveMode():
+                if not self.isActiveMode():
                     break
 
                 site = self.getSite(site_address)
@@ -544,13 +546,13 @@ class FileServer(ConnectionServer):
         # performing the update for a random site. It's way better than just
         # silly pinging a random peer for no profit.
         log.info("keepAliveThread started")
-        while self.inActiveMode():
+        while self.isActiveMode():
             self.waitForInternetOnline()
 
             threshold = self.internet_outage_threshold / 2.0
 
             self.sleep(threshold / 2.0)
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
 
             last_activity_time = max(
@@ -578,9 +580,9 @@ class FileServer(ConnectionServer):
         # and do it more often.
         log.info("reloadTrackerFilesThread started")
         interval = 60 * 10
-        while self.inActiveMode():
+        while self.isActiveMode():
             self.sleep(interval)
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
             config.loadTrackersFile()
         log.info("reloadTrackerFilesThread stopped")
@@ -590,9 +592,9 @@ class FileServer(ConnectionServer):
         log.info("wakeupWatcherThread started")
         last_time = time.time()
         last_my_ips = socket.gethostbyname_ex('')[2]
-        while self.inActiveMode():
+        while self.isActiveMode():
             self.sleep(30)
-            if not self.inActiveMode():
+            if not self.isActiveMode():
                 break
             is_time_changed = time.time() - max(self.last_request, last_time) > 60 * 3
             if is_time_changed:
@@ -620,31 +622,47 @@ class FileServer(ConnectionServer):
             last_my_ips = my_ips
         log.info("wakeupWatcherThread stopped")
 
+    def setOfflineMode(self, offline_mode):
+        ConnectionServer.setOfflineMode(self, offline_mode)
+        self.setupActiveMode()
+
+    def setPassiveMode(self, passive_mode):
+        if self.passive_mode == passive_mode:
+            return
+        self.passive_mode = passive_mode
+        if self.passive_mode:
+            log.info("passive mode is ON");
+        else:
+            log.info("passive mode is OFF");
+        self.setupActiveMode()
+
+    def isPassiveMode(self):
+        return self.passive_mode
+
+    def setupActiveMode(self):
+        active_mode = (not self.passive_mode) and (not self.isOfflineMode())
+        if self.active_mode == active_mode:
+            return
+        self.active_mode = active_mode
+        if self.active_mode:
+            log.info("active mode is ON");
+            self.enterActiveMode();
+        else:
+            log.info("active mode is OFF");
+            self.leaveActiveMode();
+
     def killActiveModeThreads(self):
         for key, thread in list(self.active_mode_threads.items()):
             if thread:
                 if not thread.ready():
-                    self.log.info("killing %s" % key)
+                    log.info("killing %s" % key)
                     gevent.kill(thread)
                 del self.active_mode_threads[key]
 
-    def setPassiveMode(self, passive_mode):
-        if passive_mode:
-            self.leaveActiveMode();
-        else:
-            self.enterActiveMode();
-
     def leaveActiveMode(self):
-        if self.passive_mode:
-            return
-        log.info("passive mode is ON");
-        self.passive_mode = True
+        pass
 
     def enterActiveMode(self):
-        if not self.passive_mode and self.passive_mode is not None:
-            return
-        log.info("passive mode is OFF");
-        self.passive_mode = False
         self.killActiveModeThreads()
         x = self.active_mode_threads
         p = self.active_mode_thread_pool
@@ -658,8 +676,9 @@ class FileServer(ConnectionServer):
 
     # Returns True, if an active mode thread should keep going,
     # i.e active mode is enabled and the server not going to shutdown
-    def inActiveMode(self):
-        if self.passive_mode:
+    def isActiveMode(self):
+        self.setupActiveMode()
+        if not self.active_mode:
             return False
         if not self.running:
             return False

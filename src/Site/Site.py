@@ -285,7 +285,7 @@ class Site(object):
 
     # Returns False if any network activity for the site should not happen
     def isServing(self):
-        if config.offline:
+        if self.connection_server.isOfflineMode():
             return False
         elif self.isStopping():
             return False
@@ -1375,6 +1375,7 @@ class Site(object):
 
     # Return: Recently found peers
     def getRecentPeers(self, need_num):
+        need_num = int(need_num)
         found = list(set(self.peers_recent))
         self.log.debug(
             "Recent peers %s of %s (need: %s)" %
