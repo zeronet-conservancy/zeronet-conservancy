@@ -183,7 +183,6 @@ class Site(object):
         self.worker_manager = WorkerManager(self)  # Handle site download from other peers
         self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
         self.content_updated = None  # Content.js update time
-        self.last_check_files_time = 0
         self.last_online_update = 0
         self.startup_announce_done = 0
         self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
@@ -227,6 +226,10 @@ class Site(object):
             settings = json.load(open("%s/sites.json" % config.data_dir)).get(self.address)
         if settings:
             self.settings = settings
+            if "check_files_timestamp" not in settings:
+                settings["check_files_timestamp"] = 0
+            if "verify_files_timestamp" not in settings:
+                settings["verify_files_timestamp"] = 0
             if "cache" not in settings:
                 settings["cache"] = {}
             if "size_files_optional" not in settings:
@@ -242,8 +245,17 @@ class Site(object):
                 self.bad_files[inner_path] = min(self.bad_files[inner_path], 20)
         else:
             self.settings = {
-                "own": False, "serving": True, "permissions": [], "cache": {"bad_files": {}}, "size_files_optional": 0,
-                "added": int(time.time()), "downloaded": None, "optional_downloaded": 0, "size_optional": 0
+                "check_files_timestamp": 0,
+                "verify_files_timestamp": 0,
+                "own": False,
+                "serving": True,
+                "permissions": [],
+                "cache": {"bad_files": {}},
+                "size_files_optional": 0,
+                "added": int(time.time()),
+                "downloaded": None,
+                "optional_downloaded": 0,
+                "size_optional": 0
             }  # Default
             if config.download_optional == "auto":
                 self.settings["autodownloadoptional"] = True
@@ -280,6 +292,29 @@ class Site(object):
     # Max site size in MB
     def getSizeLimit(self):
         return self.settings.get("size_limit", int(config.size_limit))
+
+    def isFileVerificationExpired(self, check_files_interval, verify_files_interval):
+        now = time.time()
+        check_files_timestamp = self.settings.get("check_files_timestamp", 0)
+        verify_files_timestamp = self.settings.get("verify_files_timestamp", 0)
+
+        if check_files_interval is None:
+            check_files_expiration = now + 1
+        else:
+            check_files_expiration = check_files_timestamp + check_files_interval
+
+        if verify_files_interval is None:
+            verify_files_expiration = now + 1
+        else:
+            verify_files_expiration = verify_files_timestamp + verify_files_interval
+
+        if verify_files_expiration < now:
+            return "verify"
+
+        if check_files_expiration < now:
+            return "check"
+
+        return False
 
     # Next size limit based on current size
     def getNextSizeLimit(self):
@@ -690,9 +725,10 @@ class Site(object):
     # Return: None
     @util.Noparallel()
     def update(self, announce=False, check_files=False, verify_files=False, since=None):
+        online = self.connection_server.isInternetOnline()
+
         self.content_manager.loadContent("content.json", load_includes=False)  # Reload content.json
         self.content_updated = None  # Reset content updated time
-
         if verify_files:
             check_files = True
 
@@ -704,8 +740,11 @@ class Site(object):
 
         if verify_files:
             self.storage.updateBadFiles(quick_check=False)
+            self.settings["check_files_timestamp"] = time.time()
+            self.settings["verify_files_timestamp"] = time.time()
         elif check_files:
             self.storage.updateBadFiles(quick_check=True)  # Quick check and mark bad files based on file size
+            self.settings["check_files_timestamp"] = time.time()
 
         if not self.isServing():
             self.updateWebsocket(updated=True)
@@ -738,66 +777,18 @@ class Site(object):
         self.sendMyHashfield()
         self.updateHashfield()
 
-        self.refreshUpdateTime(valid=self.connection_server.isInternetOnline())
-
-        self.updateWebsocket(updated=True)
-
-    @util.Noparallel(queue=True, ignore_args=True)
-    def _considerUpdate_realJob(self, check_files=False, force=False):
-        if not self._considerUpdate_check(check_files=check_files, force=force, log_reason=True):
-            return False
-
-        online = self.connection_server.isInternetOnline()
-
-        # TODO: there should be a configuration options controlling:
-        # * whether to check files on the program startup
-        # * whether to check files during the run time and how often
-        check_files = check_files and (self.last_check_files_time == 0)
-        self.last_check_files_time = time.time()
-
-        if len(self.peers) < 50:
-            self.announce(mode="update")
-            online = online and self.connection_server.isInternetOnline()
-
-        self.update(check_files=check_files)
-
         online = online and self.connection_server.isInternetOnline()
         self.refreshUpdateTime(valid=online)
 
-        return True
+        self.updateWebsocket(updated=True)
 
-    def _considerUpdate_check(self, check_files=False, force=False, log_reason=False):
-        if not self.isServing():
-            return False
+    # To be called from FileServer
+    @util.Noparallel(queue=True, ignore_args=True)
+    def update2(self, check_files=False, verify_files=False):
+        if len(self.peers) < 50:
+            self.announce(mode="update")
 
-        online = self.connection_server.isInternetOnline()
-
-        run_update = False
-        msg = None
-
-        if force:
-            run_update = True
-            msg = "forcing site update"
-        elif not online:
-            run_update = True
-            msg = "network connection seems broken, trying to update a site to check if the network is up"
-        elif check_files:
-            run_update = True
-            msg = "checking site's files..."
-        elif not self.isUpdateTimeValid():
-            run_update = True
-            msg = "update time is not valid, updating now..."
-
-        if run_update and log_reason:
-            self.log.debug(msg)
-
-        return run_update
-
-    def considerUpdate(self, check_files=False, force=False, dry_run=False):
-        run_update = self._considerUpdate_check(check_files=check_files, force=force)
-        if run_update and not dry_run:
-            run_update = self._considerUpdate_realJob(check_files=check_files, force=force)
-        return run_update
+        self.update(check_files=check_files, verify_files=verify_files)
 
     # Update site by redownload all content.json
     def redownloadContents(self):

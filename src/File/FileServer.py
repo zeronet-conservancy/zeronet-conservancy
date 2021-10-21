@@ -303,12 +303,12 @@ class FileServer(ConnectionServer):
 
         log.debug("Checking randomly chosen site: %s", site.address_short)
 
-        self.updateSite(site, force=force)
+        self.updateSite(site)
 
-    def updateSite(self, site, check_files=False, force=False, dry_run=False):
+    def updateSite(self, site, check_files=False, verify_files=False):
         if not site:
             return False
-        return site.considerUpdate(check_files=check_files, force=force, dry_run=dry_run)
+        return site.update2(check_files=check_files, verify_files=verify_files)
 
     def invalidateUpdateTime(self, invalid_interval):
         for address in self.getSiteAddresses():
@@ -316,24 +316,30 @@ class FileServer(ConnectionServer):
             if site:
                 site.invalidateUpdateTime(invalid_interval)
 
-    def updateSites(self, check_files=False):
-        self.recheckPort()
+    def isSiteUpdateTimeValid(self, site_address):
+        site = self.getSite(site_address)
+        if not site:
+            return False
+        return site.isUpdateTimeValid()
 
+    def updateSites(self):
         task_nr = self.update_sites_task_next_nr
         self.update_sites_task_next_nr += 1
 
-        task_description = "updateSites [#%d, check_files=%s]" % (task_nr, check_files)
+        task_description = "updateSites [#%d]" % task_nr
         log.info("%s: started", task_description)
 
         # Don't wait port opening on first startup. Do the instant check now.
         if len(self.getSites()) <= 2:
             for address, site in list(self.getSites().items()):
-                self.updateSite(site, check_files=check_files)
+                self.updateSite(site, check_files=True)
+
+        self.recheckPort()
 
         all_site_addresses = self.getSiteAddresses()
         site_addresses = [
             address for address in all_site_addresses
-            if self.updateSite(self.getSite(address), check_files=check_files, dry_run=True)
+            if not self.isSiteUpdateTimeValid(address)
         ]
 
         log.info("%s: chosen %d sites (of %d)", task_description, len(site_addresses), len(all_site_addresses))
@@ -346,33 +352,21 @@ class FileServer(ConnectionServer):
 
         # Check sites integrity
         for site_address in site_addresses:
-            if check_files:
-                self.sleep(10)
-            else:
-                self.sleep(1)
+            site = None
+            self.sleep(1)
+            self.waitForInternetOnline()
 
             if self.stopping:
                 break
 
             site = self.getSite(site_address)
-            if not self.updateSite(site, check_files=check_files, dry_run=True):
+            if not site or site.isUpdateTimeValid():
                 sites_skipped += 1
                 continue
 
             sites_processed += 1
 
-            while self.running:
-                self.waitForInternetOnline()
-                if self.stopping:
-                    break
-
-                thread = self.update_pool.spawn(self.updateSite, site, check_files=check_files)
-                if check_files:
-                    # Limit the concurency
-                    # ZeroNet may be laggy when running from HDD.
-                    thread.join(timeout=60)
-                if not self.waitForInternetOnline():
-                    break
+            thread = self.update_pool.spawn(self.updateSite, site)
 
             if self.stopping:
                 break
@@ -397,6 +391,60 @@ class FileServer(ConnectionServer):
             log.info("%s: stopped", task_description)
         else:
             log.info("%s: finished in %.2fs", task_description, time.time() - start_time)
+
+    def peekSiteForVerification(self):
+        check_files_interval = 60 * 60 * 24
+        verify_files_interval = 60 * 60 * 24 * 10
+        site_addresses = self.getSiteAddresses()
+        random.shuffle(site_addresses)
+        for site_address in site_addresses:
+            site = self.getSite(site_address)
+            if not site:
+                continue
+            mode = site.isFileVerificationExpired(check_files_interval, verify_files_interval)
+            if mode:
+                return (site_address, mode)
+        return (None, None)
+
+
+    def sitesVerificationThread(self):
+        log.info("sitesVerificationThread started")
+        short_timeout = 10
+        long_timeout = 60
+
+        self.sleep(long_timeout)
+
+        while self.running:
+            site = None
+            self.sleep(short_timeout)
+
+            if self.stopping:
+                break
+
+            site_address, mode = self.peekSiteForVerification()
+            if not site_address:
+                self.sleep(long_timeout)
+                continue
+
+            site = self.getSite(site_address)
+            if not site:
+                continue
+
+            if mode == "verify":
+                check_files = False
+                verify_files = True
+            elif mode == "check":
+                check_files = True
+                verify_files = False
+            else:
+                continue
+
+            log.info("running <%s> for %s" % (mode, site.address_short))
+
+            thread = self.update_pool.spawn(self.updateSite, site,
+                check_files=check_files, verify_files=verify_files)
+
+        log.info("sitesVerificationThread stopped")
 
     def sitesMaintenanceThread(self, mode="full"):
         log.info("sitesMaintenanceThread(%s) started" % mode)
@@ -603,14 +651,13 @@ class FileServer(ConnectionServer):
         if not passive_mode:
             thread_keep_alive = self.spawn(self.keepAliveThread)
             thread_wakeup_watcher = self.spawn(self.wakeupWatcherThread)
+            thread_sites_verification = self.spawn(self.sitesVerificationThread)
             thread_reload_tracker_files = self.spawn(self.reloadTrackerFilesThread)
             thread_sites_maintenance_full = self.spawn(self.sitesMaintenanceThread, mode="full")
             thread_sites_maintenance_short = self.spawn(self.sitesMaintenanceThread, mode="short")
 
             self.sleep(0.1)
             self.spawn(self.updateSites)
-            self.sleep(0.1)
-            self.spawn(self.updateSites, check_files=True)
 
         ConnectionServer.listen(self)
 
