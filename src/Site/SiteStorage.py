@@ -375,7 +375,7 @@ class SiteStorage(object):
             # Reopen DB to check changes
             if self.has_db:
                 self.closeDb("New dbschema")
-                gevent.spawn(self.getDb)
+                self.site.spawn(self.getDb)
         elif not config.disable_db and should_load_to_db and self.has_db:  # Load json file to db
             if config.verbose:
                 self.log.debug("Loading json file to db: %s (file: %s)" % (inner_path, file))
@@ -458,6 +458,10 @@ class SiteStorage(object):
             i += 1
             if i % 50 == 0:
                 time.sleep(0.001)  # Context switch to avoid gevent hangs
+
+            if self.site.isStopping():
+                break
+
             if not os.path.isfile(self.getPath(content_inner_path)):  # Missing content.json file
                 back["num_content_missing"] += 1
                 self.log.debug("[MISSING] %s" % content_inner_path)

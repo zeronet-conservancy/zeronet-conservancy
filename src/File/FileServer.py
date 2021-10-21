@@ -36,6 +36,7 @@ class FileServer(ConnectionServer):
         self.recheck_port = True
 
         self.active_mode_thread_pool = gevent.pool.Pool(None)
+        self.site_pool = gevent.pool.Pool(None)
 
         self.update_pool = gevent.pool.Pool(5)
         self.update_start_time = 0
@@ -71,6 +72,7 @@ class FileServer(ConnectionServer):
 
         self.managed_pools["active_mode_thread"] = self.active_mode_thread_pool
         self.managed_pools["update"] = self.update_pool
+        self.managed_pools["site"] = self.site_pool
 
         if ip_type == "dual" and ip == "::":
             # Also bind to ipv4 addres in dual mode
@@ -707,7 +709,7 @@ class FileServer(ConnectionServer):
 
         log.info("Stopped.")
 
-    def stop(self):
+    def stop(self, ui_websocket=None):
         if self.running and self.portchecker.upnp_port_opened:
             log.debug('Closing port %d' % self.port)
             try:
@@ -716,7 +718,4 @@ class FileServer(ConnectionServer):
             except Exception as err:
                 log.info("Failed at attempt to use upnp to close port: %s" % err)
 
-        self.leaveActiveMode();
-        gevent.joinall(self.active_mode_threads.values(), timeout=15)
-
-        return ConnectionServer.stop(self)
+        return ConnectionServer.stop(self, ui_websocket=ui_websocket)

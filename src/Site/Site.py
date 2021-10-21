@@ -175,25 +175,8 @@ class Site(object):
         self.fzs_count = random.randint(0, self.fzs_range / 4)
         self.fzs_timestamp = 0
 
-        self.content = None  # Load content.json
-        self.peers = {}  # Key: ip:port, Value: Peer.Peer
-        self.peers_recent = collections.deque(maxlen=150)
-        self.peer_blacklist = SiteManager.peer_blacklist  # Ignore this peers (eg. myself)
-        self.greenlet_manager = GreenletManager.GreenletManager()  # Running greenlets
-        self.worker_manager = WorkerManager(self)  # Handle site download from other peers
-        self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
-        self.content_updated = None  # Content.js update time
-        self.last_online_update = 0
-        self.startup_announce_done = 0
-        self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
-        self.page_requested = False  # Page viewed in browser
-        self.websockets = []  # Active site websocket connections
-
+        ##############################################
         self.connection_server = None
-        self.loadSettings(settings)  # Load settings from sites.json
-        self.storage = SiteStorage(self, allow_create=allow_create)  # Save and load site files
-        self.content_manager = ContentManager(self)
-        self.content_manager.loadContents()  # Load content.json files
         if "main" in sys.modules:  # import main has side-effects, breaks tests
             import main
             if "file_server" in dir(main):  # Use global file server by default if possible
@@ -203,6 +186,26 @@ class Site(object):
                 self.connection_server = main.file_server
         else:
             self.connection_server = FileServer()
+        ##############################################
+
+        self.content = None  # Load content.json
+        self.peers = {}  # Key: ip:port, Value: Peer.Peer
+        self.peers_recent = collections.deque(maxlen=150)
+        self.peer_blacklist = SiteManager.peer_blacklist  # Ignore this peers (eg. myself)
+        self.greenlet_manager = GreenletManager.GreenletManager(self.connection_server.site_pool)  # Running greenlets
+        self.worker_manager = WorkerManager(self)  # Handle site download from other peers
+        self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
+        self.content_updated = None  # Content.js update time
+        self.last_online_update = 0
+        self.startup_announce_done = 0
+        self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
+        self.page_requested = False  # Page viewed in browser
+        self.websockets = []  # Active site websocket connections
+
+        self.loadSettings(settings)  # Load settings from sites.json
+        self.storage = SiteStorage(self, allow_create=allow_create)  # Save and load site files
+        self.content_manager = ContentManager(self)
+        self.content_manager.loadContents()  # Load content.json files
 
         self.announcer = SiteAnnouncer(self)  # Announce and get peer list from other nodes
 
@@ -275,13 +278,31 @@ class Site(object):
             SiteManager.site_manager.load(False)
         SiteManager.site_manager.saveDelayed()
 
+    # Returns True if any site-related activity should be interrupted
+    # due to connection server being stooped or site being deleted
+    def isStopping(self):
+        return self.connection_server.stopping or self.settings.get("deleting", False)
+
+    # Returns False if any network activity for the site should not happen
     def isServing(self):
         if config.offline:
             return False
-        elif self.connection_server.stopping:
+        elif self.isStopping():
             return False
         else:
             return self.settings["serving"]
+
+    # Spawns a thread that will be waited for on server being stopped (and killed after a timeout).
+    # Short cut to self.greenlet_manager.spawn()
+    def spawn(self, *args, **kwargs):
+        thread = self.greenlet_manager.spawn(*args, **kwargs)
+        return thread
+
+    # Spawns a thread that will be waited for on server being stopped (and killed after a timeout).
+    # Short cut to self.greenlet_manager.spawnLater()
+    def spawnLater(self, *args, **kwargs):
+        thread = self.greenlet_manager.spawnLater(*args, **kwargs)
+        return thread
 
     def getSettingsCache(self):
         back = {}
@@ -418,7 +439,7 @@ class Site(object):
 
             # Optionals files
             if inner_path == "content.json":
-                gevent.spawn(self.updateHashfield)
+                self.spawn(self.updateHashfield)
 
             for file_relative_path in list(self.content_manager.contents[inner_path].get("files_optional", {}).keys()):
                 file_inner_path = content_inner_dir + file_relative_path
@@ -437,7 +458,7 @@ class Site(object):
         include_threads = []
         for file_relative_path in list(self.content_manager.contents[inner_path].get("includes", {}).keys()):
             file_inner_path = content_inner_dir + file_relative_path
-            include_thread = gevent.spawn(self.downloadContent, file_inner_path, download_files=download_files, peer=peer)
+            include_thread = self.spawn(self.downloadContent, file_inner_path, download_files=download_files, peer=peer)
             include_threads.append(include_thread)
 
         if config.verbose:
@@ -517,9 +538,9 @@ class Site(object):
         )
 
         if self.isAddedRecently():
-            gevent.spawn(self.announce, mode="start", force=True)
+            self.spawn(self.announce, mode="start", force=True)
         else:
-            gevent.spawn(self.announce, mode="update")
+            self.spawn(self.announce, mode="update")
 
         if check_size:  # Check the size first
             valid = self.downloadContent("content.json", download_files=False)  # Just download content.json files
@@ -615,7 +636,7 @@ class Site(object):
                     self.log.info("CheckModifications:     %s: %s > %s" % (
                         inner_path, res["modified_files"][inner_path], my_modified.get(inner_path, 0)
                     ))
-                t = gevent.spawn(self.pooledDownloadContent, modified_contents, only_if_bad=True)
+                t = self.spawn(self.pooledDownloadContent, modified_contents, only_if_bad=True)
                 threads.append(t)
 
             if send_back:
@@ -628,7 +649,7 @@ class Site(object):
                     self.log.info("CheckModifications:     %s: %s < %s" % (
                         inner_path, res["modified_files"][inner_path], my_modified.get(inner_path, 0)
                     ))
-                gevent.spawn(self.publisher, inner_path, [peer], [], 1)
+                self.spawn(self.publisher, inner_path, [peer], [], 1)
 
         self.log.debug("CheckModifications: Waiting for %s pooledDownloadContent" % len(threads))
         gevent.joinall(threads)
@@ -685,7 +706,7 @@ class Site(object):
 
         updaters = []
         for i in range(updater_limit):
-            updaters.append(gevent.spawn(self.updater, peers_try, queried, need_queries, since))
+            updaters.append(self.spawn(self.updater, peers_try, queried, need_queries, since))
 
         for r in range(10):
             gevent.joinall(updaters, timeout=5+r)
@@ -738,13 +759,17 @@ class Site(object):
         elif check_files:
             self.updateWebsocket(checking=True)
 
-        if verify_files:
-            self.storage.updateBadFiles(quick_check=False)
-            self.settings["check_files_timestamp"] = time.time()
-            self.settings["verify_files_timestamp"] = time.time()
-        elif check_files:
-            self.storage.updateBadFiles(quick_check=True)  # Quick check and mark bad files based on file size
-            self.settings["check_files_timestamp"] = time.time()
+        if check_files:
+            if verify_files:
+                self.storage.updateBadFiles(quick_check=False) # Full-featured checksum verification
+            else:
+                self.storage.updateBadFiles(quick_check=True) # Quick check and mark bad files based on file size
+            # Don't update the timestamps in case of the application being shut down,
+            # so we can make another try next time.
+            if not self.isStopping():
+                self.settings["check_files_timestamp"] = time.time()
+                if verify_files:
+                    self.settings["verify_files_timestamp"] = time.time()
 
         if not self.isServing():
             self.updateWebsocket(updated=True)
@@ -766,7 +791,7 @@ class Site(object):
 
         if self.bad_files:
             self.log.debug("Bad files: %s" % self.bad_files)
-            gevent.spawn(self.retryBadFiles, force=True)
+            self.spawn(self.retryBadFiles, force=True)
 
         if len(queried) == 0:
             # Failed to query modifications
@@ -856,7 +881,7 @@ class Site(object):
                 background_publisher = BackgroundPublisher(self, published=published, limit=limit, inner_path=inner_path, diffs=diffs)
                 self.background_publishers[inner_path] = background_publisher
 
-            gevent.spawn(background_publisher.process)
+            self.spawn(background_publisher.process)
 
     def processBackgroundPublishers(self):
         with self.background_publishers_lock:
@@ -928,7 +953,7 @@ class Site(object):
 
         event_done = gevent.event.AsyncResult()
         for i in range(min(len(peers), limit, threads)):
-            publisher = gevent.spawn(self.publisher, inner_path, peers, published, limit, diffs, event_done, cb_progress)
+            publisher = self.spawn(self.publisher, inner_path, peers, published, limit, diffs, event_done, cb_progress)
             publishers.append(publisher)
 
         event_done.get()  # Wait for done
@@ -946,7 +971,7 @@ class Site(object):
         self.addBackgroundPublisher(published=published, limit=limit, inner_path=inner_path, diffs=diffs)
 
         # Send my hashfield to every connected peer if changed
-        gevent.spawn(self.sendMyHashfield, 100)
+        self.spawn(self.sendMyHashfield, 100)
 
         return len(published)
 
@@ -1109,7 +1134,7 @@ class Site(object):
             if not self.content_manager.contents.get("content.json"):  # No content.json, download it first!
                 self.log.debug("Need content.json first (inner_path: %s, priority: %s)" % (inner_path, priority))
                 if priority > 0:
-                    gevent.spawn(self.announce)
+                    self.spawn(self.announce)
                 if inner_path != "content.json":  # Prevent double download
                     task = self.worker_manager.addTask("content.json", peer)
                     task["evt"].get()
@@ -1508,6 +1533,9 @@ class Site(object):
 
     # Send hashfield to peers
     def sendMyHashfield(self, limit=5):
+        if not self.isServing():
+            return False
+
         if not self.content_manager.hashfield:  # No optional files
             return False
 
@@ -1525,6 +1553,9 @@ class Site(object):
 
     # Update hashfield
     def updateHashfield(self, limit=5):
+        if not self.isServing():
+            return False
+
         # Return if no optional files
         if not self.content_manager.hashfield and not self.content_manager.has_optional_files:
             return False

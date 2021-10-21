@@ -11,18 +11,32 @@ from . import Debug
 
 last_error = None
 
-def shutdown(reason="Unknown"):
-    logging.info("Shutting down (reason: %s)..." % reason)
+thread_shutdown = None
+
+def shutdownThread():
     import main
-    if "file_server" in dir(main):
-        try:
-            gevent.spawn(main.file_server.stop)
-            if "ui_server" in dir(main):
-                gevent.spawn(main.ui_server.stop)
-        except Exception as err:
-            print("Proper shutdown error: %s" % err)
-            sys.exit(0)
+    try:
+        if "file_server" in dir(main):
+            thread = gevent.spawn(main.file_server.stop)
+            thread.join(timeout=60)
+        if "ui_server" in dir(main):
+            thread = gevent.spawn(main.ui_server.stop)
+            thread.join(timeout=10)
+    except Exception as err:
+        print("Error in shutdown thread: %s" % err)
+        sys.exit(0)
     else:
+        sys.exit(0)
+
+
+def shutdown(reason="Unknown"):
+    global thread_shutdown
+    logging.info("Shutting down (reason: %s)..." % reason)
+    try:
+        if not thread_shutdown:
+            thread_shutdown = gevent.spawn(shutdownThread)
+    except Exception as err:
+        print("Proper shutdown error: %s" % err)
         sys.exit(0)
 
 # Store last error, ignore notify, allow manual error logging

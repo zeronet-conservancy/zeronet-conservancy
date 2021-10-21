@@ -239,7 +239,7 @@ class ContentManager(object):
 
                     if num_removed_bad_files > 0:
                         self.site.worker_manager.removeSolvedFileTasks(mark_as_good=False)
-                        gevent.spawn(self.site.update, since=0)
+                        self.site.spawn(self.site.update, since=0)
 
                     self.log.debug("Archived removed contents: %s, removed bad files: %s" % (num_removed_contents, num_removed_bad_files))
 

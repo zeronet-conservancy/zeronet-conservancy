@@ -1187,7 +1187,7 @@ class UiWebsocket(object):
                 return False
             if restart:
                 main.restart_after_shutdown = True
-            main.file_server.stop()
+            main.file_server.stop(ui_websocket=self)
             main.ui_server.stop()
 
         if restart:

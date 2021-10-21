@@ -131,33 +131,52 @@ class ConnectionServer(object):
             return False
         self.log.debug("Stopped.")
 
-    def stop(self):
+    def stop(self, ui_websocket=None):
         self.log.debug("Stopping %s" % self.stream_server)
         self.stopping = True
         self.running = False
         self.stopping_event.set()
-        self.onStop()
+        self.onStop(ui_websocket=ui_websocket)
 
-    def onStop(self):
-        prev_sizes = {}
-        for i in range(60):
+    def onStop(self, ui_websocket=None):
+        timeout = 30
+        start_time = time.time()
+        join_quantum = 0.1
+        prev_msg = None
+        while True:
+            if time.time() >= start_time + timeout:
+                break
+
+            total_size = 0
             sizes = {}
-
+            timestep = 0
             for name, pool in list(self.managed_pools.items()):
-                pool.join(timeout=1)
+                timestep += join_quantum
+                pool.join(timeout=join_quantum)
                 size = len(pool)
                 if size:
                     sizes[name] = size
+                    total_size += size
 
             if len(sizes) == 0:
                 break
 
-            if prev_sizes != sizes:
-                s = ""
-                for name, size in sizes.items():
-                    s += "%s pool: %s, " % (name, size)
-                self.log.info("Waiting for tasks in managed pools to stop: %s", s)
-                prev_sizes = sizes
+            if timestep < 1:
+                time.sleep(1 - timestep)
+
+            # format message
+            s = ""
+            for name, size in sizes.items():
+                s += "%s pool: %s, " % (name, size)
+            msg = "Waiting for tasks in managed pools to stop: %s" % s
+            # Prevent flooding to log
+            if msg != prev_msg:
+                prev_msg = msg
+                self.log.info("%s", msg)
+
+            percent = 100 * (time.time() - start_time) / timeout
+            msg = "File Server: waiting for %s tasks to stop" % total_size
+            self.sendShutdownProgress(ui_websocket, msg, percent)
 
         for name, pool in list(self.managed_pools.items()):
             size = len(pool)
@@ -165,11 +184,19 @@ class ConnectionServer(object):
                 self.log.info("Killing %s tasks in %s pool", size, name)
                 pool.kill()
 
+        self.sendShutdownProgress(ui_websocket, "File Server stopped. Now to exit.", 100)
+
         if self.thread_checker:
             gevent.kill(self.thread_checker)
             self.thread_checker = None
         if self.stream_server:
             self.stream_server.stop()
+
+    def sendShutdownProgress(self, ui_websocket, message, progress):
+        if not ui_websocket:
+            return
+        ui_websocket.cmd("progress", ["shutdown", message, progress])
+        time.sleep(0.01)
 
     # Sleeps the specified amount of time or until ConnectionServer is stopped
     def sleep(self, t):
@@ -178,7 +205,7 @@ class ConnectionServer(object):
         else:
             time.sleep(t)
 
-    # Spawns a thread that will be waited for on server being stooped (and killed after a timeout)
+    # Spawns a thread that will be waited for on server being stopped (and killed after a timeout)
     def spawn(self, *args, **kwargs):
         thread = self.thread_pool.spawn(*args, **kwargs)
         return thread
