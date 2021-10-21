@@ -1254,7 +1254,7 @@ class Site(object):
 
         return connected
 
-    def bringConnections(self, need=1, check_site_on_reconnect=False, pex=True, try_harder=False):
+    def bringConnections(self, need=1, update_site_on_reconnect=False, pex=True, try_harder=False):
         connected = len(self.getConnectedPeers())
         connected_before = connected
 
@@ -1264,16 +1264,16 @@ class Site(object):
             connected += self.tryConnectingToMorePeers(more=(need-connected), pex=pex, try_harder=try_harder)
             self.log.debug(
                 "Connected before: %s, after: %s. Check site: %s." %
-                (connected_before, connected, check_site_on_reconnect)
+                (connected_before, connected, update_site_on_reconnect)
             )
 
-        if check_site_on_reconnect and connected_before == 0 and connected > 0 and self.connection_server.has_internet:
+        if update_site_on_reconnect and connected_before == 0 and connected > 0 and self.connection_server.has_internet:
             self.greenlet_manager.spawn(self.update, check_files=False)
 
         return connected
 
     # Keep connections
-    def needConnections(self, num=None, check_site_on_reconnect=False, pex=True):
+    def needConnections(self, num=None, update_site_on_reconnect=False, pex=True):
         if not self.connection_server.allowsCreatingConnections():
             return
 
@@ -1284,14 +1284,14 @@ class Site(object):
 
         connected = self.bringConnections(
             need=need,
-            check_site_on_reconnect=check_site_on_reconnect,
+            update_site_on_reconnect=update_site_on_reconnect,
             pex=pex,
             try_harder=False)
 
         if connected < need:
             self.greenlet_manager.spawnLater(1.0, self.bringConnections,
                 need=need,
-                check_site_on_reconnect=check_site_on_reconnect,
+                update_site_on_reconnect=update_site_on_reconnect,
                 pex=pex,
                 try_harder=True)
 
@@ -1470,7 +1470,7 @@ class Site(object):
         if not startup:
             self.cleanupPeers()
 
-        self.needConnections(check_site_on_reconnect=True)
+        self.needConnections(update_site_on_reconnect=True)
 
         with gevent.Timeout(10, exception=False):
             self.announcer.announcePex()
