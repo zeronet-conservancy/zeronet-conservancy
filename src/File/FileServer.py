@@ -313,12 +313,33 @@ class FileServer(ConnectionServer):
 
         log.debug("Checking randomly chosen site: %s", site.address_short)
 
-        self.updateSite(site)
+        self.spawnUpdateSite(site).join()
 
     def updateSite(self, site, check_files=False, verify_files=False):
         if not site:
             return False
         return site.update2(check_files=check_files, verify_files=verify_files)
+
+    def spawnUpdateSite(self, site, check_files=False, verify_files=False):
+            thread = self.update_pool.spawn(self.updateSite, site,
+                check_files=check_files, verify_files=verify_files)
+            thread.site_address = site.address
+            return thread
+
+    def siteIsInUpdatePool(self, site_address):
+        while True:
+            restart = False
+            for thread in list(iter(self.update_pool)):
+                if not thread.site_address:
+                    # Possible race condition in assigning thread.site_address in spawnUpdateSite()
+                    # Trying again.
+                    self.sleep(0.1)
+                    restart = True
+                    break
+                if thread.site_address == site_address:
+                    return True
+            if not restart:
+                return False
 
     def invalidateUpdateTime(self, invalid_interval):
         for address in self.getSiteAddresses():
@@ -370,13 +391,13 @@ class FileServer(ConnectionServer):
                 break
 
             site = self.getSite(site_address)
-            if not site or site.isUpdateTimeValid():
+            if not site or site.isUpdateTimeValid() or self.siteIsInUpdatePool(site_address):
                 sites_skipped += 1
                 continue
 
             sites_processed += 1
 
-            thread = self.update_pool.spawn(self.updateSite, site)
+            thread = self.spawnUpdateSite(site)
 
             if not self.isActiveMode():
                 break
@@ -436,6 +457,12 @@ class FileServer(ConnectionServer):
                 self.sleep(long_timeout)
                 continue
 
+            while self.siteIsInUpdatePool(site_address) and self.isActiveMode():
+                self.sleep(1)
+
+            if not self.isActiveMode():
+                break
+
             site = self.getSite(site_address)
             if not site:
                 continue
@@ -451,7 +478,7 @@ class FileServer(ConnectionServer):
 
             log.info("running <%s> for %s" % (mode, site.address_short))
 
-            thread = self.update_pool.spawn(self.updateSite, site,
+            thread = self.spawnUpdateSite(site,
                 check_files=check_files, verify_files=verify_files)
 
         log.info("sitesVerificationThread stopped")
