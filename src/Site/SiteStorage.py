@@ -439,6 +439,8 @@ class SiteStorage(object):
         return inner_path
 
     # Verify all files sha512sum using content.json
+    # The result may not be accurate if self.site.isStopping().
+    # verifyFiles() return immediately in that case.
     def verifyFiles(self, quick_check=False, add_optional=False, add_changed=True):
         bad_files = []
         back = defaultdict(int)
@@ -446,14 +448,44 @@ class SiteStorage(object):
         i = 0
         self.log.debug("Verifing files...")
 
-        notificator = VerifyFiles_Notificator(self.site, quick_check)
-
         if not self.site.content_manager.contents.get("content.json"):  # No content.json, download it first
             self.log.debug("VerifyFile content.json not exists")
             self.site.needFile("content.json", update=True)  # Force update to fix corrupt file
             self.site.content_manager.loadContent()  # Reload content.json
-        for content_inner_path, content in self.site.content_manager.contents.iteritems():
-            notificator.inc()
+
+        # Trying to read self.site.content_manager.contents without being stuck
+        # on reading the long file list and also without getting
+        # "RuntimeError: dictionary changed size during iteration"
+        # We can't use just list(iteritems()) since it loads all the contents files
+        # at once and gets unresponsive.
+        contents = {}
+        notificator = None
+        tries = 0
+        max_tries = 40
+        stop = False
+        while not stop:
+            try:
+                contents = {}
+                notificator = VerifyFiles_Notificator(self.site, quick_check)
+                for content_inner_path, content in self.site.content_manager.contents.iteritems():
+                    notificator.inc()
+                    contents[content_inner_path] = content
+                    if self.site.isStopping():
+                        stop = True
+                        break
+                stop = True
+            except RuntimeError as err:
+                if "changed size during iteration" in str(err):
+                    tries += 1
+                    if tries >= max_tries:
+                        self.log.info("contents.json file list changed during iteration. %s tries done. Giving up.", tries)
+                        stop = True
+                    self.log.info("contents.json file list changed during iteration. Trying again... (%s)", tries)
+                    time.sleep(2 * tries)
+                else:
+                    stop = True
+
+        for content_inner_path, content in contents.items():
             back["num_content"] += 1
             i += 1
             if i % 50 == 0:
