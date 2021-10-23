@@ -79,6 +79,9 @@ class ConnectionServer(object):
         self.pool = Pool(500)  # do not accept more than 500 connections
         self.managed_pools["incoming"] = self.pool
 
+        self.outgoing_pool = Pool(None)
+        self.managed_pools["outgoing"] = self.outgoing_pool
+
         # Bittorrent style peerid
         self.peer_id = "-UT3530-%s" % CryptHash.random(12, "base64")
 

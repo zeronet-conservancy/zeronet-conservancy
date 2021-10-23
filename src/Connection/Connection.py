@@ -167,7 +167,7 @@ class Connection(object):
         # Detect protocol
         event_connected = self.event_connected
         self.send({"cmd": "handshake", "req_id": 0, "params": self.getHandshakeInfo()})
-        gevent.spawn(self.messageLoop)
+        self.server.outgoing_pool.spawn(self.messageLoop)
         connect_res = event_connected.get()  # Wait for handshake
         if self.sock:
             self.sock.settimeout(timeout_before)
