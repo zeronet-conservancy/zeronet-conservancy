@@ -812,6 +812,9 @@ class Site(object):
     def update2(self, check_files=False, verify_files=False):
         if len(self.peers) < 50:
             self.announce(mode="update")
+        self.waitForPeers(5, 5, 30);
+        self.waitForPeers(2, 2, 30);
+        self.waitForPeers(1, 1, 60);
 
         self.update(check_files=check_files, verify_files=verify_files)
 
@@ -891,21 +894,36 @@ class Site(object):
                     background_publisher.finalize()
                     del self.background_publishers[inner_path]
 
-    def waitForPeers(self, num_peers, num_connected_peers, time_limit):
+    def waitForPeers_realJob(self, need_nr_peers, need_nr_connected_peers, time_limit):
         start_time = time.time()
         for _ in range(time_limit):
-            if len(self.peers) >= num_peers and len(self.getConnectedPeers()) >= num_connected_peers:
-                return True
+            nr_connected_peers = len(self.getConnectedPeers())
+            nr_peers = len(self.peers)
+            if nr_peers >= need_nr_peers and nr_connected_peers >= need_nr_connected_peers:
+                return nr_connected_peers
+            self.updateWebsocket(connecting_to_peers=nr_connected_peers)
             self.announce(mode="more", force=True)
+            if not self.isServing():
+                return nr_connected_peers
             for wait in range(10):
-                self.needConnections(num=num_connected_peers)
+                self.needConnections(num=need_nr_connected_peers)
                 time.sleep(2)
-                if len(self.peers) >= num_peers and len(self.getConnectedPeers()) >= num_connected_peers:
-                    return True
+                nr_connected_peers = len(self.getConnectedPeers())
+                nr_peers = len(self.peers)
+                self.updateWebsocket(connecting_to_peers=nr_connected_peers)
+                if not self.isServing():
+                    return nr_connected_peers
+                if nr_peers >= need_nr_peers and nr_connected_peers >= need_nr_connected_peers:
+                    return nr_connected_peers
                 if time.time() - start_time > time_limit:
-                    return True
+                    return nr_connected_peers
 
-        return False
+        return nr_connected_peers
+
+    def waitForPeers(self, need_nr_peers, need_nr_connected_peers, time_limit):
+        nr_connected_peers = self.waitForPeers_realJob(need_nr_peers, need_nr_connected_peers, time_limit)
+        self.updateWebsocket(connected_to_peers=nr_connected_peers)
+        return nr_connected_peers
 
     def getPeersForForegroundPublishing(self, limit):
         # Wait for some peers to appear
