@@ -291,7 +291,7 @@ class FileServer(ConnectionServer):
             if self.isInternetOnline():
                 break
             if len(self.update_pool) == 0:
-                thread = self.update_pool.spawn(self.updateRandomSite)
+                thread = self.thread_pool.spawn(self.updateRandomSite)
                 thread.join()
 
         self.recheckPort()
@@ -330,13 +330,14 @@ class FileServer(ConnectionServer):
         while True:
             restart = False
             for thread in list(iter(self.update_pool)):
-                if not thread.site_address:
+                thread_site_address = getattr(thread, 'site_address', None)
+                if not thread_site_address:
                     # Possible race condition in assigning thread.site_address in spawnUpdateSite()
                     # Trying again.
                     self.sleep(0.1)
                     restart = True
                     break
-                if thread.site_address == site_address:
+                if thread_site_address == site_address:
                     return True
             if not restart:
                 return False
@@ -397,6 +398,7 @@ class FileServer(ConnectionServer):
 
             sites_processed += 1
 
+            log.info("running <update> for %s" % site.address_short)
             thread = self.spawnUpdateSite(site)
 
             if not self.isActiveMode():
