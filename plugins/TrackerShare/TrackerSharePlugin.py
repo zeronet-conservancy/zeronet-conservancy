@@ -462,7 +462,7 @@ if "tracker_storage" not in locals():
 class SiteAnnouncerPlugin(object):
     def getTrackers(self):
         tracker_storage.setSiteAnnouncer(self)
-        tracker_storage.checkDiscoveringTrackers(self.site.getConnectedPeers())
+        tracker_storage.checkDiscoveringTrackers(self.site.getConnectedPeers(onlyFullyConnected=True))
         trackers = super(SiteAnnouncerPlugin, self).getTrackers()
         shared_trackers = list(tracker_storage.getTrackers().keys())
         if shared_trackers:

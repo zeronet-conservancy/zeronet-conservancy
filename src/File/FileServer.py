@@ -3,6 +3,7 @@ import time
 import random
 import socket
 import sys
+import weakref
 
 import gevent
 import gevent.pool
@@ -41,6 +42,8 @@ class FileServer(ConnectionServer):
         self.update_pool = gevent.pool.Pool(5)
         self.update_start_time = 0
         self.update_sites_task_next_nr = 1
+
+        self.update_threads = weakref.WeakValueDictionary()
 
         self.passive_mode = None
         self.active_mode = None
@@ -317,30 +320,23 @@ class FileServer(ConnectionServer):
 
     def updateSite(self, site, check_files=False, verify_files=False):
         if not site:
-            return False
-        return site.update2(check_files=check_files, verify_files=verify_files)
+            return
+        site.update2(check_files=check_files, verify_files=verify_files)
 
     def spawnUpdateSite(self, site, check_files=False, verify_files=False):
             thread = self.update_pool.spawn(self.updateSite, site,
                 check_files=check_files, verify_files=verify_files)
-            thread.site_address = site.address
+            self.update_threads[site.address] = thread
             return thread
 
+    def lookupInUpdatePool(self, site_address):
+        thread = self.update_threads.get(site_address, None)
+        if not thread or thread.ready():
+            return None
+        return thread
+
     def siteIsInUpdatePool(self, site_address):
-        while True:
-            restart = False
-            for thread in list(iter(self.update_pool)):
-                thread_site_address = getattr(thread, 'site_address', None)
-                if not thread_site_address:
-                    # Possible race condition in assigning thread.site_address in spawnUpdateSite()
-                    # Trying again.
-                    self.sleep(0.1)
-                    restart = True
-                    break
-                if thread_site_address == site_address:
-                    return True
-            if not restart:
-                return False
+        return self.lookupInUpdatePool(site_address) is not None
 
     def invalidateUpdateTime(self, invalid_interval):
         for address in self.getSiteAddresses():

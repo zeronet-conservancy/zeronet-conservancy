@@ -28,6 +28,7 @@ from Plugin import PluginManager
 from File import FileServer
 from .SiteAnnouncer import SiteAnnouncer
 from . import SiteManager
+from . import SiteHelpers
 
 class ScaledTimeoutHandler:
     def __init__(self, val_min, val_max, handler=None, scaler=None):
@@ -145,7 +146,6 @@ class BackgroundPublisher:
         self.site.log.info("Background publisher: Published %s to %s peers", self.inner_path, len(self.published))
 
 
-
 @PluginManager.acceptPlugins
 class Site(object):
 
@@ -208,6 +208,10 @@ class Site(object):
         self.content_manager.loadContents()  # Load content.json files
 
         self.announcer = SiteAnnouncer(self)  # Announce and get peer list from other nodes
+
+        self.peer_connector = SiteHelpers.PeerConnector(self) # Connect more peers in background by request
+        self.persistent_peer_req = None # The persistent peer requirement, managed by maintenance handler
+
 
         if not self.settings.get("wrapper_key"):  # To auth websocket permissions
             self.settings["wrapper_key"] = CryptHash.random()
@@ -753,7 +757,6 @@ class Site(object):
         if verify_files:
             check_files = True
 
-        self.updateWebsocket(updating=True)
         if verify_files:
             self.updateWebsocket(verifying=True)
         elif check_files:
@@ -771,15 +774,31 @@ class Site(object):
                 if verify_files:
                     self.settings["verify_files_timestamp"] = time.time()
 
+        if verify_files:
+            self.updateWebsocket(verified=True)
+        elif check_files:
+            self.updateWebsocket(checked=True)
+
         if not self.isServing():
-            self.updateWebsocket(updated=True)
             return False
+
+        if announce:
+            self.updateWebsocket(updating=True)
+            self.announce(mode="update", force=True)
+
+        reqs = [
+            self.peer_connector.newReq(4, 4, 30),
+            self.peer_connector.newReq(2, 2, 60),
+            self.peer_connector.newReq(1, 1, 120)
+        ]
+        nr_connected_peers = self.waitForPeers(reqs);
+        if nr_connected_peers < 1:
+            return
+
+        self.updateWebsocket(updating=True)
 
         # Remove files that no longer in content.json
         self.checkBadFiles()
-
-        if announce:
-            self.announce(mode="update", force=True)
 
         # Full update, we can reset bad files
         if check_files and since == 0:
@@ -810,12 +829,6 @@ class Site(object):
     # To be called from FileServer
     @util.Noparallel(queue=True, ignore_args=True)
     def update2(self, check_files=False, verify_files=False):
-        if len(self.peers) < 50:
-            self.announce(mode="update")
-        self.waitForPeers(5, 5, 30);
-        self.waitForPeers(2, 2, 30);
-        self.waitForPeers(1, 1, 60);
-
         self.update(check_files=check_files, verify_files=verify_files)
 
     # Update site by redownload all content.json
@@ -894,41 +907,13 @@ class Site(object):
                     background_publisher.finalize()
                     del self.background_publishers[inner_path]
 
-    def waitForPeers_realJob(self, need_nr_peers, need_nr_connected_peers, time_limit):
-        start_time = time.time()
-        for _ in range(time_limit):
-            nr_connected_peers = len(self.getConnectedPeers())
-            nr_peers = len(self.peers)
-            if nr_peers >= need_nr_peers and nr_connected_peers >= need_nr_connected_peers:
-                return nr_connected_peers
-            self.updateWebsocket(connecting_to_peers=nr_connected_peers)
-            self.announce(mode="more", force=True)
-            if not self.isServing():
-                return nr_connected_peers
-            for wait in range(10):
-                self.needConnections(num=need_nr_connected_peers)
-                time.sleep(2)
-                nr_connected_peers = len(self.getConnectedPeers())
-                nr_peers = len(self.peers)
-                self.updateWebsocket(connecting_to_peers=nr_connected_peers)
-                if not self.isServing():
-                    return nr_connected_peers
-                if nr_peers >= need_nr_peers and nr_connected_peers >= need_nr_connected_peers:
-                    return nr_connected_peers
-                if time.time() - start_time > time_limit:
-                    return nr_connected_peers
-
-        return nr_connected_peers
-
-    def waitForPeers(self, need_nr_peers, need_nr_connected_peers, time_limit):
-        nr_connected_peers = self.waitForPeers_realJob(need_nr_peers, need_nr_connected_peers, time_limit)
-        self.updateWebsocket(connected_to_peers=nr_connected_peers)
-        return nr_connected_peers
-
     def getPeersForForegroundPublishing(self, limit):
         # Wait for some peers to appear
-        self.waitForPeers(limit, limit / 2, 10) # some of them...
-        self.waitForPeers(1, 1, 60) # or at least one...
+        reqs = [
+            self.peer_connector.newReq(limit, limit / 2, 10), # some of them...
+            self.peer_connector.newReq(1, 1, 60) # or at least one...
+        ]
+        self.waitForPeers(reqs)
 
         peers = self.getConnectedPeers()
         random.shuffle(peers)
@@ -1206,6 +1191,10 @@ class Site(object):
             peer = Peer(ip, port, self)
             self.peers[key] = peer
             peer.found(source)
+
+            self.peer_connector.processReqs()
+            self.peer_connector.addPeer(peer)
+
             return peer
 
     def announce(self, *args, **kwargs):
@@ -1288,76 +1277,54 @@ class Site(object):
         limit = min(limit, config.connected_limit)
         return limit
 
-    def tryConnectingToMorePeers(self, more=1, pex=True, try_harder=False):
-        max_peers = more * 2 + 10
-        if try_harder:
-            max_peers += 10000
+    ############################################################################
 
-        connected = 0
-        for peer in self.getRecentPeers(max_peers):
-            if not peer.isConnected():
-                if pex:
-                    peer.pex()
-                else:
-                    peer.ping(timeout=2.0, tryes=1)
+    # Returns the maximum value of current reqs for connections
+    def waitingForConnections(self):
+        self.peer_connector.processReqs()
+        return self.peer_connector.need_nr_connected_peers
 
-                if peer.isConnected():
-                    connected += 1
-
-                if connected >= more:
-                    break
-
-        return connected
-
-    def bringConnections(self, need=1, update_site_on_reconnect=False, pex=True, try_harder=False):
-        connected = len(self.getConnectedPeers())
-        connected_before = connected
-
-        self.log.debug("Need connections: %s, Current: %s, Total: %s" % (need, connected, len(self.peers)))
-
-        if connected < need:
-            connected += self.tryConnectingToMorePeers(more=(need-connected), pex=pex, try_harder=try_harder)
-            self.log.debug(
-                "Connected before: %s, after: %s. Check site: %s." %
-                (connected_before, connected, update_site_on_reconnect)
-            )
-
-        if update_site_on_reconnect and connected_before == 0 and connected > 0 and self.connection_server.has_internet:
-            self.greenlet_manager.spawn(self.update, check_files=False)
-
-        return connected
-
-    # Keep connections
-    def needConnections(self, num=None, update_site_on_reconnect=False, pex=True):
+    def needConnections(self, num=None, update_site_on_reconnect=False):
         if not self.connection_server.allowsCreatingConnections():
             return
 
         if num is None:
             num = self.getPreferableActiveConnectionCount()
+            num = min(len(self.peers), num)
 
-        need = min(len(self.peers), num)
+        req = self.peer_connector.newReq(0, num)
+        return req
 
-        connected = self.bringConnections(
-            need=need,
-            update_site_on_reconnect=update_site_on_reconnect,
-            pex=pex,
-            try_harder=False)
+    # Wait for peers to ne known and/or connected and send updates to the UI
+    def waitForPeers(self, reqs):
+        if not reqs:
+            return 0
+        i = 0
+        nr_connected_peers = -1
+        while self.isServing():
+            ready_reqs = list(filter(lambda req: req.ready(), reqs))
+            if len(ready_reqs) == len(reqs):
+                if nr_connected_peers < 0:
+                    nr_connected_peers = ready_reqs[0].nr_connected_peers
+                break
+            waiting_reqs = list(filter(lambda req: not req.ready(), reqs))
+            if not waiting_reqs:
+                break
+            waiting_req = waiting_reqs[0]
+            #self.log.debug("waiting_req: %s %s %s", waiting_req.need_nr_connected_peers, waiting_req.nr_connected_peers, waiting_req.expiration_interval)
+            waiting_req.waitHeartbeat(timeout=1.0)
+            if i > 0 and nr_connected_peers != waiting_req.nr_connected_peers:
+                nr_connected_peers = waiting_req.nr_connected_peers
+                self.updateWebsocket(connecting_to_peers=nr_connected_peers)
+            i += 1
+        self.updateWebsocket(connected_to_peers=max(nr_connected_peers, 0))
+        if i > 1:
+            # If we waited some time, pause now for displaying connected_to_peers message in the UI.
+            # This sleep is solely needed for site status updates on ZeroHello to be more cool-looking.
+            gevent.sleep(1)
+        return nr_connected_peers
 
-        if connected < need:
-            self.greenlet_manager.spawnLater(1.0, self.bringConnections,
-                need=need,
-                update_site_on_reconnect=update_site_on_reconnect,
-                pex=pex,
-                try_harder=True)
-
-        if connected < num:
-            self.markConnectedPeersProtected()
-
-        return connected
-
-    def markConnectedPeersProtected(self):
-        for peer in self.getConnectedPeers():
-            peer.markProtected()
+    ############################################################################
 
     # Return: Probably peers verified to be connectable recently
     def getConnectablePeers(self, need_num=5, ignore=[], allow_private=True):
@@ -1429,15 +1396,26 @@ class Site(object):
 
         return found[0:need_num]
 
-    def getConnectedPeers(self):
+    # Returns the list of connected peers
+    # By default the result may contain peers chosen optimistically:
+    #  If the connection is being established and 20 seconds have not yet passed
+    #  since the connection start time, those peers are included in the result.
+    # Set onlyFullyConnected=True for restricting only by fully connected peers.
+    def getConnectedPeers(self, onlyFullyConnected=False):
         back = []
         if not self.connection_server:
             return []
 
         tor_manager = self.connection_server.tor_manager
         for connection in self.connection_server.connections:
+            if len(back) >= len(self.peers): # short cut for breaking early; no peers to check left
+                break
+
             if not connection.connected and time.time() - connection.start_time > 20:  # Still not connected after 20s
                 continue
+            if not connection.connected and onlyFullyConnected: # Only fully connected peers
+                continue
+
             peer = self.peers.get("%s:%s" % (connection.ip, connection.port))
             if peer:
                 if connection.ip.endswith(".onion") and connection.target_onion and tor_manager.start_onions:
@@ -1479,8 +1457,8 @@ class Site(object):
     def cleanupPeers(self):
         self.removeDeadPeers()
 
-        limit = self.getActiveConnectionCountLimit()
-        connected_peers = [peer for peer in self.getConnectedPeers() if peer.isConnected()]  # Only fully connected peers
+        limit = max(self.getActiveConnectionCountLimit(), self.waitingForConnections())
+        connected_peers = self.getConnectedPeers(onlyFullyConnected=True)
         need_to_close = len(connected_peers) - limit
 
         if need_to_close > 0:
@@ -1526,10 +1504,10 @@ class Site(object):
         if not startup:
             self.cleanupPeers()
 
-        self.needConnections(update_site_on_reconnect=True)
+        self.persistent_peer_req = self.needConnections(update_site_on_reconnect=True)
+        self.persistent_peer_req.result_connected.wait(timeout=2.0)
 
-        with gevent.Timeout(10, exception=False):
-            self.announcer.announcePex()
+        #self.announcer.announcePex()
 
         self.processBackgroundPublishers()
 
@@ -1559,7 +1537,7 @@ class Site(object):
             return False
 
         sent = 0
-        connected_peers = self.getConnectedPeers()
+        connected_peers = self.getConnectedPeers(onlyFullyConnected=True)
         for peer in connected_peers:
             if peer.sendMyHashfield():
                 sent += 1
@@ -1581,7 +1559,7 @@ class Site(object):
 
         s = time.time()
         queried = 0
-        connected_peers = self.getConnectedPeers()
+        connected_peers = self.getConnectedPeers(onlyFullyConnected=True)
         for peer in connected_peers:
             if peer.time_hashfield:
                 continue

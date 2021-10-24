@@ -54,6 +54,8 @@ class Peer(object):
         self.download_bytes = 0  # Bytes downloaded
         self.download_time = 0  # Time spent to download
 
+        self.protectedRequests = ["getFile", "streamFile", "update", "listModified"]
+
     def __getattr__(self, key):
         if key == "hashfield":
             self.has_hashfield = True
@@ -78,10 +80,8 @@ class Peer(object):
 
         logger.log(log_level, "%s:%s %s" % (self.ip, self.port, text))
 
-    # Site marks its Peers protected, if it has not enough peers connected.
-    # This is to be used to prevent disconnecting from peers when doing
-    # a periodic cleanup.
-    def markProtected(self, interval=60*20):
+    # Protect connection from being closed by site.cleanupPeers()
+    def markProtected(self, interval=60*2):
         self.protected = max(self.protected, time.time() + interval)
 
     def isProtected(self):
@@ -195,6 +195,8 @@ class Peer(object):
 
         for retry in range(1, 4):  # Retry 3 times
             try:
+                if cmd in self.protectedRequests:
+                    self.markProtected()
                 if not self.connection:
                     raise Exception("No connection found")
                 res = self.connection.request(cmd, params, stream_to)
