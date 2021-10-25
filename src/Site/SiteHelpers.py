@@ -66,6 +66,7 @@ class PeerConnector(object):
         self.nr_peers = 0 # set by processReqs()
         self.nr_connected_peers = 0 # set by processReqs2()
 
+        # Connector Controller state
         self.peers = list()
 
     def addReq(self, req):
@@ -139,6 +140,9 @@ class PeerConnector(object):
         if peer not in self.peers:
             self.peers.append(peer)
 
+    def sleep(self, t):
+        self.site.connection_server.sleep(t)
+
     def keepGoing(self):
         return self.site.isServing() and self.site.connection_server.allowsCreatingConnections()
 
@@ -153,10 +157,14 @@ class PeerConnector(object):
         addendum = 20
         while self.keepGoing():
 
-            if len(self.site.peers) < 1:
-                # No peers and no way to manage this from this method.
-                # Just give up.
-                break
+            no_peers_loop = 0
+            while len(self.site.peers) < 1:
+                # No peers at all.
+                # Waiting for the announcer to discover some peers.
+                self.sleep(10 + no_peers_loop)
+                no_peers_loop += 1
+                if not self.keepGoing() or no_peers_loop > 60:
+                    break
 
             self.processReqs2()
 
@@ -165,15 +173,19 @@ class PeerConnector(object):
                 # Done.
                 break
 
+            if len(self.site.peers) < 1:
+                break
+
             if len(self.peers) < 1:
                 # refill the peer list
-                self.peers = self.site.getRecentPeers(self.need_nr_connected_peers * 2 + addendum)
-                addendum = addendum * 2 + 50
+                self.peers = self.site.getRecentPeers(self.need_nr_connected_peers * 2 + self.nr_connected_peers + addendum)
+                addendum = min(addendum * 2 + 50, 10000)
                 if len(self.peers) <= self.nr_connected_peers:
-                    # looks like all known peers are connected
-                    # start announcePex() in background and give up
+                    # Looks like all known peers are connected.
+                    # Waiting for the announcer to discover some peers.
                     self.site.announcer.announcePex()
-                    break
+                    self.sleep(10)
+                    continue
 
             # try connecting to peers
             while self.keepGoing() and len(self.peer_connector_workers) < self.peer_connector_worker_limit:
@@ -195,7 +207,10 @@ class PeerConnector(object):
 
             # wait for more room in self.peer_connector_workers
             while self.keepGoing() and len(self.peer_connector_workers) >= self.peer_connector_worker_limit:
-                gevent.sleep(2)
+                self.sleep(2)
+
+            if not self.site.connection_server.isInternetOnline():
+                self.sleep(20)
 
         self.peers = list()
         self.peer_connector_controller = None
@@ -208,7 +223,9 @@ class PeerConnector(object):
             self.processReqs2()
             if self.need_nr_peers <= self.nr_peers:
                 break
-            gevent.sleep(10)
+            self.sleep(10)
+            if not self.site.connection_server.isInternetOnline():
+                self.sleep(20)
         self.peer_connector_announcer = None
 
     def spawnPeerConnectorController(self):
