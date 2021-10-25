@@ -44,6 +44,7 @@ class Peer(object):
         self.time_response = None  # Time of last successful response from peer
         self.time_added = time.time()
         self.last_ping = None  # Last response time for ping
+        self.last_pex = 0  # Last query/response time for pex
         self.is_tracker_connection = False  # Tracker connection instead of normal peer
         self.reputation = 0  # More likely to connect if larger
         self.last_content_json_update = 0.0  # Modify date of last received content.json
@@ -305,9 +306,14 @@ class Peer(object):
         return response_time
 
     # Request peer exchange from peer
-    def pex(self, site=None, need_num=5):
+    def pex(self, site=None, need_num=5, request_interval=60*2):
         if not site:
             site = self.site  # If no site defined request peers for this site
+
+        if self.last_pex + request_interval >= time.time():
+            return False
+
+        self.last_pex = time.time()
 
         # give back 5 connectible peers
         packed_peers = helper.packPeers(self.site.getConnectablePeers(5, allow_private=False))
@@ -317,6 +323,7 @@ class Peer(object):
         if packed_peers["ipv6"]:
             request["peers_ipv6"] = packed_peers["ipv6"]
         res = self.request("pex", request)
+        self.last_pex = time.time()
         if not res or "error" in res:
             return False
         added = 0

@@ -302,39 +302,47 @@ class SiteAnnouncer(object):
         self.updateWebsocket(trackers="announced")
 
     @util.Noparallel(blocking=False)
-    def announcePex(self, query_num=2, need_num=10):
-        if not self.site.isServing():
-            return
+    def announcePex(self, query_num=2, need_num=10, establish_connections=True):
+        peers = []
+        try:
+            peer_count = 20 + query_num * 2
 
-        self.updateWebsocket(pex="announcing")
+            # Wait for some peers to connect
+            for _ in range(5):
+                if not self.site.isServing():
+                    return
+                peers = self.site.getConnectedPeers(onlyFullyConnected=True)
+                if len(peers) > 0:
+                    break
+                time.sleep(2)
 
-        peers = self.site.getConnectedPeers()
-        if len(peers) == 0:  # Wait 3s for connections
-            time.sleep(3)
-            peers = self.site.getConnectedPeers()
+            if len(peers) < peer_count and establish_connections:
+                # Small number of connected peers for this site, connect to any
+                peers = list(self.site.getRecentPeers(peer_count))
 
-        if len(peers) == 0:  # Small number of connected peers for this site, connect to any
-            peers = list(self.site.getRecentPeers(20))
-            need_num = 10
+            if len(peers) > 0:
+                self.updateWebsocket(pex="announcing")
 
-        random.shuffle(peers)
-        done = 0
-        total_added = 0
-        for peer in peers:
-            num_added = peer.pex(need_num=need_num)
-            if num_added is not False:
-                done += 1
-                total_added += num_added
-                if num_added:
-                    self.site.worker_manager.onPeers()
-                    self.site.updateWebsocket(peers_added=num_added)
-            else:
+            random.shuffle(peers)
+            done = 0
+            total_added = 0
+            for peer in peers:
+                if not establish_connections and not peer.isConnected():
+                    continue
+                num_added = peer.pex(need_num=need_num)
+                if num_added is not False:
+                    done += 1
+                    total_added += num_added
+                    if num_added:
+                        self.site.worker_manager.onPeers()
+                        self.site.updateWebsocket(peers_added=num_added)
+                if done == query_num:
+                    break
                 time.sleep(0.1)
-            if done == query_num:
-                break
-        self.log.debug("Pex result: from %s peers got %s new peers." % (done, total_added))
-
-        self.updateWebsocket(pex="announced")
+            self.log.debug("Pex result: from %s peers got %s new peers." % (done, total_added))
+        finally:
+            if len(peers) > 0:
+                self.updateWebsocket(pex="announced")
 
     def updateWebsocket(self, **kwargs):
         if kwargs:

@@ -183,7 +183,7 @@ class PeerConnector(object):
                 if len(self.peers) <= self.nr_connected_peers:
                     # Looks like all known peers are connected.
                     # Waiting for the announcer to discover some peers.
-                    self.site.announcer.announcePex()
+                    self.site.announcer.announcePex(establish_connections=False)
                     self.sleep(10)
                     continue
 
