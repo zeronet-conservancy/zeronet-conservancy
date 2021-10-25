@@ -283,7 +283,7 @@ class Site(object):
         SiteManager.site_manager.saveDelayed()
 
     # Returns True if any site-related activity should be interrupted
-    # due to connection server being stooped or site being deleted
+    # due to connection server being stopped or site being deleted
     def isStopping(self):
         return self.connection_server.stopping or self.settings.get("deleting", False)
 
@@ -353,7 +353,7 @@ class Site(object):
     def isAddedRecently(self):
         return time.time() - self.settings.get("added", 0) < 60 * 60 * 24
 
-    # Download all file from content.json
+    # Download all files from content.json
     def downloadContent(self, inner_path, download_files=True, peer=None, check_modifications=False, diffs={}):
         s = time.time()
         if config.verbose:
@@ -1597,10 +1597,10 @@ class Site(object):
 
     # Add event listeners
     def addEventListeners(self):
-        self.onFileStart = util.Event()  # If WorkerManager added new task
+        self.onFileStart = util.Event() # If WorkerManager added new task
         self.onFileDone = util.Event()  # If WorkerManager successfully downloaded a file
         self.onFileFail = util.Event()  # If WorkerManager failed to download a file
-        self.onComplete = util.Event()  # All file finished
+        self.onComplete = util.Event()  # All files finished
 
         self.onFileStart.append(lambda inner_path: self.fileStarted())  # No parameters to make Noparallel batching working
         self.onFileDone.append(lambda inner_path: self.fileDone(inner_path))
@@ -1629,7 +1629,7 @@ class Site(object):
         time.sleep(0.001)  # Wait for other files adds
         self.updateWebsocket(file_started=True)
 
-    # File downloaded successful
+    # File downloaded successfully
     def fileDone(self, inner_path):
         # File downloaded, remove it from bad files
         if inner_path in self.bad_files:

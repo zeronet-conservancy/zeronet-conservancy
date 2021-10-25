@@ -31,7 +31,7 @@ class ConnectRequirement(object):
     def ready(self):
         return self.expired or self.fulfilled()
 
-    # Heartbeat send when any of the following happens:
+    # Heartbeat sent when any of the following happens:
     # * self.result is set
     # * self.result_connected is set
     # * self.nr_peers changed
