@@ -280,6 +280,7 @@ class FileServer(ConnectionServer):
     # Returns False if Internet is immediately available
     # Returns True if we've spent some time waiting for Internet
     # Returns None if FileServer is stopping or the Offline mode is enabled
+    @util.Noparallel()
     def waitForInternetOnline(self):
         if self.isOfflineMode() or self.stopping:
             return None
@@ -294,6 +295,7 @@ class FileServer(ConnectionServer):
             if self.isInternetOnline():
                 break
             if len(self.update_pool) == 0:
+                log.info("Internet connection seems to be broken. Running an update for a random site to check if we are able to connect to any peer.")
                 thread = self.thread_pool.spawn(self.updateRandomSite)
                 thread.join()
 
@@ -314,7 +316,7 @@ class FileServer(ConnectionServer):
         if not site:
             return
 
-        log.debug("Checking randomly chosen site: %s", site.address_short)
+        log.info("Randomly chosen site: %s", site.address_short)
 
         self.spawnUpdateSite(site).join()
 
@@ -446,6 +448,7 @@ class FileServer(ConnectionServer):
         while self.isActiveMode():
             site = None
             self.sleep(short_timeout)
+            self.waitForInternetOnline()
 
             if not self.isActiveMode():
                 break
