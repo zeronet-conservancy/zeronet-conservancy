@@ -629,7 +629,7 @@ class Site(object):
                     if has_newer:
                         # We dont have this file or we have older
                         modified_contents.append(inner_path)
-                        self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1
+                        self.bad_files[inner_path] = self.bad_files.get(inner_path, 1)
                     if has_older:
                         send_back.append(inner_path)
 
@@ -1163,7 +1163,7 @@ class Site(object):
                     self.log.debug("%s: Download not allowed" % inner_path)
                     return False
 
-            self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
+            self.bad_files[inner_path] = self.bad_files.get(inner_path, 1)  # Mark as bad file
 
             task = self.worker_manager.addTask(inner_path, peer, priority=priority, file_info=file_info)
             if blocking:
