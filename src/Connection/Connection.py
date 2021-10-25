@@ -118,6 +118,8 @@ class Connection(object):
 
     # Open connection to peer and wait for handshake
     def connect(self):
+        self.updateOnlineStatus(outgoing_activity=True)
+
         if not self.event_connected or self.event_connected.ready():
             self.event_connected = gevent.event.AsyncResult()
 
