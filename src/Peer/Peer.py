@@ -217,6 +217,9 @@ class Peer(object):
 
     # Send a command to peer and return response value
     def request(self, cmd, params={}, stream_to=None):
+        if self.removed:
+            return False
+
         if not self.connection or self.connection.closed:
             self.connect()
             if not self.connection:
@@ -261,6 +264,9 @@ class Peer(object):
 
     # Get a file content from peer
     def getFile(self, site, inner_path, file_size=None, pos_from=0, pos_to=None, streaming=False):
+        if self.removed:
+            return False
+
         if file_size and file_size > 5 * 1024 * 1024:
             max_read_size = 1024 * 1024
         else:
@@ -315,6 +321,9 @@ class Peer(object):
 
     # Send a ping request
     def ping(self, timeout=10.0, tryes=3):
+        if self.removed:
+            return False
+
         response_time = None
         for retry in range(1, tryes):  # Retry 3 times
             s = time.time()
@@ -338,6 +347,9 @@ class Peer(object):
 
     # Request peer exchange from peer
     def pex(self, site=None, need_num=5, request_interval=60*2):
+        if self.removed:
+            return False
+
         if not site:
             site = self.site  # If no site defined request peers for this site
 
@@ -391,6 +403,9 @@ class Peer(object):
         return self.request("listModified", {"since": since, "site": self.site.address})
 
     def updateHashfield(self, force=False):
+        if self.removed:
+            return False
+
         # Don't update hashfield again in 5 min
         if self.time_hashfield and time.time() - self.time_hashfield < 5 * 60 and not force:
             return False
@@ -406,6 +421,9 @@ class Peer(object):
     # Find peers for hashids
     # Return: {hash1: ["ip:port", "ip:port",...],...}
     def findHashIds(self, hash_ids):
+        if self.removed:
+            return False
+
         res = self.request("findHashIds", {"site": self.site.address, "hash_ids": hash_ids})
         if not res or "error" in res or type(res) is not dict:
             return False
@@ -449,6 +467,9 @@ class Peer(object):
             return True
 
     def publish(self, address, inner_path, body, modified, diffs=[]):
+        if self.removed:
+            return False
+
         if len(body) > 10 * 1024 and self.connection and self.connection.handshake.get("rev", 0) >= 4095:
             # To save bw we don't push big content.json to peers
             body = b""
@@ -467,7 +488,9 @@ class Peer(object):
         self.log("Removing peer with reason: <%s>. Connection error: %s, Hash failed: %s" % (reason, self.connection_error, self.hash_failed))
         if self.site:
             self.site.deregisterPeer(self)
-            self.site = None
+            # No way: self.site = None
+            # We don't assign None to self.site here because it leads to random exceptions in various threads,
+            # that hold references to the peer and still believe it belongs to the site.
 
         self.disconnect(reason)
 
