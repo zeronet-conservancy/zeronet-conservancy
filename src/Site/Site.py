@@ -212,7 +212,6 @@ class Site(object):
         self.peer_connector = SiteHelpers.PeerConnector(self) # Connect more peers in background by request
         self.persistent_peer_req = None # The persistent peer requirement, managed by maintenance handler
 
-
         if not self.settings.get("wrapper_key"):  # To auth websocket permissions
             self.settings["wrapper_key"] = CryptHash.random()
             self.log.debug("New wrapper key: %s" % self.settings["wrapper_key"])
@@ -307,6 +306,12 @@ class Site(object):
     def spawnLater(self, *args, **kwargs):
         thread = self.greenlet_manager.spawnLater(*args, **kwargs)
         return thread
+
+    def checkSendBackLRU(self, peer, inner_path, remote_modified):
+        return SiteManager.site_manager.checkSendBackLRU(self, peer, inner_path, remote_modified)
+
+    def addToSendBackLRU(self, peer, inner_path, modified):
+        return SiteManager.site_manager.addToSendBackLRU(self, peer, inner_path, modified)
 
     def getSettingsCache(self):
         back = {}
@@ -619,7 +624,8 @@ class Site(object):
             queried.append(peer)
             modified_contents = []
             send_back = []
-            send_back_limit = 5
+            send_back_limit = config.send_back_limit
+            send_back_skipped = 0
             my_modified = self.content_manager.listModified(since)
             num_old_files = 0
             for inner_path, modified in res["modified_files"].items():  # Check if the peer has newer files than we
@@ -631,7 +637,10 @@ class Site(object):
                         modified_contents.append(inner_path)
                         self.bad_files[inner_path] = self.bad_files.get(inner_path, 1)
                     if has_older:
-                        send_back.append(inner_path)
+                        if self.checkSendBackLRU(peer, inner_path, modified):
+                            send_back_skipped += 1
+                        else:
+                            send_back.append(inner_path)
 
             if modified_contents:
                 self.log.info("CheckModifications: %s new modified files from %s" % (len(modified_contents), peer))
@@ -653,7 +662,10 @@ class Site(object):
                     self.log.info("CheckModifications:     %s: %s < %s" % (
                         inner_path, res["modified_files"][inner_path], my_modified.get(inner_path, 0)
                     ))
-                self.spawn(self.publisher, inner_path, [peer], [], 1)
+                    self.spawn(self.publisher, inner_path, [peer], [], 1, save_to_send_back_lru=True)
+
+            if send_back_skipped:
+                self.log.info("CheckModifications: %s has older versions of %s files, skipped according to send back LRU" % (peer, send_back_skipped))
 
         self.log.debug("CheckModifications: Waiting for %s pooledDownloadContent" % len(threads))
         gevent.joinall(threads)
@@ -842,7 +854,7 @@ class Site(object):
         gevent.joinall(content_threads)
 
     # Publish worker
-    def publisher(self, inner_path, peers, published, limit, diffs={}, event_done=None, cb_progress=None, max_retries=2):
+    def publisher(self, inner_path, peers, published, limit, diffs={}, event_done=None, cb_progress=None, max_retries=2, save_to_send_back_lru=False):
         file_size = self.storage.getSize(inner_path)
         content_json_modified = self.content_manager.contents[inner_path]["modified"]
         body = self.storage.read(inner_path)
@@ -876,6 +888,12 @@ class Site(object):
                 except Exception as err:
                     self.log.error("Publish error: %s" % Debug.formatException(err))
                     result = {"exception": Debug.formatException(err)}
+
+            # We add to the send back lru not only on success, but also on errors.
+            # Some peers returns None. (Why?)
+            # Anyway, we tried our best in delivering possibly lost updates.
+            if save_to_send_back_lru:
+                self.addToSendBackLRU(peer, inner_path, content_json_modified)
 
             if result and "ok" in result:
                 published.append(peer)

@@ -4,6 +4,7 @@ import re
 import os
 import time
 import atexit
+import collections
 
 import gevent
 
@@ -26,6 +27,21 @@ class SiteManager(object):
         self.loaded = False
         gevent.spawn(self.saveTimer)
         atexit.register(lambda: self.save(recalculate_size=True))
+
+        # ZeroNet has a bug of desyncing between:
+        # * time sent in a response of listModified
+        # and
+        # * time checked on receiving a file.
+        # This leads to the following scenario:
+        # * Request listModified.
+        # * Detect that the remote peer missing an update
+        # * Send a newer version of the file back to the peer.
+        # * The peer responses "ok: File not changed"
+        # .....
+        # * Request listModified the next time and do all the same again.
+        # So we keep the list of sent back entries to prevent sending multiple useless updates:
+        # "{site.address} - {peer.key} - {inner_path}" -> mtime
+        self.send_back_lru = collections.OrderedDict()
 
     # Load all sites from data/sites.json
     @util.Noparallel()
@@ -220,6 +236,23 @@ class SiteManager(object):
             self.load(startup=True)
         return self.sites
 
+    # Return False if we never sent <inner_path> to <peer>
+    # or if the file that was sent was older than <remote_modified>
+    # so that send back logic is suppressed for <inner_path>.
+    # True if <inner_path> can be sent back to <peer>.
+    def checkSendBackLRU(self, site, peer, inner_path, remote_modified):
+        key = site.address + ' - ' + peer.key + ' - ' + inner_path
+        sent_modified = self.send_back_lru.get(key, 0)
+        return remote_modified < sent_modified
+
+    def addToSendBackLRU(self, site, peer, inner_path, modified):
+        key = site.address + ' - ' + peer.key + ' - ' + inner_path
+        if self.send_back_lru.get(key, None) is None:
+            self.send_back_lru[key] = modified
+            while len(self.send_back_lru) > config.send_back_lru_size:
+                self.send_back_lru.popitem(last=False)
+        else:
+            self.send_back_lru.move_to_end(key, last=True)
 
 site_manager = SiteManager()  # Singletone
 
