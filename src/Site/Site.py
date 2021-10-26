@@ -913,7 +913,7 @@ class Site(object):
             self.peer_connector.newReq(limit, limit / 2, 10), # some of them...
             self.peer_connector.newReq(1, 1, 60) # or at least one...
         ]
-        self.waitForPeers(reqs)
+        self.waitForPeers(reqs, update_websocket=False)
 
         peers = self.getConnectedPeers()
         random.shuffle(peers)
@@ -1197,6 +1197,15 @@ class Site(object):
 
             return peer
 
+    # Called from peer.remove to erase links to peer
+    def deregisterPeer(self, peer):
+        self.peers.pop(peer.key, None)
+        try:
+            self.peers_recent.remove(peer)
+        except:
+            pass
+        self.peer_connector.deregisterPeer(peer)
+
     def announce(self, *args, **kwargs):
         if self.isServing():
             self.announcer.announce(*args, **kwargs)
@@ -1295,8 +1304,9 @@ class Site(object):
         req = self.peer_connector.newReq(0, num)
         return req
 
-    # Wait for peers to ne known and/or connected and send updates to the UI
-    def waitForPeers(self, reqs):
+    # Wait for peers to be discovered and/or connected according to reqs
+    # and send updates to the UI
+    def waitForPeers(self, reqs, update_websocket=True):
         if not reqs:
             return 0
         i = 0
@@ -1315,84 +1325,72 @@ class Site(object):
             waiting_req.waitHeartbeat(timeout=1.0)
             if i > 0 and nr_connected_peers != waiting_req.nr_connected_peers:
                 nr_connected_peers = waiting_req.nr_connected_peers
-                self.updateWebsocket(connecting_to_peers=nr_connected_peers)
+                if update_websocket:
+                    self.updateWebsocket(connecting_to_peers=nr_connected_peers)
             i += 1
-        self.updateWebsocket(connected_to_peers=max(nr_connected_peers, 0))
-        if i > 1:
-            # If we waited some time, pause now for displaying connected_to_peers message in the UI.
-            # This sleep is solely needed for site status updates on ZeroHello to be more cool-looking.
-            gevent.sleep(1)
+        if update_websocket:
+            self.updateWebsocket(connected_to_peers=max(nr_connected_peers, 0))
+            if i > 1:
+                # If we waited some time, pause now for displaying connected_to_peers message in the UI.
+                # This sleep is solely needed for site status updates on ZeroHello to be more cool-looking.
+                gevent.sleep(1)
         return nr_connected_peers
 
     ############################################################################
 
-    # Return: Probably peers verified to be connectable recently
+    # Return: Peers verified to be connectable recently, or if not enough, other peers as well
     def getConnectablePeers(self, need_num=5, ignore=[], allow_private=True):
         peers = list(self.peers.values())
-        found = []
+        random.shuffle(peers)
+        connectable_peers = []
+        reachable_peers = []
         for peer in peers:
-            if peer.key.endswith(":0"):
-                continue  # Not connectable
-            if not peer.connection:
-                continue  # No connection
-            if peer.ip.endswith(".onion") and not self.connection_server.tor_manager.enabled:
-                continue  # Onion not supported
             if peer.key in ignore:
-                continue  # The requester has this peer
-            if time.time() - peer.connection.last_recv_time > 60 * 60 * 2:  # Last message more than 2 hours ago
-                peer.connection = None  # Cleanup: Dead connection
                 continue
             if not allow_private and helper.isPrivateIp(peer.ip):
                 continue
-            found.append(peer)
-            if len(found) >= need_num:
+            if peer.isConnectable():
+                connectable_peers.append(peer)
+            elif peer.isReachable():
+                reachable_peers.append(peer)
+            if len(connectable_peers) >= need_num:
                 break  # Found requested number of peers
 
-        if len(found) < need_num:  # Return not that good peers
-            found += [
-                peer for peer in peers
-                if not peer.key.endswith(":0") and
-                peer.key not in ignore and
-                (allow_private or not helper.isPrivateIp(peer.ip))
-            ][0:need_num - len(found)]
+        if len(connectable_peers) < need_num:  # Return not that good peers
+            connectable_peers += reachable_peers[0:need_num - len(connectable_peers)]
 
-        return found
+        return connectable_peers
 
     # Return: Recently found peers
+    def getReachablePeers(self):
+        return [peer for peer in self.peers.values() if peer.isReachable()]
+
+    # Return: Recently found peers, sorted by reputation.
+    # If there not enough recently found peers, adds other known peers with highest reputation
     def getRecentPeers(self, need_num):
         need_num = int(need_num)
-        found = list(set(self.peers_recent))
+        found = set(self.peers_recent)
         self.log.debug(
             "Recent peers %s of %s (need: %s)" %
             (len(found), len(self.peers), need_num)
         )
 
-        if len(found) >= need_num or len(found) >= len(self.peers):
-            return sorted(
-                found,
+        if len(found) < need_num and len(found) < len(self.peers):
+            # Add random peers
+            peers = self.getReachablePeers()
+            peers = sorted(
+                list(peers),
                 key=lambda peer: peer.reputation,
                 reverse=True
-            )[0:need_num]
+            )
+            while len(found) < need_num and len(peers) > 0:
+                found.add(peers.pop())
 
-        # Add random peers
-        need_more = need_num - len(found)
-        if not self.connection_server.tor_manager.enabled:
-            peers = [peer for peer in self.peers.values() if not peer.ip.endswith(".onion")]
-        else:
-            peers = list(self.peers.values())
-
-        self.log.debug("getRecentPeers: peers = %s" % peers)
-        self.log.debug("getRecentPeers: need_more = %s" % need_more)
-
-        peers = peers[0:need_more * 50]
-
-        found_more = sorted(
-            peers,
+        return sorted(
+            list(found),
             key=lambda peer: peer.reputation,
             reverse=True
-        )[0:need_more * 2]
-
-        found += found_more
+        )[0:need_num]
 
         return found[0:need_num]
 
@@ -1400,8 +1398,8 @@ class Site(object):
     # By default the result may contain peers chosen optimistically:
     #  If the connection is being established and 20 seconds have not yet passed
     #  since the connection start time, those peers are included in the result.
-    # Set onlyFullyConnected=True for restricting only by fully connected peers.
-    def getConnectedPeers(self, onlyFullyConnected=False):
+    # Set only_fully_connected=True for restricting only by fully connected peers.
+    def getConnectedPeers(self, only_fully_connected=False):
         back = []
         if not self.connection_server:
             return []
@@ -1413,7 +1411,7 @@ class Site(object):
 
             if not connection.connected and time.time() - connection.start_time > 20:  # Still not connected after 20s
                 continue
-            if not connection.connected and onlyFullyConnected: # Only fully connected peers
+            if not connection.connected and only_fully_connected: # Only fully connected peers
                 continue
 
             peer = self.peers.get("%s:%s" % (connection.ip, connection.port))
@@ -1434,7 +1432,9 @@ class Site(object):
             return
 
         removed = 0
-        if len(peers) > 1000:
+        if len(peers) > 10000:
+            ttl = 60 * 2
+        elif len(peers) > 1000:
             ttl = 60 * 60 * 1
         elif len(peers) > 100:
             ttl = 60 * 60 * 4
@@ -1458,7 +1458,7 @@ class Site(object):
         self.removeDeadPeers()
 
         limit = max(self.getActiveConnectionCountLimit(), self.waitingForConnections())
-        connected_peers = self.getConnectedPeers(onlyFullyConnected=True)
+        connected_peers = self.getConnectedPeers(only_fully_connected=True)
         need_to_close = len(connected_peers) - limit
 
         if need_to_close > 0:
@@ -1537,7 +1537,7 @@ class Site(object):
             return False
 
         sent = 0
-        connected_peers = self.getConnectedPeers(onlyFullyConnected=True)
+        connected_peers = self.getConnectedPeers(only_fully_connected=True)
         for peer in connected_peers:
             if peer.sendMyHashfield():
                 sent += 1
@@ -1559,7 +1559,7 @@ class Site(object):
 
         s = time.time()
         queried = 0
-        connected_peers = self.getConnectedPeers(onlyFullyConnected=True)
+        connected_peers = self.getConnectedPeers(only_fully_connected=True)
         for peer in connected_peers:
             if peer.time_hashfield:
                 continue

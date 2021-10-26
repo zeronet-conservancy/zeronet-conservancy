@@ -311,7 +311,7 @@ class SiteAnnouncer(object):
             for _ in range(5):
                 if not self.site.isServing():
                     return
-                peers = self.site.getConnectedPeers(onlyFullyConnected=True)
+                peers = self.site.getConnectedPeers(only_fully_connected=True)
                 if len(peers) > 0:
                     break
                 time.sleep(2)

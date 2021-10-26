@@ -519,3 +519,17 @@ class ConnectionServer(object):
         mid = int(len(corrections) / 2 - 1)
         median = (corrections[mid - 1] + corrections[mid] + corrections[mid + 1]) / 3
         return median
+
+    # Checks if a network address can be reachable in the current configuration
+    # and returs a string describing why it cannot.
+    # If the network address can be reachable, returns False.
+    def getIpUnreachability(self, ip):
+        ip_type = helper.getIpType(ip)
+        if ip_type == 'onion' and not self.tor_manager.enabled:
+            return "Can't connect to onion addresses, no Tor controller present"
+        if config.tor == "always" and helper.isPrivateIp(ip) and ip not in config.ip_local:
+            return "Can't connect to local IPs in Tor: always mode"
+        return False
+
+    def isIpReachable(self, ip):
+        return self.getIpUnreachability(ip) == False

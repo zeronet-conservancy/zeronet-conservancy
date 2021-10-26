@@ -124,12 +124,13 @@ class Connection(object):
             self.event_connected = gevent.event.AsyncResult()
 
         self.type = "out"
+
+        unreachability = self.server.getIpUnreachability(self.ip)
+        if unreachability:
+            raise Exception(unreachability)
+
         if self.ip_type == "onion":
-            if not self.server.tor_manager or not self.server.tor_manager.enabled:
-                raise Exception("Can't connect to onion addresses, no Tor controller present")
             self.sock = self.server.tor_manager.createSocket(self.ip, self.port)
-        elif config.tor == "always" and helper.isPrivateIp(self.ip) and self.ip not in config.ip_local:
-            raise Exception("Can't connect to local IPs in Tor: always mode")
         elif config.trackers_proxy != "disable" and config.tor != "always" and self.is_tracker_connection:
             if config.trackers_proxy == "tor":
                 self.sock = self.server.tor_manager.createSocket(self.ip, self.port)

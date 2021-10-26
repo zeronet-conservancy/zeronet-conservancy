@@ -124,7 +124,7 @@ class PeerConnector(object):
             self.spawnPeerConnectorController();
 
     def processReqs2(self):
-        self.nr_connected_peers = len(self.site.getConnectedPeers(onlyFullyConnected=True))
+        self.nr_connected_peers = len(self.site.getConnectedPeers(only_fully_connected=True))
         self.processReqs(nr_connected_peers=self.nr_connected_peers)
 
     # For adding new peers when ConnectorController is working.
@@ -139,6 +139,12 @@ class PeerConnector(object):
             return
         if peer not in self.peers:
             self.peers.append(peer)
+
+    def deregisterPeer(self, peer):
+        try:
+            self.peers.remove(peer)
+        except:
+            pass
 
     def sleep(self, t):
         self.site.connection_server.sleep(t)
@@ -187,6 +193,8 @@ class PeerConnector(object):
                     self.sleep(10)
                     continue
 
+            added = 0
+
             # try connecting to peers
             while self.keepGoing() and len(self.peer_connector_workers) < self.peer_connector_worker_limit:
                 if len(self.peers) < 1:
@@ -204,13 +212,23 @@ class PeerConnector(object):
                 thread = self.site.spawn(self.peerConnectorWorker, peer)
                 self.peer_connector_workers[peer] = thread
                 thread.link(lambda thread, peer=peer: self.peer_connector_workers.pop(peer, None))
+                added += 1
+
+            if not self.keepGoing():
+                break
+
+            if not added:
+                # Looks like all known peers are either connected or being connected,
+                # so we weren't able to start connecting any peer in this iteration.
+                # Waiting for the announcer to discover some peers.
+                self.sleep(20)
 
             # wait for more room in self.peer_connector_workers
             while self.keepGoing() and len(self.peer_connector_workers) >= self.peer_connector_worker_limit:
                 self.sleep(2)
 
             if not self.site.connection_server.isInternetOnline():
-                self.sleep(20)
+                self.sleep(30)
 
         self.peers = list()
         self.peer_connector_controller = None
