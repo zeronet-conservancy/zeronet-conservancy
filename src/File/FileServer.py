@@ -21,6 +21,12 @@ from Debug import Debug
 
 log = logging.getLogger("FileServer")
 
+class FakeThread(object):
+    def __init__(self):
+        pass
+    def ready(self):
+        return False
+
 @PluginManager.acceptPlugins
 class FileServer(ConnectionServer):
 
@@ -39,7 +45,7 @@ class FileServer(ConnectionServer):
         self.active_mode_thread_pool = gevent.pool.Pool(None)
         self.site_pool = gevent.pool.Pool(None)
 
-        self.update_pool = gevent.pool.Pool(5)
+        self.update_pool = gevent.pool.Pool(10)
         self.update_start_time = 0
         self.update_sites_task_next_nr = 1
 
@@ -323,9 +329,18 @@ class FileServer(ConnectionServer):
     def updateSite(self, site, check_files=False, verify_files=False):
         if not site:
             return
+        if verify_files:
+            mode = 'verify'
+        elif check_files:
+            mode = 'check'
+        else:
+            mode = 'update'
+        log.info("running <%s> for %s" % (mode, site.address_short))
         site.update2(check_files=check_files, verify_files=verify_files)
 
     def spawnUpdateSite(self, site, check_files=False, verify_files=False):
+            fake_thread = FakeThread()
+            self.update_threads[site.address] = fake_thread
             thread = self.update_pool.spawn(self.updateSite, site,
                 check_files=check_files, verify_files=verify_files)
             self.update_threads[site.address] = thread
@@ -395,8 +410,6 @@ class FileServer(ConnectionServer):
                 continue
 
             sites_processed += 1
-
-            log.info("running <update> for %s" % site.address_short)
             thread = self.spawnUpdateSite(site)
 
             if not self.isActiveMode():
@@ -440,8 +453,8 @@ class FileServer(ConnectionServer):
 
     def sitesVerificationThread(self):
         log.info("sitesVerificationThread started")
-        short_timeout = 10
-        long_timeout = 60
+        short_timeout = 20
+        long_timeout = 120
 
         self.sleep(long_timeout)
 
@@ -476,8 +489,6 @@ class FileServer(ConnectionServer):
                 verify_files = False
             else:
                 continue
-
-            log.info("running <%s> for %s" % (mode, site.address_short))
 
             thread = self.spawnUpdateSite(site,
                 check_files=check_files, verify_files=verify_files)
