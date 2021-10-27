@@ -24,12 +24,14 @@ class ContentDbPlugin(object):
                 ["hashfield", "BLOB"],
                 ["reputation", "INTEGER NOT NULL"],
                 ["time_added", "INTEGER NOT NULL"],
-                ["time_found", "INTEGER NOT NULL"]
+                ["time_found", "INTEGER NOT NULL"],
+                ["time_response", "INTEGER NOT NULL"],
+                ["connection_error", "INTEGER NOT NULL"]
             ],
             "indexes": [
                 "CREATE UNIQUE INDEX peer_key ON peer (site_id, address, port)"
             ],
-            "schema_changed": 2
+            "schema_changed": 3
         }
 
         return schema
@@ -49,9 +51,15 @@ class ContentDbPlugin(object):
                 num_hashfield += 1
             peer.time_added = row["time_added"]
             peer.time_found = row["time_found"]
-            peer.reputation = row["reputation"]
+            peer.time_found = row["time_found"]
+            peer.time_response = row["time_response"]
+            peer.connection_error = row["connection_error"]
             if row["address"].endswith(".onion"):
-                peer.reputation = peer.reputation / 2 - 1 # Onion peers less likely working
+                # Onion peers less likely working
+                if peer.reputation > 0:
+                    peer.reputation = peer.reputation / 2
+                else:
+                    peer.reputation -= 1
             num += 1
         if num_hashfield:
             site.content_manager.has_optional_files = True
@@ -65,7 +73,7 @@ class ContentDbPlugin(object):
                 hashfield = sqlite3.Binary(peer.hashfield.tobytes())
             else:
                 hashfield = ""
-            yield (site_id, address, port, hashfield, peer.reputation, int(peer.time_added), int(peer.time_found))
+            yield (site_id, address, port, hashfield, peer.reputation, int(peer.time_added), int(peer.time_found), int(peer.time_response), int(peer.connection_error))
 
     def savePeers(self, site, spawn=False):
         if spawn:
@@ -80,7 +88,7 @@ class ContentDbPlugin(object):
         try:
             cur.execute("DELETE FROM peer WHERE site_id = :site_id", {"site_id": site_id})
             cur.executemany(
-                "INSERT INTO peer (site_id, address, port, hashfield, reputation, time_added, time_found) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO peer (site_id, address, port, hashfield, reputation, time_added, time_found, time_response, connection_error) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 self.iteratePeers(site)
             )
         except Exception as err:
