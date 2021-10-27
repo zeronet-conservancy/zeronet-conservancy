@@ -30,6 +30,9 @@ from .SiteAnnouncer import SiteAnnouncer
 from . import SiteManager
 from . import SiteHelpers
 
+def lerp(val_min, val_max, scale):
+    return scale * (val_max - val_min) + val_min
+
 class ScaledTimeoutHandler:
     def __init__(self, val_min, val_max, handler=None, scaler=None):
         self.val_min = val_min
@@ -40,7 +43,7 @@ class ScaledTimeoutHandler:
         self.log = logging.getLogger("ScaledTimeoutHandler")
 
     def isExpired(self, scale):
-        interval = scale * (self.val_max - self.val_min) + self.val_min
+        interval = lerp(self.val_min, self.val_max, scale)
         expired_at = self.timestamp + interval
         now = time.time()
         expired = (now > expired_at)
@@ -158,10 +161,19 @@ class Site(object):
         self.addEventListeners()
 
         self.periodic_maintenance_handlers = [
-            ScaledTimeoutHandler(60 * 30, 60 * 2,
+            ScaledTimeoutHandler(
+                config.site_announce_interval_max * 60,
+                config.site_announce_interval_min * 60,
                 handler=self.periodicMaintenanceHandler_announce,
                 scaler=self.getAnnounceRating),
-            ScaledTimeoutHandler(60 * 30, 60 * 5,
+            ScaledTimeoutHandler(
+                config.site_peer_check_interval_max * 60,
+                config.site_peer_check_interval_min * 60,
+                handler=self.periodicMaintenanceHandler_peer_check,
+                scaler=self.getAnnounceRating),
+            ScaledTimeoutHandler(
+                config.site_update_check_interval_max * 60,
+                config.site_update_check_interval_min * 60,
                 handler=self.periodicMaintenanceHandler_general,
                 scaler=self.getActivityRating)
         ]
@@ -1279,6 +1291,16 @@ class Site(object):
         v = [activity_rating, peer_rating, tracker_rating]
         return sum(v) / float(len(v))
 
+    def getPreferableConnectablePeerCount(self):
+        if not self.isServing():
+            return 0
+
+        count = lerp(
+            config.site_connectable_peer_count_min,
+            config.site_connectable_peer_count_max,
+            self.getActivityRating(force_safe=True))
+        return count
+
     # The engine tries to maintain the number of active connections:
     # >= getPreferableActiveConnectionCount()
     # and
@@ -1496,6 +1518,33 @@ class Site(object):
             self.log.debug("Connected: %s, Need to close: %s, Closed: %s" % (
                 len(connected_peers), need_to_close, closed))
 
+    def lookForConnectablePeers(self):
+        num_tries = 2
+        need_connectable_peers = self.getPreferableConnectablePeerCount()
+
+        connectable_peers = 0
+        reachable_peers = []
+
+        for peer in list(self.peers.values()):
+            if peer.isConnected() or peer.isConnectable():
+                connectable_peers += 1
+            elif peer.isReachable():
+                reachable_peers.append(peer)
+            if connectable_peers >= need_connectable_peers:
+                return True
+
+        random.shuffle(reachable_peers)
+
+        for peer in reachable_peers:
+            if peer.isConnected() or peer.isConnectable() or peer.removed:
+                continue
+            peer.ping()
+            if peer.isConnected():
+                peer.pex()
+            num_tries -= 1
+            if num_tries < 1:
+                break
+
     @util.Noparallel(queue=True)
     def runPeriodicMaintenance(self, startup=False, force=False):
         if not self.isServing():
@@ -1519,17 +1568,30 @@ class Site(object):
 
         self.log.debug("periodicMaintenanceHandler_general: startup=%s, force=%s" % (startup, force))
 
-        if not startup:
-            self.cleanupPeers()
-
-        self.persistent_peer_req = self.needConnections(update_site_on_reconnect=True)
-        self.persistent_peer_req.result_connected.wait(timeout=2.0)
+        #self.persistent_peer_req = self.needConnections(update_site_on_reconnect=True)
+        #self.persistent_peer_req.result_connected.wait(timeout=2.0)
 
         #self.announcer.announcePex()
 
         self.processBackgroundPublishers()
 
         self.update()
+
+        return True
+
+    def periodicMaintenanceHandler_peer_check(self, startup=False, force=False):
+        if not self.isServing():
+            return False
+
+        if not self.peers:
+            return False
+
+        self.log.debug("periodicMaintenanceHandler_peer_check: startup=%s, force=%s" % (startup, force))
+
+        if not startup:
+            self.cleanupPeers()
+
+        self.lookForConnectablePeers()
 
         return True
 

@@ -264,9 +264,21 @@ class Config(object):
 
         self.parser.add_argument('--size_limit', help='Default site size limit in MB', default=10, type=int, metavar='limit')
         self.parser.add_argument('--file_size_limit', help='Maximum per file size limit in MB', default=10, type=int, metavar='limit')
-        self.parser.add_argument('--connected_limit', help='Max connected peer per site', default=10, type=int, metavar='connected_limit')
-        self.parser.add_argument('--global_connected_limit', help='Max connections', default=512, type=int, metavar='global_connected_limit')
+        self.parser.add_argument('--connected_limit', help='Max number of connected peers per site. Soft limit.', default=10, type=int, metavar='connected_limit')
+        self.parser.add_argument('--global_connected_limit', help='Max number of connections. Soft limit.', default=512, type=int, metavar='global_connected_limit')
         self.parser.add_argument('--workers', help='Download workers per site', default=5, type=int, metavar='workers')
+
+        self.parser.add_argument('--site_announce_interval_min', help='Site announce interval for the most active sites, in minutes.', default=4, type=int, metavar='site_announce_interval_min')
+        self.parser.add_argument('--site_announce_interval_max', help='Site announce interval for inactive sites, in minutes.', default=30, type=int, metavar='site_announce_interval_max')
+
+        self.parser.add_argument('--site_peer_check_interval_min', help='Connectable peers check interval for the most active sites, in minutes.', default=5, type=int, metavar='site_peer_check_interval_min')
+        self.parser.add_argument('--site_peer_check_interval_max', help='Connectable peers check interval for inactive sites, in minutes.', default=20, type=int, metavar='site_peer_check_interval_max')
+
+        self.parser.add_argument('--site_update_check_interval_min', help='Site update check interval for the most active sites, in minutes.', default=5, type=int, metavar='site_update_check_interval_min')
+        self.parser.add_argument('--site_update_check_interval_max', help='Site update check interval for inactive sites, in minutes.', default=45, type=int, metavar='site_update_check_interval_max')
+
+        self.parser.add_argument('--site_connectable_peer_count_max', help='Search for as many connectable peers for the most active sites', default=10, type=int, metavar='site_connectable_peer_count_max')
+        self.parser.add_argument('--site_connectable_peer_count_min', help='Search for as many connectable peers for inactive sites', default=2, type=int, metavar='site_connectable_peer_count_min')
 
         self.parser.add_argument('--send_back_lru_size', help='Size of the send back LRU cache', default=5000, type=int, metavar='send_back_lru_size')
         self.parser.add_argument('--send_back_limit', help='Send no more than so many files at once back to peer, when we discovered that the peer held older file versions', default=3, type=int, metavar='send_back_limit')

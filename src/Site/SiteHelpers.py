@@ -156,6 +156,7 @@ class PeerConnector(object):
         if not peer.isConnected():
             peer.connect()
         if peer.isConnected():
+            peer.ping()
             self.processReqs2()
 
     def peerConnectorController(self):
