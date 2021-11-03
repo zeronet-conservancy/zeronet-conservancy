@@ -376,7 +376,7 @@ class FileRequest(object):
 
         for hash_id, peers in found.items():
             for peer in peers:
-                ip_type = helper.getIpType(peer.ip)
+                ip_type = self.server.getIpType(peer.ip)
                 if len(back[ip_type][hash_id]) < 20:
                     back[ip_type][hash_id].append(peer.packMyAddress())
         return back
@@ -430,7 +430,7 @@ class FileRequest(object):
 
     # Check requested port of the other peer
     def actionCheckport(self, params):
-        if helper.getIpType(self.connection.ip) == "ipv6":
+        if self.server.getIpType(self.connection.ip) == "ipv6":
             sock_address = (self.connection.ip, params["port"], 0, 0)
         else:
             sock_address = (self.connection.ip, params["port"])

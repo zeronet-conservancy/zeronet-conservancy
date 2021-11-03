@@ -122,7 +122,8 @@ class TrackerZero(object):
 
         time_onion_check = time.time() - s
 
-        ip_type = helper.getIpType(file_request.connection.ip)
+        connection_server = file_request.server
+        ip_type = connection_server.getIpType(file_request.connection.ip)
 
         if ip_type == "onion" or file_request.connection.ip in config.ip_local:
             is_port_open = False

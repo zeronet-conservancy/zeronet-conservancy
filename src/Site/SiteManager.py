@@ -172,6 +172,7 @@ class SiteManager(object):
         return self.resolveDomain(domain)
 
     # Checks if the address is blocked. To be implemented in content filter plugins.
+    # Since 0.8.0
     def isAddressBlocked(self, address):
         return False
 

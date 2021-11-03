@@ -290,7 +290,8 @@ local_ip_pattern = re.compile(r"^127\.|192\.168\.|10\.|172\.1[6-9]\.|172\.2[0-9]
 def isPrivateIp(ip):
     return local_ip_pattern.match(ip)
 
-
+# XXX: Deprecated. Use ConnectionServer.getIpType() instead.
+# To be removed in 0.9.0
 def getIpType(ip):
     if ip.endswith(".onion"):
         return "onion"

@@ -1,4 +1,5 @@
 import logging
+import re
 import time
 import sys
 import socket
@@ -253,7 +254,7 @@ class ConnectionServer(object):
         pass
 
     def getConnection(self, ip=None, port=None, peer_id=None, create=True, site=None, is_tracker_connection=False):
-        ip_type = helper.getIpType(ip)
+        ip_type = self.getIpType(ip)
         has_per_site_onion = (ip.endswith(".onion") or self.port_opened.get(ip_type, None) == False) and self.tor_manager.start_onions and site
         if has_per_site_onion:  # Site-unique connection for Tor
             if ip.endswith(".onion"):
@@ -520,16 +521,47 @@ class ConnectionServer(object):
         median = (corrections[mid - 1] + corrections[mid] + corrections[mid + 1]) / 3
         return median
 
+
+    ############################################################################
+
+    # Methods for handling network address types
+    # (ipv4, ipv6, onion etc... more to be implemented by plugins)
+    #
+    # All the functions handling network address types have "Ip" in the name.
+    # So it was in the initial codebase, and I keep the naming, since I couldn't
+    # think of a better option.
+    # "IP" is short and quite clear and lets you understand that a variable
+    # contains a peer address or other transport-level address and not
+    # an address of ZeroNet site.
+    #
+
+    # Returns type of the given network address.
+    # Since: 0.8.0
+    # Replaces helper.getIpType() in order to be extensible by plugins.
+    def getIpType(self, ip):
+        if ip.endswith(".onion"):
+            return "onion"
+        elif ":" in ip:
+            return "ipv6"
+        elif re.match(r"[0-9\.]+$", ip):
+            return "ipv4"
+        else:
+            return "unknown"
+
     # Checks if a network address can be reachable in the current configuration
     # and returs a string describing why it cannot.
     # If the network address can be reachable, returns False.
+    # Since: 0.8.0
     def getIpUnreachability(self, ip):
-        ip_type = helper.getIpType(ip)
+        ip_type = self.getIpType(ip)
         if ip_type == 'onion' and not self.tor_manager.enabled:
             return "Can't connect to onion addresses, no Tor controller present"
         if config.tor == "always" and helper.isPrivateIp(ip) and ip not in config.ip_local:
             return "Can't connect to local IPs in Tor: always mode"
         return False
 
+    # Returns True if ConnctionServer has means for establishing outgoing
+    # connections to the given address.
+    # Since: 0.8.0
     def isIpReachable(self, ip):
         return self.getIpUnreachability(ip) == False

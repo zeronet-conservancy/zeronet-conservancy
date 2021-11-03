@@ -35,19 +35,25 @@ class SiteAnnouncer(object):
         self.time_last_announce = 0
         self.supported_tracker_count = 0
 
+    # Returns connection_server rela
+    # Since 0.8.0
+    @property
+    def connection_server(self):
+        return self.site.connection_server
+
     def getTrackers(self):
         return config.trackers
 
     def getSupportedTrackers(self):
         trackers = self.getTrackers()
 
-        if not self.site.connection_server.tor_manager.enabled:
+        if not self.connection_server.tor_manager.enabled:
             trackers = [tracker for tracker in trackers if ".onion" not in tracker]
 
         trackers = [tracker for tracker in trackers if self.getAddressParts(tracker)]  # Remove trackers with unknown address
 
-        if "ipv6" not in self.site.connection_server.supported_ip_types:
-            trackers = [tracker for tracker in trackers if helper.getIpType(self.getAddressParts(tracker)["ip"]) != "ipv6"]
+        if "ipv6" not in self.connection_server.supported_ip_types:
+            trackers = [tracker for tracker in trackers if self.connection_server.getIpType(self.getAddressParts(tracker)["ip"]) != "ipv6"]
 
         return trackers
 
@@ -118,10 +124,10 @@ class SiteAnnouncer(object):
         back = []
         # Type of addresses they can reach me
         if config.trackers_proxy == "disable" and config.tor != "always":
-            for ip_type, opened in list(self.site.connection_server.port_opened.items()):
+            for ip_type, opened in list(self.connection_server.port_opened.items()):
                 if opened:
                     back.append(ip_type)
-        if self.site.connection_server.tor_manager.start_onions:
+        if self.connection_server.tor_manager.start_onions:
             back.append("onion")
         return back
 
@@ -204,11 +210,11 @@ class SiteAnnouncer(object):
             self.stats[tracker]["time_status"] = time.time()
             self.stats[tracker]["last_error"] = str(error)
             self.stats[tracker]["time_last_error"] = time.time()
-            if self.site.connection_server.has_internet:
+            if self.connection_server.has_internet:
                 self.stats[tracker]["num_error"] += 1
             self.stats[tracker]["num_request"] += 1
             global_stats[tracker]["num_request"] += 1
-            if self.site.connection_server.has_internet:
+            if self.connection_server.has_internet:
                 global_stats[tracker]["num_error"] += 1
             self.updateWebsocket(tracker="error")
             return False

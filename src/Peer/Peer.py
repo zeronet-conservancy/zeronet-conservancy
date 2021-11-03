@@ -32,7 +32,7 @@ class Peer(object):
         self.site = site
         self.key = "%s:%s" % (ip, port)
 
-        self.ip_type = helper.getIpType(ip)
+        self.ip_type = None
 
         self.removed = False
 
@@ -53,7 +53,7 @@ class Peer(object):
         self.reputation = 0  # More likely to connect if larger
         self.last_content_json_update = 0.0  # Modify date of last received content.json
         self.protected = 0
-        self.reachable = False
+        self.reachable = None
 
         self.connection_error = 0  # Series of connection error
         self.hash_failed = 0  # Number of bad files from peer
@@ -62,15 +62,14 @@ class Peer(object):
 
         self.protectedRequests = ["getFile", "streamFile", "update", "listModified"]
 
-        self.updateReachable()
-
     def __getattr__(self, key):
         if key == "hashfield":
             self.has_hashfield = True
             self.hashfield = PeerHashfield()
             return self.hashfield
         else:
-            return getattr(self, key)
+            # Raise appropriately formatted attribute error
+            return object.__getattribute__(self, key)
 
     def log(self, text, log_level = None):
         if log_level is None:
@@ -98,26 +97,18 @@ class Peer(object):
                 self.protected = 0
         return self.protected > 0
 
+    def isTtlExpired(self, ttl):
+        last_activity = max(self.time_found, self.time_response)
+        return (time.time() - last_activity) > ttl
+
+    # Since 0.8.0
     def isConnected(self):
         if self.connection and not self.connection.connected:
             self.connection = None
         return self.connection and self.connection.connected
 
-    def isTtlExpired(self, ttl):
-        last_activity = max(self.time_found, self.time_response)
-        return (time.time() - last_activity) > ttl
-
-    def isReachable(self):
-        return self.reachable
-
-    def updateReachable(self):
-        connection_server = self.getConnectionServer()
-        if not self.port:
-            self.reachable = False
-        else:
-            self.reachable = connection_server.isIpReachable(self.ip)
-
     # Peer proved to to be connectable recently
+    # Since 0.8.0
     def isConnectable(self):
         if self.connection_error >= 1:  # The last connection attempt failed
             return False
@@ -125,6 +116,36 @@ class Peer(object):
             return False
         return self.isReachable()
 
+    # Since 0.8.0
+    def isReachable(self):
+        if self.reachable is None:
+            self.updateCachedState()
+        return self.reachable
+
+    # Since 0.8.0
+    def getIpType(self):
+        if not self.ip_type:
+            self.updateCachedState()
+        return self.ip_type
+
+    # We cache some ConnectionServer-related state for better performance.
+    # This kind of state currently doesn't change during a program session,
+    # and it's safe to read and cache it just once. But future versions
+    # may bring more pieces of dynamic configuration. So we update the state
+    # on each peer.found().
+    def updateCachedState(self):
+        connection_server = self.getConnectionServer()
+        if not self.port or self.port == 1: # Port 1 considered as "no open port"
+            self.reachable = False
+        else:
+            self.reachable = connection_server.isIpReachable(self.ip)
+        self.ip_type = connection_server.getIpType(self.ip)
+
+
+    # FIXME:
+    # This should probably be changed.
+    # When creating a peer object, the caller must provide either `connection_server`,
+    # or `site`, so Peer object is able to use `site.connection_server`.
     def getConnectionServer(self):
         if self.connection_server:
             connection_server = self.connection_server
@@ -179,7 +200,7 @@ class Peer(object):
         if self.connection and self.connection.connected:  # We have connection to peer
             return self.connection
         else:  # Try to find from other sites connections
-            self.connection = self.site.connection_server.getConnection(self.ip, self.port, create=False, site=self.site)
+            self.connection = self.getConnectionServer().getConnection(self.ip, self.port, create=False, site=self.site)
             if self.connection:
                 self.connection.sites += 1
         return self.connection
@@ -213,7 +234,7 @@ class Peer(object):
         if source in ("tracker", "local"):
             self.site.peers_recent.appendleft(self)
         self.time_found = time.time()
-        self.updateReachable()
+        self.updateCachedState()
 
     # Send a command to peer and return response value
     def request(self, cmd, params={}, stream_to=None):

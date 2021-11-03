@@ -49,7 +49,7 @@ class FileRequestPlugin(object):
 
         time_onion_check = time.time() - s
 
-        ip_type = helper.getIpType(self.connection.ip)
+        ip_type = self.server.getIpType(self.connection.ip)
 
         if ip_type == "onion" or self.connection.ip in config.ip_local:
             is_port_open = False

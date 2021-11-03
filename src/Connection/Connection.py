@@ -23,6 +23,7 @@ class Connection(object):
     )
 
     def __init__(self, server, ip, port, sock=None, target_onion=None, is_tracker_connection=False):
+        self.server = server
         self.sock = sock
         self.cert_pin = None
         if "#" in ip:
@@ -42,7 +43,6 @@ class Connection(object):
             self.is_private_ip = False
         self.is_tracker_connection = is_tracker_connection
 
-        self.server = server
         self.unpacker = None  # Stream incoming socket messages here
         self.unpacker_bytes = 0  # How many bytes the unpacker received
         self.req_id = 0  # Last request id
@@ -81,11 +81,11 @@ class Connection(object):
 
     def setIp(self, ip):
         self.ip = ip
-        self.ip_type = helper.getIpType(ip)
+        self.ip_type = self.server.getIpType(ip)
         self.updateName()
 
     def createSocket(self):
-        if helper.getIpType(self.ip) == "ipv6" and not hasattr(socket, "socket_noproxy"):
+        if self.server.getIpType(self.ip) == "ipv6" and not hasattr(socket, "socket_noproxy"):
             # Create IPv6 connection as IPv4 when using proxy
             return socket.socket(socket.AF_INET6, socket.SOCK_STREAM)
         else:
