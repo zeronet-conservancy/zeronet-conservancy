@@ -1,14 +1,17 @@
 
 ## Core
 
-**Network:**
+**Support for Onion v3:**
 
-* Added support of Onion v3 addresses. Thanks to @anonymoose and @zeroseed.
-* Added a few Onion v3 tracker addresses.
+* Add initial support of Onion v3 addresses. Thanks to @anonymoose and @zeroseed.
+* Add a few Onion v3 tracker addresses.
+
+**Network scalabily and performance issuses:**
+
+* The connection handling code had several bugs that were hidden by silently ignored exceptions. These were fixed, but some new ones might be introduced.
 * Reworked the algorithm of checking zite updates on startup / after the network outages / periodically. ZeroNet tries not to spam too many update queries at once in order to prevent network overload. (Which especially the issue when running over Tor.) At the same time, it tries to keep balance between frequent checks for frequently updating zites and ensuring that all the zites are checked in some reasonable time interval. Tests show that the full check cycle for a peer that hosts 800+ zites and is connected over Tor can take up to several hours. We cannot significantly reduce this time, since the Tor throughput is the bottleneck. Running more checks at once just results in more connections to fail. The other bottleneck is the HDD throughput. Increasing the parallelization doesn't help in this case as well. So the implemented solution do actually **decreases** the parallelization.
 * Improved the Internet outage detection and the recovery procedures after the Internet be back. ZeroNet "steps back" and schedules rechecking zites that were checked shortly before the Internet connection get lost. The network outage detection normally has some lag, so the recently checked zites are better to be checked again.
 * When the network is down, reduce the frequency of connection attempts to prevent overloading Tor with hanged connections.
-* The connection handling code had several bugs that were hidden by silently ignored exceptions. These were fixed, but some new ones might be introduced.
 * For each zite the activity rate is calculated based on the last modification time. The milestone values are 1 hour, 5 hours, 24 hours, 3 days and 7 days. The activity rate is used to scale frequency of various maintenance routines, including update checks, reannounces, dead connection checks etc.
 * The activity rate is also used to calculate the minimum preferred number of active connections per each zite.
 * The reannounce frequency is adjusted dynamically based on:
@@ -17,15 +20,28 @@
   * Tracker count. More trackers ==> frequent announces to iterate over more trackers.
 * For owned zites, the activity rate doesn't drop below 0.6 to force more frequent checks. This, however, can be used to investigate which peer belongs to the zite owner. A new commnd line option `--expose_no_ownership` is introduced to disable that behavior.
 * When checking for updates, ZeroNet normally asks other peers for new data since the previous update. This however can result in losing some updates in specific conditions. To overcome this, ZeroNet now asks for the full site listing on every Nth update check.
-* When asking a peer for updates, ZeroNet may see that the other peer has an older version of a file. In this case, ZeroNet sends back the notification of the new version available. The logic in 0.8.0 is generally the same, but some randomization is added which may help in distributing the "update waves" among peers.
+* When asking a peer for updates, ZeroNet may detect that the other peer has outdated versions of some files. In this case, ZeroNet sends back the notification of the new versions available. This behaviour was improved in the following ways:
+  * Prior to 0.8.0 ZeroNet always chose the first 5 files in the list. If peer rejects updating those files for some reason, this strategy led to pushing the same 5 files over and over again on very update check. Now files are  selected randomly. This should also improve spreading of "update waves" among peers.
+  * The engine now keeps track of which files were already sent to a specific peer and doesn't send those again as long as the file timestamp hasn't changed. Now we do not try to resend files if a peer refuses to update them. The watchlist is currently limited to 5000 items.
+  * The previous two changes should make the send back mechanism more efficient. So number of files to send at once reduced from 5 to 3 to reduce the network load.
 * ZeroNet now tries harder in delivering updates to more peers in the background.
 * ZeroNet also makes more efforts of searching the peers before publishing updates.
 
-**Other:**
+**Other scalabily and performance issuses:**
 
-* Implemented the log level overriding for separate modules for easier debugging.
-* Make the site block check implemented in `ContentFilter` usable from plugins and core modules via `SiteManager.isAddressBlocked()`.
-* Fixed possible infinite growing of the `SafeRe` regexp cache by limiting the cache size.
+* Fix possible infinite growing of the `SafeRe` regexp cache by limiting the cache size.
+
+**Changes in API and architecture:**
+
+* Add method `SiteManager.isAddressBlocked()` available for overriding by content filter plugins in order for other plugins be able explicitly check site block status.
+* Hard-coded logic related to the network operation modes (TOR mode, proxies, network address types etc) in many places replaced with appropriate method calls and lots of new methods introduced. These changes are made in order to make it someday possible implementing support for different types of overlay networks (first of all, we mean I2P) in plugins without hardcoding more stuff to the core. A lot of refactoring is yet to come. Changes include but are not limited to:
+  * `helper.getIpType()`  moved to `ConnectionServer.getIpType()`.
+  * New methods `ConnectionServer.getIpUnreachability()`,  `ConnectionServer.isIpReachable()`.
+  * New methods `Peer.isConnected()`,  `Peer.isConnectable()`,  `Peer.isReachable()`,  `Peer.getIpType()`.
+
+**Other changes:**
+
+* Implement the log level overriding for separate modules for easier debugging.
 
 ## Docker Image
 
