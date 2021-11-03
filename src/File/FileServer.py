@@ -401,6 +401,9 @@ class FileServer(ConnectionServer):
             self.sleep(1)
             self.waitForInternetOnline()
 
+            while self.isActiveMode() and self.shouldThrottleNewConnections():
+                self.sleep(1)
+
             if not self.isActiveMode():
                 break
 
@@ -463,6 +466,9 @@ class FileServer(ConnectionServer):
             self.sleep(short_timeout)
             self.waitForInternetOnline()
 
+            while self.isActiveMode() and self.shouldThrottleNewConnections():
+                self.sleep(1)
+
             if not self.isActiveMode():
                 break
 
@@ -508,6 +514,9 @@ class FileServer(ConnectionServer):
 
         while self.isActiveMode():
             self.sleep(long_timeout)
+
+            while self.isActiveMode() and self.shouldThrottleNewConnections():
+                self.sleep(1)
 
             if not self.isActiveMode():
                 break
@@ -591,6 +600,10 @@ class FileServer(ConnectionServer):
             threshold = self.internet_outage_threshold / 2.0
 
             self.sleep(threshold / 2.0)
+
+            while self.isActiveMode() and self.shouldThrottleNewConnections():
+                self.sleep(1)
+
             if not self.isActiveMode():
                 break
 

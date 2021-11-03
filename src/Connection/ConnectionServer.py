@@ -298,6 +298,7 @@ class ConnectionServer(object):
                 raise Exception("This peer is blacklisted")
 
             try:
+                #self.log.info("Connection to: %s:%s", ip, port)
                 if has_per_site_onion:  # Lock connection to site
                     connection = Connection(self, ip, port, target_onion=site_onion, is_tracker_connection=is_tracker_connection)
                 else:
@@ -312,6 +313,7 @@ class ConnectionServer(object):
                     raise Exception("Connection event return error")
 
             except Exception as err:
+                #self.log.info("Connection error (%s, %s): %s", ip, port, Debug.formatException(err))
                 connection.close("%s Connect error: %s" % (ip, Debug.formatException(err)))
                 raise err
 
@@ -428,6 +430,21 @@ class ConnectionServer(object):
             num_closed, num_connected_before, config.global_connected_limit, time.time() - s
         ))
         return num_closed
+
+    # Returns True if we should slow down opening new connections as at the moment
+    # there are too many connections being established and not connected completely
+    # (not entered the message loop yet).
+    def shouldThrottleNewConnections(self):
+        threshold = config.simultaneous_connection_throttle_threshold
+        if len(self.connections) <= threshold:
+            return False
+        nr_connections_being_established = 0
+        for connection in self.connections[:]:  # Make a copy
+            if connection.connecting and not connection.connected and connection.type == "out":
+                nr_connections_being_established += 1
+                if nr_connections_being_established > threshold:
+                    return True
+        return False
 
     # Internet outage detection
     def updateOnlineStatus(self, connection, outgoing_activity=False, successful_activity=False):

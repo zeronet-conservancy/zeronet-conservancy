@@ -285,6 +285,8 @@ class Config(object):
 
         self.parser.add_argument('--expose_no_ownership', help='By default, ZeroNet tries checking updates for own sites more frequently. This can be used by a third party for revealing the network addresses of a site owner. If this option is enabled, ZeroNet performs the checks in the same way for any sites.', type='bool', choices=[True, False], default=False)
 
+        self.parser.add_argument('--simultaneous_connection_throttle_threshold', help='Throttle opening new connections when the number of outgoing connections in not fully established state exceeds the threshold.', default=15, type=int, metavar='simultaneous_connection_throttle_threshold')
+
         self.parser.add_argument('--fileserver_ip', help='FileServer bind address', default="*", metavar='ip')
         self.parser.add_argument('--fileserver_port', help='FileServer bind port (0: randomize)', default=0, type=int, metavar='port')
         self.parser.add_argument('--fileserver_port_range', help='FileServer randomization range', default="10000-40000", metavar='port')

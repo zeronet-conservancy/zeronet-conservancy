@@ -17,7 +17,7 @@ from util import helper
 class Connection(object):
     __slots__ = (
         "sock", "sock_wrapped", "ip", "port", "cert_pin", "target_onion", "id", "protocol", "type", "server", "unpacker", "unpacker_bytes", "req_id", "ip_type",
-        "handshake", "crypt", "connected", "event_connected", "closed", "start_time", "handshake_time", "last_recv_time", "is_private_ip", "is_tracker_connection",
+        "handshake", "crypt", "connected", "connecting", "event_connected", "closed", "start_time", "handshake_time", "last_recv_time", "is_private_ip", "is_tracker_connection",
         "last_message_time", "last_send_time", "last_sent_time", "incomplete_buff_recv", "bytes_recv", "bytes_sent", "cpu_time", "send_lock",
         "last_ping_delay", "last_req_time", "last_cmd_sent", "last_cmd_recv", "bad_actions", "sites", "name", "waiting_requests", "waiting_streams"
     )
@@ -50,6 +50,7 @@ class Connection(object):
         self.crypt = None  # Connection encryption method
         self.sock_wrapped = False  # Socket wrapped to encryption
 
+        self.connecting = False
         self.connected = False
         self.event_connected = gevent.event.AsyncResult()  # Solves on handshake received
         self.closed = False
@@ -118,6 +119,15 @@ class Connection(object):
 
     # Open connection to peer and wait for handshake
     def connect(self):
+        self.connecting = True
+        try:
+            return self._connect()
+        except Exception as err:
+            self.connecting = False
+            self.connected = False
+            raise
+
+    def _connect(self):
         self.updateOnlineStatus(outgoing_activity=True)
 
         if not self.event_connected or self.event_connected.ready():
@@ -236,6 +246,7 @@ class Connection(object):
         self.protocol = "v2"
         self.updateName()
         self.connected = True
+        self.connecting = False
         buff_len = 0
         req_len = 0
         self.unpacker_bytes = 0
@@ -634,6 +645,7 @@ class Connection(object):
             return False  # Already closed
         self.closed = True
         self.connected = False
+        self.connecting = False
         if self.event_connected:
             self.event_connected.set(False)
 
