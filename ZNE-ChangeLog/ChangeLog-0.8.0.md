@@ -23,7 +23,8 @@
 * When asking a peer for updates, ZeroNet may detect that the other peer has outdated versions of some files. In this case, ZeroNet sends back the notification of the new versions available. This behaviour was improved in the following ways:
   * Prior to 0.8.0 ZeroNet always chose the first 5 files in the list. If peer rejects updating those files for some reason, this strategy led to pushing the same 5 files over and over again on very update check. Now files are  selected randomly. This should also improve spreading of "update waves" among peers.
   * The engine now keeps track of which files were already sent to a specific peer and doesn't send those again as long as the file timestamp hasn't changed. Now we do not try to resend files if a peer refuses to update them. The watchlist is currently limited to 5000 items.
-  * The previous two changes should make the send back mechanism more efficient. So number of files to send at once reduced from 5 to 3 to reduce the network load.
+  * Prior to 0.8.0 ZeroNet failed to detect the case when remote peer misses a file at all, not just has an older version. Now it is handled properly and those files also can be send back.
+  * The previous changes should make the send back mechanism more efficient. So number of files to send at once reduced from 5 to 3 to reduce the network load.
 * ZeroNet now tries harder in delivering updates to more peers in the background.
 * ZeroNet also makes more efforts of searching the peers before publishing updates.
 

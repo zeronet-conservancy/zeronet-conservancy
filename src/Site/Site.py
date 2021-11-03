@@ -6,6 +6,7 @@ import time
 import random
 import sys
 import hashlib
+import itertools
 import collections
 import base64
 
@@ -634,32 +635,50 @@ class Site(object):
                 continue  # Failed query
 
             queried.append(peer)
+
+
             modified_contents = []
             send_back = []
             send_back_limit = config.send_back_limit
             send_back_skipped = 0
-            my_modified = self.content_manager.listModified(since)
-            num_old_files = 0
-            for inner_path, modified in res["modified_files"].items():  # Check if the peer has newer files than we
-                has_newer = int(modified) > my_modified.get(inner_path, 0)
-                has_older = int(modified) < my_modified.get(inner_path, 0)
-                if inner_path not in self.bad_files and not self.content_manager.isArchived(inner_path, modified):
-                    if has_newer:
-                        # We dont have this file or we have older
+            peer_modified_files = res["modified_files"]
+            my_modified_files = self.content_manager.listModified(since)
+
+            inner_paths = itertools.chain(peer_modified_files.keys(), my_modified_files.keys())
+            seen_inner_paths = {}
+            for inner_path in inner_paths:  # Check if the peer has newer files than we have
+                if seen_inner_paths.get(inner_path, False):
+                    continue
+                seen_inner_paths[inner_path] = True
+
+                peer_modified = int(peer_modified_files.get(inner_path, 0))
+                my_modified = int(my_modified_files.get(inner_path, 0))
+
+                diff = peer_modified - my_modified
+                if diff == 0:
+                    continue
+                has_newer = diff > 0
+                has_older = diff < 0
+
+                if inner_path not in self.bad_files and not self.content_manager.isArchived(inner_path, peer_modified):
+                    if has_newer: # We don't have this file or we have older version
                         modified_contents.append(inner_path)
                         self.bad_files[inner_path] = self.bad_files.get(inner_path, 1)
-                    if has_older:
-                        if self.checkSendBackLRU(peer, inner_path, modified):
+                    if has_older: # The remote peer doesn't have this file or it has older version
+                        if self.checkSendBackLRU(peer, inner_path, peer_modified):
                             send_back_skipped += 1
                         else:
                             send_back.append(inner_path)
 
+            inner_paths = None
+            seen_inner_paths = None
+
             if modified_contents:
                 self.log.info("CheckModifications: %s new modified files from %s" % (len(modified_contents), peer))
-                modified_contents.sort(key=lambda inner_path: 0 - res["modified_files"][inner_path])  # Download newest first
+                modified_contents.sort(key=lambda inner_path: 0 - peer_modified_files[inner_path])  # Download newest first
                 for inner_path in modified_contents:
                     self.log.info("CheckModifications:     %s: %s > %s" % (
-                        inner_path, res["modified_files"][inner_path], my_modified.get(inner_path, 0)
+                        inner_path, peer_modified_files.get(inner_path, 0), my_modified_files.get(inner_path, 0)
                     ))
                 t = self.spawn(self.pooledDownloadContent, modified_contents, only_if_bad=True)
                 threads.append(t)
@@ -667,12 +686,12 @@ class Site(object):
             if send_back:
                 self.log.info("CheckModifications: %s has older versions of %s files" % (peer, len(send_back)))
                 if len(send_back) > send_back_limit:
-                    self.log.info("CheckModifications: choosing %s files to publish back" % (send_back_limit))
+                    self.log.info("CheckModifications: choosing %s random files to publish back" % (send_back_limit))
                     random.shuffle(send_back)
                     send_back = send_back[0:send_back_limit]
                 for inner_path in send_back:
                     self.log.info("CheckModifications:     %s: %s < %s" % (
-                        inner_path, res["modified_files"][inner_path], my_modified.get(inner_path, 0)
+                        inner_path, peer_modified_files.get(inner_path, 0), my_modified_files.get(inner_path, 0)
                     ))
                     self.spawn(self.publisher, inner_path, [peer], [], 1, save_to_send_back_lru=True)
 
