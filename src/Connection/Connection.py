@@ -621,7 +621,8 @@ class Connection(object):
         self.waiting_requests[self.req_id] = {"evt": event, "cmd": cmd}
         if stream_to:
             self.waiting_streams[self.req_id] = stream_to
-        self.send(data)  # Send request
+        if not self.send(data):  # Send request
+            return False
         res = event.get()  # Wait until event solves
         return res
 

@@ -88,31 +88,84 @@ class UiRequestPlugin(object):
 @PluginManager.registerTo("UiWebsocket")
 class UiWebsocketPlugin(object):
     def sidebarRenderPeerStats(self, body, site):
-        connected = len([peer for peer in list(site.peers.values()) if peer.connection and peer.connection.connected])
-        connectable = len([peer_id for peer_id in list(site.peers.keys()) if not peer_id.endswith(":0")])
-        onion = len([peer_id for peer_id in list(site.peers.keys()) if ".onion" in peer_id])
-        local = len([peer for peer in list(site.peers.values()) if helper.isPrivateIp(peer.ip)])
+        # Peers by status
         peers_total = len(site.peers)
+        peers_reachable = 0
+        peers_connectable = 0
+        peers_connected = 0
+        peers_failed = 0
+        # Peers by type
+        peers_by_type = {}
 
-        # Add myself
-        if site.isServing():
-            peers_total += 1
-            if any(site.connection_server.port_opened.values()):
-                connectable += 1
-            if site.connection_server.tor_manager.start_onions:
-                onion += 1
+        type_proper_names = {
+            'ipv4': 'IPv4',
+            'ipv6': 'IPv6',
+            'onion': 'Onion',
+            'unknown': 'Unknown'
+        }
+
+        type_defs = {
+            'local-ipv4': {
+                'order' : -21,
+                'color' : 'yellow'
+            },
+            'local-ipv6': {
+                'order' : -20,
+                'color' : 'orange'
+            },
+            'ipv4': {
+                'order' : -11,
+                'color' : 'blue'
+            },
+            'ipv6': {
+                'order' : -10,
+                'color' : 'darkblue'
+            },
+            'unknown': {
+                'order' : 10,
+                'color' : 'red'
+            },
+        }
+
+        for peer in list(site.peers.values()):
+            # Peers by status
+            if peer.isConnected():
+                peers_connected += 1
+            elif peer.isConnectable():
+                peers_connectable += 1
+            elif peer.isReachable() and not peer.connection_error:
+                peers_reachable += 1
+            elif peer.isReachable() and peer.connection_error:
+                peers_failed += 1
+            # Peers by type
+            peer_type = peer.getIpType()
+            peer_readable_type = type_proper_names.get(peer_type, peer_type)
+            if helper.isPrivateIp(peer.ip):
+                peer_type = 'local-' + peer.getIpType()
+                peer_readable_type = 'Local ' + peer_readable_type
+            peers_by_type[peer_type] = peers_by_type.get(peer_type, {
+                'type': peer_type,
+                'readable_type': _[peer_readable_type],
+                'order': type_defs.get(peer_type, {}).get('order', 0),
+                'color': type_defs.get(peer_type, {}).get('color', 'purple'),
+                'count': 0
+            })
+            peers_by_type[peer_type]['count'] += 1
+
+        ########################################################################
 
         if peers_total:
-            percent_connected = float(connected) / peers_total
-            percent_connectable = float(connectable) / peers_total
-            percent_onion = float(onion) / peers_total
+            percent_connected = float(peers_connected) / peers_total
+            percent_connectable = float(peers_connectable) / peers_total
+            percent_reachable = float(peers_reachable) / peers_total
+            percent_failed = float(peers_failed) / peers_total
+            percent_other = min(0.0, 1.0 - percent_connected - percent_connectable - percent_reachable - percent_failed)
         else:
-            percent_connectable = percent_connected = percent_onion = 0
-
-        if local:
-            local_html = _("<li class='color-yellow'><span>{_[Local]}:</span><b>{local}</b></li>")
-        else:
-            local_html = ""
+            percent_connected = 0
+            percent_reachable = 0
+            percent_connectable = 0
+            percent_failed = 0
+            percent_other = 0
 
         peer_ips = [peer.key for peer in site.getConnectablePeers(20, allow_private=False)]
         peer_ips.sort(key=lambda peer_ip: ".onion:" in peer_ip)
@@ -127,21 +180,55 @@ class UiWebsocketPlugin(object):
               {_[Peers]}
               <small class="label-right"><a href='{copy_link}' id='link-copypeers' class='link-right'>{_[Copy to clipboard]}</a></small>
              </label>
-             <ul class='graph'>
-              <li style='width: 100%' class='total back-black' title="{_[Total peers]}"></li>
-              <li style='width: {percent_connectable:.0%}' class='connectable back-blue' title='{_[Connectable peers]}'></li>
-              <li style='width: {percent_onion:.0%}' class='connected back-purple' title='{_[Onion]}'></li>
+             <ul class='graph graph-stacked'>
               <li style='width: {percent_connected:.0%}' class='connected back-green' title='{_[Connected peers]}'></li>
+              <li style='width: {percent_connectable:.0%}' class='connectable back-blue' title='{_[Peers that were recently connected succefully]}'></li>
+              <li style='width: {percent_reachable:.0%}' class='reachable back-yellow' title='{_[Peers available for connection]}'></li>
+              <li style='width: {percent_failed:.0%}' class='connectable back-red' title='{_[Peers recently failed to connect]}'></li>
+              <li style='width: {percent_other:.0%}' class='connectable back-black' title='{_[Peers with wrong, unknown or invalid network address]}'></li>
              </ul>
              <ul class='graph-legend'>
-              <li class='color-green'><span>{_[Connected]}:</span><b>{connected}</b></li>
-              <li class='color-blue'><span>{_[Connectable]}:</span><b>{connectable}</b></li>
-              <li class='color-purple'><span>{_[Onion]}:</span><b>{onion}</b></li>
-              {local_html}
-              <li class='color-black'><span>{_[Total]}:</span><b>{peers_total}</b></li>
+              <li class='color-green' title='{_[Connected peers]}'><span>{_[Connected]}:</span><b>{peers_connected}</b></li>
+              <li class='color-blue' title='{_[Peers that were recently connected succefully]}'><span>{_[Connectable]}:</span><b>{peers_connectable}</b></li>
+              <li class='color-yellow' title='{_[Peers available for connection]}'><span>{_[Reachable]}:</span><b>{peers_reachable}</b></li>
+              <li class='color-red' title='{_[Peers recently failed to connect]}'><span>{_[Failed]}:</span><b>{peers_failed}</b></li>
+              <li class='color-black'><span>{_[Total peers]}:</span><b>{peers_total}</b></li>
              </ul>
-            </li>
-        """.replace("{local_html}", local_html)))
+        """))
+
+        ########################################################################
+
+        peers_by_type = sorted(
+            peers_by_type.values(),
+            key=lambda t: t['order'],
+        )
+
+        peers_by_type_graph = ''
+        peers_by_type_legend = ''
+
+        if peers_total:
+            for t in peers_by_type:
+                peers_by_type_graph += """
+                    <li style='width: %.2f%%' class='%s back-%s' title='%s'></li>
+                """ % (float(t['count']) * 100.0 / peers_total, t['type'], t["color"], t['readable_type'])
+                peers_by_type_legend += """
+                    <li class='color-%s'><span>%s:</span><b>%s</b></li>
+                """ % (t["color"], t['readable_type'], t['count'])
+
+        if peers_by_type_legend != '':
+            body.append(_("""
+                <li>
+                 <label>
+                  {_[Peer types]}
+                 </label>
+                 <ul class='graph graph-stacked'>
+                 %s
+                 </ul>
+                 <ul class='graph-legend'>
+                 %s
+                 </ul>
+                <li>
+            """ % (peers_by_type_graph, peers_by_type_legend)))
 
     def sidebarRenderTransferStats(self, body, site):
         recv = float(site.settings.get("bytes_recv", 0)) / 1024 / 1024
@@ -682,7 +769,7 @@ class UiWebsocketPlugin(object):
             # Create position array
             lat, lon = loc["lat"], loc["lon"]
             latlon = "%s,%s" % (lat, lon)
-            if latlon in placed and helper.getIpType(peer.ip) == "ipv4":  # Dont place more than 1 bar to same place, fake repos using ip address last two part
+            if latlon in placed and peer.getIpType() == "ipv4":  # Dont place more than 1 bar to same place, fake repos using ip address last two part
                 lat += float(128 - int(peer.ip.split(".")[-2])) / 50
                 lon += float(128 - int(peer.ip.split(".")[-1])) / 50
                 latlon = "%s,%s" % (lat, lon)
