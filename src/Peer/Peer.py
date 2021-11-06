@@ -20,12 +20,6 @@ if config.use_tempfiles:
 # Communicate remote peers
 @PluginManager.acceptPlugins
 class Peer(object):
-    __slots__ = (
-        "ip", "port", "site", "key", "connection", "connection_server", "time_found", "time_response", "time_hashfield",
-        "time_added", "has_hashfield", "is_tracker_connection", "time_my_hashfield_sent", "last_ping", "reputation",
-        "last_content_json_update", "hashfield", "connection_error", "hash_failed", "download_bytes", "download_time"
-    )
-
     def __init__(self, ip, port, site=None, connection_server=None):
         self.ip = ip
         self.port = port
