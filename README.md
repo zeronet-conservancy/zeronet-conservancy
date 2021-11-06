@@ -1,6 +1,6 @@
 # ZeroNet [![Build Status](https://travis-ci.org/HelloZeroNet/ZeroNet.svg?branch=py3)](https://travis-ci.org/HelloZeroNet/ZeroNet) [![Documentation](https://img.shields.io/badge/docs-faq-brightgreen.svg)](https://zeronet.io/docs/faq/) [![Help](https://img.shields.io/badge/keep_this_project_alive-donate-yellow.svg)](https://zeronet.io/docs/help_zeronet/donate/) ![tests](https://github.com/HelloZeroNet/ZeroNet/workflows/tests/badge.svg) [![Docker Pulls](https://img.shields.io/docker/pulls/nofish/zeronet)](https://hub.docker.com/r/nofish/zeronet)
 
-Decentralized websites using Bitcoin crypto and the BitTorrent network - https://zeronet.io
+Decentralized websites using Bitcoin crypto and the BitTorrent network - https://zeronet.io / [onion](http://zeronet34m3r5ngdu54uj57dcafpgdjhxsgq5kla5con4qvcmfzpvhad.onion)
 
 
 ## Why?
@@ -83,13 +83,13 @@ Decentralized websites using Bitcoin crypto and the BitTorrent network - https:/
  __Tip:__ Start with `./ZeroNet.sh --ui_ip '*' --ui_restrict your.ip.address` to allow remote connections on the web interface.
  
  ### Android (arm, arm64, x86)
- - minimum Android version supported 16 (JellyBean).
- - Google Play Store Link https://play.google.com/store/apps/details?id=in.canews.zeronet
-
-[<img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" 
+ - minimum Android version supported 16 (JellyBean)
+ - [<img src="https://play.google.com/intl/en_us/badges/images/generic/en_badge_web_generic.png" 
       alt="Download from Google Play" 
-      height="80">](https://play.google.com/store/apps/details?id=in.canews.zeronet)
-
+      height="80">](https://play.google.com/store/apps/details?id=in.canews.zeronetmobile)
+ - APK download: https://github.com/canewsin/zeronet_mobile/releases
+ - XDA Labs: https://labs.xda-developers.com/store/app/in.canews.zeronet
+ 
 #### Docker
 There is an official image, built from source at: https://hub.docker.com/r/nofish/zeronet/
 

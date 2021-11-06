@@ -548,6 +548,7 @@ $.extend( $.easing,
       this.close = bind(this.close, this);
       this.hide = bind(this.hide, this);
       this.updateEvents = bind(this.updateEvents, this);
+      this.unfold = bind(this.unfold, this);
       this.show = bind(this.show, this);
       this.visible = false;
     }
@@ -564,9 +565,16 @@ $.extend( $.easing,
       }
     };
 
+    Infopanel.prototype.unfold = function() {
+      this.elem.toggleClass("unfolded");
+      return false;
+    };
+
     Infopanel.prototype.updateEvents = function() {
       this.elem.off("click");
       this.elem.find(".close").off("click");
+      this.elem.find(".line").off("click");
+      this.elem.find(".line").on("click", this.unfold);
       if (this.elem.hasClass("closed")) {
         return this.elem.on("click", (function(_this) {
           return function() {
@@ -778,7 +786,6 @@ $.extend( $.easing,
   window.Loading = Loading;
 
 }).call(this);
-
 
 /* ---- Notifications.coffee ---- */
 
@@ -1910,7 +1917,7 @@ $.extend( $.easing,
       } else {
         this.announcer_line = this.loading.printLine(status_line);
       }
-      if (status_db.error.length > (status_db.announced.length + status_db.announcing.length)) {
+      if (status_db.error.length > (status_db.announced.length + status_db.announcing.length) && status_db.announced.length < 3) {
         return this.loading.showTrackerTorBridge(this.server_info);
       }
     };
@@ -2003,6 +2010,7 @@ $.extend( $.easing,
   window.wrapper = new Wrapper(ws_url);
 
 }).call(this);
+
 
 /* ---- WrapperZeroFrame.coffee ---- */
 

@@ -7,6 +7,8 @@ import hashlib
 from util.Electrum import dbl_format
 from Config import config
 
+import util.OpensslFindPatch
+
 lib_verify_best = "sslcrypto"
 
 from lib import sslcrypto
@@ -28,6 +30,8 @@ def loadLib(lib_name, silent=False):
             )
     elif lib_name == "sslcrypto":
         sslcurve = sslcurve_native
+        if sslcurve_native == sslcurve_fallback:
+            logging.warning("SSLCurve fallback loaded instead of native")
     elif lib_name == "sslcrypto_fallback":
         sslcurve = sslcurve_fallback
 

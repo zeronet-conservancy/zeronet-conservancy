@@ -760,10 +760,6 @@ class FileServer(ConnectionServer):
             self.stream_server.start()
         except Exception as err:
             log.error("Error listening on: %s:%s: %s" % (self.ip, self.port, err))
-            if "ui_server" in dir(sys.modules["main"]):
-                log.debug("Stopping UI Server.")
-                sys.modules["main"].ui_server.stop()
-                return False
 
         if config.debug:
             # Auto reload FileRequest on change

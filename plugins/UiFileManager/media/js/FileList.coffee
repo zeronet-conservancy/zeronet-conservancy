@@ -1,5 +1,3 @@
-BINARY_EXTENSIONS = ["png", "gif", "jpg", "pdf", "doc", "msgpack", "zip", "rar", "gz", "tar", "exe"]
-
 class FileList extends Class
 	constructor: (@site, @inner_path, @is_owner=false) ->
 		@need_update = true
@@ -179,7 +177,7 @@ class FileList extends Class
 		ext = item.name.split(".").pop()
 
 		is_editing = inner_path == Page.file_editor?.inner_path
-		is_editable = not is_dir and item.size < 1024 * 1024 and ext not in BINARY_EXTENSIONS
+		is_editable = not is_dir and item.size < 1024 * 1024 and ext not in window.BINARY_EXTENSIONS
 		is_modified = @item_list.isModified(inner_path)
 		is_added = @item_list.isAdded(inner_path)
 		optional_info = @item_list.getOptionalInfo(inner_path)

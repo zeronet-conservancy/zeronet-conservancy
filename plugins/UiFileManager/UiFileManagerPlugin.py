@@ -73,9 +73,15 @@ class UiFileManagerPlugin(object):
             return super().error404(path)
 
         path_parts = self.parsePath(path)
+        if not path_parts:
+            return super().error404(path)
+
         site = self.server.site_manager.get(path_parts["request_address"])
 
         if not site or not site.content_manager.contents.get("content.json"):
+            return super().error404(path)
+
+        if path_parts["inner_path"] in site.content_manager.contents.get("content.json").get("files", {}):
             return super().error404(path)
 
         self.sendHeader(200)
