@@ -554,7 +554,7 @@ class UiRequest(object):
                 "'" : '&#x27;',
             }
             # first replace '&'
-            s = s.replace('&', '&amp;')
+            # s = s.replace('&', '&amp;')
             repl = {}
             repl.update(re_chars)
             repl.update(html_chars)
