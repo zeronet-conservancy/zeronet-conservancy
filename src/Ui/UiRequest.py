@@ -553,8 +553,8 @@ class UiRequest(object):
                 '"' : '&quot;',
                 "'" : '&#x27;',
             }
-            # first replace '&'
-            # s = s.replace('&', '&amp;')
+            # we can't replace '&' because it makes certain zites work incorrectly
+            # it should however in no way interfere with re.sub in render
             repl = {}
             repl.update(re_chars)
             repl.update(html_chars)
