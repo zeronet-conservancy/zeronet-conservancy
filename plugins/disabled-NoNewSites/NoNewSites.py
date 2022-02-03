@@ -36,5 +36,10 @@ class NoNewSites:
             self.sendHeader(404)
             return self.formatError("Not Found", "Adding new sites disabled", details=False)
         return super(NoNewSites, self).actionWrapper(path, extra_headers)
+
     def parsePath(self, path):
-        return super(NoNewSites, self).parsePath(path)
+        path_parts = super(UiRequestPlugin, self).parsePath(path)
+        if "merged-" not in path:  # Optimization
+            return path_parts
+        path_parts["address"], path_parts["inner_path"] = checkMergerPath(path_parts["address"], path_parts["inner_path"])
+        return path_parts
