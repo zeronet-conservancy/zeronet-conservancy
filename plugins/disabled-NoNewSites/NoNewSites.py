@@ -19,7 +19,7 @@ from Plugin import PluginManager
 
 # based on the code from Multiuser plugin
 @PluginManager.registerTo("UiRequest")
-class NoNewSites:
+class NoNewSites(object):
     def __init__(self, *args, **kwargs):
         return super(NoNewSites, self).__init__(*args, **kwargs)
     def actionWrapper(self, path, extra_headers=None):
@@ -37,9 +37,5 @@ class NoNewSites:
             return self.formatError("Not Found", "Adding new sites disabled", details=False)
         return super(NoNewSites, self).actionWrapper(path, extra_headers)
 
-    def parsePath(self, path):
-        path_parts = super(UiRequestPlugin, self).parsePath(path)
-        if "merged-" not in path:  # Optimization
-            return path_parts
-        path_parts["address"], path_parts["inner_path"] = checkMergerPath(path_parts["address"], path_parts["inner_path"])
-        return path_parts
+    # def parsePath(self, path):
+        # return super(NoNewSites, self).parsePath(path)
