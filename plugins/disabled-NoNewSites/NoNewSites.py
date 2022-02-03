@@ -36,3 +36,5 @@ class NoNewSites:
             self.sendHeader(404)
             return self.formatError("Not Found", "Adding new sites disabled", details=False)
         return super(NoNewSites, self).actionWrapper(path, extra_headers)
+    def parsePath(self, path):
+        return super(NoNewSites, self).parsePath(path)
