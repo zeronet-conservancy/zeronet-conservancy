@@ -23,13 +23,11 @@ class NoNewSites(object):
     def __init__(self, *args, **kwargs):
         return super(NoNewSites, self).__init__(*args, **kwargs)
     def actionWrapper(self, path, extra_headers=None):
-        match = re.match("/(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
+        match = re.match("/(media/)?(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if not match:
             self.sendHeader(500)
             return self.formatError("Plugin error", "No match for address found")
 
-        inner_path = match.group("inner_path").lstrip("/")
-        path_parts = self.parsePath(path)
         addr = match.group("address")
 
         if not self.server.site_manager.get(addr):
