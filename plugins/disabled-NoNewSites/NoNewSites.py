@@ -20,6 +20,8 @@ from Plugin import PluginManager
 # based on the code from Multiuser plugin
 @PluginManager.registerTo("UiRequest")
 class NoNewSites:
+    def __init__(self, *args, **kwargs):
+        return super(NoNewSites, self).__init__(*args, **kwargs)
     def actionWrapper(self, path, extra_headers=None):
         match = re.match("/(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if not match:
