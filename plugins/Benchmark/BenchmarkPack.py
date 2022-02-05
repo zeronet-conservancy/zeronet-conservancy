@@ -67,9 +67,9 @@ class ActionsPlugin:
         import gzip
 
         # Monkey patch _init_write_gz to use fixed date in order to keep the hash independent from datetime
-        def nodate_write_gzip_header(self):
+        def nodate_write_gzip_header(self, *args, **kwargs):
             self._write_mtime = 0
-            original_write_gzip_header(self)
+            return original_write_gzip_header(self, *args, **kwargs)
 
         test_data_io = io.BytesIO(b"Test" * 1024)
         file_name = b"\xc3\x81rv\xc3\xadzt\xc5\xb1r\xc5\x91%s.txt".decode("utf8")
