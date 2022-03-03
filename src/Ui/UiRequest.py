@@ -321,6 +321,7 @@ class UiRequest(object):
             headers["Cache-Control"] = "no-cache, no-store, private, must-revalidate, max-age=0"  # No caching at all
         headers["Content-Type"] = content_type
         headers.update(extra_headers)
+        headers["Access-Control-Allow-Origin"] = "*"
         return self.start_response(status_texts[status], list(headers.items()))
 
     # Renders a template
