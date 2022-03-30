@@ -25,6 +25,10 @@ import os
 import json
 import sys
 import itertools
+import urllib.parse as parse
+import requests
+import hashlib
+import logging
 
 from Plugin import PluginManager
 from Config import config
@@ -33,14 +37,14 @@ from Debug import Debug
 from Db import Db
 from User import UserManager
 
-TRACKER_ADDR = '1EQ6gh2eV2crfxEGzmxMk8DHxULuSYyh4N'
+RIZA_ADDR = '1EQ6gh2eV2crfxEGzmxMk8DHxULuSYyh4N'
 
 @PluginManager.registerTo('UiRequest')
 class RizaZero(object):
-    # Riza tracker
     @helper.encodeResponse
     def actionRizaTracker0(self):
-        site = self.server.sites.get('1EQ6gh2eV2crfxEGzmxMk8DHxULuSYyh4N')
+        """riza tracker"""
+        site = self.server.sites.get(RIZA_ADDR)
         user = UserManager.user_manager.get()
         if self.env['REQUEST_METHOD'] == 'GET':
             self.sendHeader(200, 'application/json')
@@ -90,6 +94,40 @@ class RizaZero(object):
             self.sendHeader(200, 'application/json')
             yield json.dumps({'result':'ok', 'deleted':deleted})
 
+    @helper.encodeResponse
+    def actionRizaMirror(self):
+        """request or get mirrored data
+
+        /RizaMirror?url=https://example.com&mirror=1
+        """
+        site = self.server.sites.get(RIZA_ADDR)
+        user = UserManager.user_manager.get()
+        query = parse.parse_qs(self.env['QUERY_STRING'])
+        if 'url' not in query:
+            self.sendHeader(400, 'application/json')
+            yield json.dumps({'result':'error', 'error':'no url provided'})
+            return
+        mirror = bool(int(query['mirror'][-1])) if 'mirror' in query else False
+        url = parse.quote(query['url'][-1])
+        if self.env['REQUEST_METHOD'] == 'GET':
+            res = site.storage.query(f'SELECT timestamp, hash, directory FROM rizamirror_map JOIN json ON rizamirror_map.json_id = json.json_id WHERE url = "{url}"')
+            rows = []
+            for row in res:
+                r = dict(row)
+                r['signed'] = r['directory']
+                del r['directory']
+                rows.append(r)
+            if mirror:
+                # CHECK IF WE WANT TO DO IT
+                mr = mirrorUrl(site, parse.unquote(url))
+                if mr:
+                    shash, auth = mr
+                    ts = int(time.time())
+                    addUrlHashToDb(site, user, url, shash, ts)
+                    rows.append({'timestamp':ts, 'hash':shash, 'signed':auth})
+            self.sendHeader(200, 'application/json')
+            yield json.dumps(rows)
+
 def doAddPeersTo(site, user, peers):
     ts = int(time.time())
     xpeers = [{'peerjs_id':x, 'timestamp':ts} for x in peers]
@@ -131,3 +169,44 @@ def signAndPublish(user, site, inner_path):
         called_instantly = RateLimit.isAllowed(event_name, 30)
         thread = RateLimit.callAsync(event_name, 30,
             lambda: site.publish(inner_path=inner_path))
+
+def mirrorUrl(site, url):
+    # TODO: check if we want/can mirror it
+    resp = requests.get(url)
+    if resp.status_code == 200:
+        text = resp.text.encode('utf-8')
+        shash = hashlib.sha256(text).hexdigest()
+        user = UserManager.user_manager.get()
+        auth = user.getAuthAddress(site.address)
+        inner_path = f'data/{auth}/{shash}'
+        content_path = f'data/{auth}/content.json'
+        site.storage.write(inner_path, text)
+        if not site.storage.isFile(content_path):
+            site.storage.write(content_path, b"{}")
+        r = site.storage.read(content_path)
+        if not r:
+            r = b"{}"
+        content_json = json.loads(r.decode('utf-8'))
+        content_json['optional'] = "(?!data.json).*"
+        site.storage.write(content_path, json.dumps(content_json).encode('utf-8'))
+        signAndPublish(user, site, content_path)
+        return (shash, auth)
+    return None
+
+def addUrlHashToDb(site, user, url, shash, ts):
+    auth = user.getAuthAddress(site.address)
+    inner_path = f'data/{auth}/data.json'
+    content_path = f'data/{auth}/content.json'
+    fc = b''
+    if site.storage.isFile(inner_path):
+        fc = site.storage.read(inner_path, "r")
+    if not fc:
+        fc = b'{}'
+    jsonTree = json.loads(fc)
+    if 'rizamirror_map' not in jsonTree:
+        jsonTree['rizamirror_map'] = []
+    jsonTree['rizamirror_map'].append({'url':url, 'timestamp':ts, 'hash':shash})
+    f = site.storage.open(inner_path, "w")
+    json.dump(jsonTree, f)
+    f.close()
+    signAndPublish(user, site, content_path)
