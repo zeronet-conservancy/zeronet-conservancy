@@ -69,10 +69,11 @@ config.initLogging()
 
 # Debug dependent configuration
 from Debug import DebugHook
-
 # Load plugins
 from Plugin import PluginManager
+t = time.time()
 PluginManager.plugin_manager.loadPlugins()
+print(f'Plugins loaded & processed in {time.time()-t:.3f}s')
 config.loadPlugins()
 config.parse()  # Parse again to add plugin configuration options
 
