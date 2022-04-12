@@ -503,7 +503,7 @@ class ContentManager(object):
         try:
             if not content:
                 content = self.site.storage.loadJson(inner_path)  # Read the file if no content specified
-            user_urn = "%s/%s" % (content["cert_auth_type"], content["cert_user_id"])  # web/nofish@zeroid.bit
+            user_urn = f'{content["cert_auth_type"]}/{content["cert_user_id"]}'  # web/nofish@zeroid.bit
             cert_user_id = content["cert_user_id"]
         except Exception:  # Content.json not exist
             user_urn = "n-a/n-a"
@@ -814,7 +814,7 @@ class ContentManager(object):
             raise VerifyError("No rules for this file")
 
         if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
-            return True  # Does not need cert
+            return  # Does not need cert
 
         if "cert_user_id" not in content:
             raise VerifyError("Missing cert_user_id")
@@ -830,7 +830,8 @@ class ContentManager(object):
             else:
                 raise VerifyError("Invalid cert signer: %s" % domain)
 
-        return self.verifyCertSign(rules["user_address"], content["cert_auth_type"], name, cert_address, content["cert_sign"])
+        if not self.verifyCertSign(rules["user_address"], content["cert_auth_type"], name, cert_address, content["cert_sign"]):
+            raise VerifyError("Invalid cert!")
 
     # Checks if the content.json content is valid
     # Return: True or False
@@ -985,8 +986,13 @@ class ContentManager(object):
                         if not CryptBitcoin.verify(signers_data, self.site.address, new_content["signers_sign"]):
                             raise VerifyError("Invalid signers_sign!")
 
-                    if inner_path != "content.json" and not self.verifyCert(inner_path, new_content):  # Check if cert valid
-                        raise VerifyError("Invalid cert!")
+                    if inner_path != "content.json":
+                        try:
+                            self.verifyCert(inner_path, new_content)
+                        except VerifyError as err:
+                            if config.check_user_id_certificate:
+                                raise err
+                            self.logging.log('no valid certificate, skipping')
 
                     valid_signs = 0
                     for address in valid_signers:

@@ -14,8 +14,7 @@ class Config(object):
 
     def __init__(self, argv):
         self.version = "0.7.3.95"
-        # DEPRECATED ; replace with git-generated commit
-        self.rev = 5003
+        self.rev = 5004 # DEPRECATED ; replace with git-generated commit
         self.argv = argv
         self.action = None
         self.test_parser = None
@@ -324,6 +323,8 @@ class Config(object):
         self.parser.add_argument('--tor_use_bridges', help='Use obfuscated bridge relays to avoid Tor block', action='store_true')
         self.parser.add_argument('--tor_hs_limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
         self.parser.add_argument('--tor_hs_port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
+
+        self.parser.add_argument('--check_user_id_certificate', help='Enforce checking user ID certificates (outdated)', type=bool, default=False)
 
         self.parser.add_argument('--version', action='version', version='ZeroNet %s r%s' % (self.version, self.rev))
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
