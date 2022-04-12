@@ -128,6 +128,17 @@ class RizaZero(object):
             self.sendHeader(200, 'application/json')
             yield json.dumps(rows)
 
+    @helper.encodeResponse
+    def actionRizaGetHash(self):
+        site = self.server.sites.get(RIZA_ADDR)
+        user = UserManager.user_manager.get()
+        query = parse.parse_qs(self.env['QUERY_STRING'])
+        shash = query['hash'][-1]
+        signed = query['signed'][-1]
+        inner_file = f'data/{signed}/{shash}'
+        self.sendHeader(200, 'text/html')
+        yield site.storage.read(inner_file)
+
 def doAddPeersTo(site, user, peers):
     ts = int(time.time())
     xpeers = [{'peerjs_id':x, 'timestamp':ts} for x in peers]
