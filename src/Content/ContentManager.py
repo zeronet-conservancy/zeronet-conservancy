@@ -691,7 +691,7 @@ class ContentManager(object):
 
         directory = helper.getDirname(self.site.storage.getPath(inner_path))
         inner_directory = helper.getDirname(inner_path)
-        self.log.info("Opening site data directory: %s..." % directory)
+        self.log.info(f'Opening site data directory: {directory}...')
 
         changed_files = [inner_path]
         files_node, files_optional_node = self.hashFiles(
@@ -911,13 +911,13 @@ class ContentManager(object):
         # Filename limit
         if rules.get("files_allowed"):
             for file_inner_path in list(content["files"].keys()):
-                if not SafeRe.match(r"^%s$" % rules["files_allowed"], file_inner_path):
-                    raise VerifyError("File not allowed: %s" % file_inner_path)
+                if not SafeRe.match(fr'^{rules["files_allowed"]}$', file_inner_path):
+                    raise VerifyError(f'File not allowed: {file_inner_path}')
 
         if rules.get("files_allowed_optional"):
             for file_inner_path in list(content.get("files_optional", {}).keys()):
-                if not SafeRe.match(r"^%s$" % rules["files_allowed_optional"], file_inner_path):
-                    raise VerifyError("Optional file not allowed: %s" % file_inner_path)
+                if not SafeRe.match(fr'^{rules["files_allowed_optional"]}$', file_inner_path):
+                    raise VerifyError(f'Optional file not allowed: {file_inner_path}')
 
         # Check if content includes allowed
         if rules.get("includes_allowed") is False and content.get("includes"):
