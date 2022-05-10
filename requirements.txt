@@ -12,3 +12,4 @@ gevent-ws
 coincurve
 maxminddb
 requests
+rich
