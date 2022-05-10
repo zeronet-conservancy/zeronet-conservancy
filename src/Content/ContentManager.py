@@ -543,6 +543,9 @@ class ContentManager(object):
 
         # Accepted cert signers
         rules["cert_signers"] = user_contents.get("cert_signers", {})
+        if 'kaffie.bit' not in rules["cert_signers"] and not config.check_user_id_certificate:
+            print('adding kaffie')
+            rules["cert_signers"]['kaffie.bit'] = ['1KH5BdNnqxh2KRWMMT8wUXzUgz4vVQ4S8p']
         rules["cert_signers_pattern"] = user_contents.get("cert_signers_pattern")
 
         if "signers" not in rules:
@@ -988,7 +991,7 @@ class ContentManager(object):
                         try:
                             self.verifyCert(inner_path, new_content)
                         except VerifyError as err:
-                            if config.check_user_id_certificate:
+                            if config.check_user_id_certificate or True:
                                 raise err
                             self.logging.log('no valid certificate, skipping')
 
