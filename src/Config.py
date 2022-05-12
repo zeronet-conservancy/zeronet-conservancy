@@ -339,8 +339,6 @@ class Config(object):
         self.parser.add_argument('--tor_hs_limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
         self.parser.add_argument('--tor_hs_port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
-        self.parser.add_argument('--check_user_id_certificate', help='Enforce checking user ID certificates (outdated)', type=bool, default=False)
-
         self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 

@@ -83,10 +83,14 @@ class Site(object):
     def __repr__(self):
         return "<%s>" % self.__str__()
 
-    # Load site settings from data/sites.json
     def loadSettings(self, settings=None):
+        """Load site settings
+
+        - from data/sites.json
+        - from data/usermod.json
+        """
         if not settings:
-            settings = json.load(open("%s/sites.json" % config.data_dir)).get(self.address)
+            settings = json.load(open(f'{config.data_dir}/sites.json')).get(self.address)
         if settings:
             self.settings = settings
             if "cache" not in settings:
@@ -110,11 +114,13 @@ class Site(object):
             if config.download_optional == "auto":
                 self.settings["autodownloadoptional"] = True
 
+        self.usermod = {}
+        if os.path.exists(f'{config.data_dir}/usermod.json'):
+            self.usermod = json.load(open(f'{config.data_dir}/usermod.json')).get(self.address)
+
         # Add admin permissions according to user settings
         if self.address in config.admin_pages and "ADMIN" not in self.settings["permissions"]:
             self.settings["permissions"].append("ADMIN")
-
-        return
 
     # Save site settings to data/sites.json
     def saveSettings(self):
