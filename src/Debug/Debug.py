@@ -158,7 +158,7 @@ def testBlock():
         last_time = time.time()
 
 
-gevent.spawn(testBlock)
+# gevent.spawn(testBlock)
 
 
 if __name__ == "__main__":
