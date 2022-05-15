@@ -515,6 +515,16 @@ class ContentManager(object):
         else:
             rules = copy.copy(user_contents["permissions"].get(cert_user_id, {}))  # Default rules based on username
 
+        # usermod
+        # TODO: review the messy code
+        if self.site.usermod:
+            usermod = self.site.usermod
+            if "permissions" in usermod:
+                if user_address in usermod["permissions"]:
+                    rules = copy.copy(usermod["permissions"][user_address])
+                elif cert_user_id in usermod["permissions"]:
+                    rules = copy.copy(usermod["permissions"][cert_user_id])
+
         if rules is False:
             banned = True
             rules = {}
