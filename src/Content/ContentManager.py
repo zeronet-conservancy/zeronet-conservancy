@@ -988,12 +988,7 @@ class ContentManager(object):
                             raise VerifyError("Invalid signers_sign!")
 
                     if inner_path != "content.json":
-                        try:
-                            self.verifyCert(inner_path, new_content)
-                        except VerifyError as err:
-                            if config.check_user_id_certificate or True:
-                                raise err
-                            self.logging.log('no valid certificate, skipping')
+                        self.verifyCert(inner_path, new_content)
 
                     valid_signs = 0
                     for address in valid_signers:
