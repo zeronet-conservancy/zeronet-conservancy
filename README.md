@@ -40,7 +40,7 @@ brand new, completely transparent and audited network is ready and this project 
 
 * After starting `zeronet.py` you will be able to visit zeronet sites using
   `http://127.0.0.1:43110/{zeronet_address}` (eg.
-  `http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D`).
+  `http://127.0.0.1:43110/126NXcevn1AUehWFZLTBw7FrX1crEizQdr`).
 * When you visit a new zeronet site, it tries to find peers using the BitTorrent
   network so it can download the site files (html, css, js...) from them.
 * Each visited site is also served by you.
@@ -64,7 +64,7 @@ Following links relate to original ZeroNet:
 
 #### System dependencies
 
-##### Generic unix-like
+##### Generic unix-like (including mac os x)
 
 Install autoconf and other basic development tools, python3 and pip.
 
@@ -73,10 +73,9 @@ Install autoconf and other basic development tools, python3 and pip.
  - `sudo apt install pkg-config python3-pip python3-venv`
 
 ##### Android/Termux
- - install [Termux](https://termux.com/)
- - in Termux install via `pkg install <package-names>`
+ - install [Termux](https://termux.com/) (in Termux you can install packages via `pkg install <package-names>`)
  - `pkg update`
- - `pkg install python automake git` (TODO: check fresh installation whether there are more dependencies to install)
+ - `pkg install python automake git binutils` (TODO: check fresh installation whether there are more dependencies to install)
  - (optional) `pkg install tor`
  - (optional) run tor via `tor --ControlPort 9051 --CookieAuthentication 1` command (you can then open new session by swiping to the right)
 
@@ -108,7 +107,7 @@ Install autoconf and other basic development tools, python3 and pip.
 
 ## How can I create a ZeroNet site?
 
- * Click on **⋮** > **"Create new, empty site"** menu item on the site [ZeroHello](http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D).
+ * Click on **⋮** > **"Create new, empty site"** menu item on the [admin page](http://127.0.0.1:43110/126NXcevn1AUehWFZLTBw7FrX1crEizQdr).
  * You will be **redirected** to a completely new site that is only modifiable by you!
  * You can find and modify your site's content in **data/[yoursiteaddress]** directory
  * After the modifications open your site, drag the topright "0" button to the left, then press **sign** and **publish** buttons on the bottom
