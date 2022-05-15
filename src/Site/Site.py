@@ -116,7 +116,7 @@ class Site(object):
 
         self.usermod = {}
         if os.path.exists(f'{config.data_dir}/usermod.json'):
-            self.usermod = json.load(open(f'{config.data_dir}/usermod.json')).get(self.address)
+            self.usermod = json.load(open(f'{config.data_dir}/usermod.json')).get(self.address, {})
 
         # Add admin permissions according to user settings
         if self.address in config.admin_pages and "ADMIN" not in self.settings["permissions"]:
