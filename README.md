@@ -1,12 +1,17 @@
 # zeronet-conservancy
 
-This is a minimalist conservative fork of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) with tor onion-v3 support (and perhaps more essential/security fixes in the future)
+zeronet-conservancy is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
+(that has been abandoned by its creator) that is dedicated to sustaining existing p2p network and developing
+its values of decentralization and freedom, while gradually switching to a better designed network
 
 ## Why fork?
 
-We need a fork that works with onion-v3 and doesn't depend on trust to one or two people. We need it now. This fork implements minimal changes to [ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3) branch which are easy to audit yourself.
-
-This fork is intended as temporary measure and will possibly stop being maintained after its original author established there is an alternative active trust-worthy fork.
+During onion-v3 switch crisis, we needed a fork that worked with onion-v3 and didn't depend on trust to one or
+two people. This fork started from fulfilling that mission, implementing minimal changes to
+[ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3) branch which are easy to audit by anyone. While
+you can still use the early releases of the fork to get onion-v3 working, the goal of this fork has since shifted
+and we're dedicated to solving more problems and improving user experience and security all over, until the
+brand new, completely transparent and audited network is ready and this project can be put to rest
 
 ## Why 0net?
 
@@ -28,7 +33,7 @@ This fork is intended as temporary measure and will possibly stop being maintain
  * TLS encrypted connections (through clearnet)
  * Automatic uPnP port opening (if opted in)
  * Plugin for multiuser (openproxy) support
- * Works with any browser/OS
+ * Works with any modern browser/OS
 
 
 ## How does it work?
@@ -53,15 +58,6 @@ Following links relate to original ZeroNet:
 - [Frequently asked questions »](https://zeronet.io/docs/faq/)
 - [ZeroNet Developer Documentation »](https://zeronet.io/docs/site_development/getting_started/)
 
-
-## Screenshots
-
-![Screenshot](https://i.imgur.com/H60OAHY.png)
-![ZeroTalk](https://zeronet.io/docs/img/zerotalk.png)
-
-#### [More screenshots in ZeroNet docs »](https://zeronet.io/docs/using_zeronet/sample_sites/)
-
-
 ## How to join
 
 ### Install from source (recommended)
@@ -74,13 +70,15 @@ Install autoconf and other basic development tools, python3 and pip.
 
 ##### Apt-based (debian, ubuntu, etc)
  - `sudo apt update`
- - `sudo apt install python3-pip python3-venv`
+ - `sudo apt install pkg-config python3-pip python3-venv`
 
 ##### Android/Termux
  - install [Termux](https://termux.com/)
  - in Termux install via `pkg install <package-names>`
  - `pkg update`
- - `pkg install python automake autoconf-dev git` (TODO: check fresh installation whether there are more dependencies to install)
+ - `pkg install python automake git` (TODO: check fresh installation whether there are more dependencies to install)
+ - (optional) `pkg install tor`
+ - (optional) run tor via `tor --ControlPort 9051 --CookieAuthentication 1` command (you can then open new session by swiping to the right)
 
 #### Building python dependencies & running
  - clone this repo (NOTE: on Android/Termux you should clone it into "home" folder of Termux, because virtual environment cannot live in `storage/`)
@@ -93,13 +91,19 @@ Install autoconf and other basic development tools, python3 and pip.
  - `source venv/bin/activate`
  - `python3 zeronet.py`
 
+#### alternative script
+ - after installing general dependencies and cloning repo (as above), run `start-venv.sh` which will create a virtual env for you and install python requirements
+ - more convenience scripts to be added soon
+
 ## Current limitations
 
 * File transactions are not compressed
 * No private sites
 * No DHT support
-* Centralized elements like zeroid
-* No reliable spam protection
+* Centralized elements like zeroid (we're working on this!)
+* No reliable spam protection (and on this too)
+* Doesn't work directly from browser (one of the top priorities for mid-future)
+* No data transparency
 
 
 ## How can I create a ZeroNet site?
@@ -115,8 +119,18 @@ Next steps: [ZeroNet Developer Documentation](https://zeronet.io/docs/site_devel
 
 ### Become a maintainer
 
-We need more maintainers! Become one today! Seriously, there's not going to be
-that much new code to audit and auditing new code is the only requirement.
+We need more maintainers! Become one today! You don't need to know how to code,
+there's a lot of other work to do.
+
+### Fix bugs & add features
+
+We've decided to go ahead and make a perfect p2p web, so we need more help
+implementing it.
+
+### Make your site/bring your content
+
+We know the documentation is lacking, but we try our best to support anyone
+who wants to migrate. Don't hesitate to ask.
 
 ### Use it and spread the word
 
