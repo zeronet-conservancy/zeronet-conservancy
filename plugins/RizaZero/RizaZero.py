@@ -40,7 +40,7 @@ from User import UserManager
 RIZA_ADDR = '1EQ6gh2eV2crfxEGzmxMk8DHxULuSYyh4N'
 
 @PluginManager.registerTo('UiRequest')
-class RizaZero(object):
+class RizaZeroTracker(object):
     @helper.encodeResponse
     def actionRizaTracker0(self):
         """riza tracker"""
