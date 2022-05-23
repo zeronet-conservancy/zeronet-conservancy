@@ -10,6 +10,7 @@ import gevent
 
 from Debug import Debug
 from Crypt import CryptHash
+from Crypt import CryptBitcoin
 from Config import config
 from util import helper
 from util import Diff
@@ -503,7 +504,7 @@ class ContentManager(object):
         try:
             if not content:
                 content = self.site.storage.loadJson(inner_path)  # Read the file if no content specified
-            user_urn = "%s/%s" % (content["cert_auth_type"], content["cert_user_id"])  # web/nofish@zeroid.bit
+            user_urn = f'{content["cert_auth_type"]}/{content["cert_user_id"]}'  # web/nofish@zeroid.bit
             cert_user_id = content["cert_user_id"]
         except Exception:  # Content.json not exist
             user_urn = "n-a/n-a"
@@ -513,6 +514,16 @@ class ContentManager(object):
             rules = copy.copy(user_contents["permissions"].get(user_address, {}))  # Default rules based on address
         else:
             rules = copy.copy(user_contents["permissions"].get(cert_user_id, {}))  # Default rules based on username
+
+        # usermod
+        # TODO: review the messy code
+        if self.site.usermod:
+            usermod = self.site.usermod
+            if "permissions" in usermod:
+                if user_address in usermod["permissions"]:
+                    rules = copy.copy(usermod["permissions"][user_address])
+                elif cert_user_id in usermod["permissions"]:
+                    rules = copy.copy(usermod["permissions"][cert_user_id])
 
         if rules is False:
             banned = True
@@ -541,7 +552,10 @@ class ContentManager(object):
                     rules[key] += val
 
         # Accepted cert signers
-        rules["cert_signers"] = user_contents.get("cert_signers", {})
+        rules['cert_signers'] = user_contents.get('cert_signers', {})
+        # user moderation rules overrides site settings
+        if 'cert_signers' in self.site.usermod:
+            rules['cert_signers'].update(self.site.usermod['cert_signers'])
         rules["cert_signers_pattern"] = user_contents.get("cert_signers_pattern")
 
         if "signers" not in rules:
@@ -736,7 +750,6 @@ class ContentManager(object):
         new_content["inner_path"] = inner_path
 
         # Verify private key
-        from Crypt import CryptBitcoin
         self.log.info("Verifying private key...")
         privatekey_address = CryptBitcoin.privatekeyToAddress(privatekey)
         valid_signers = self.getValidSigners(inner_path, new_content)
@@ -803,7 +816,6 @@ class ContentManager(object):
         return 1  # Todo: Multisig
 
     def verifyCertSign(self, user_address, user_auth_type, user_name, issuer_address, sign):
-        from Crypt import CryptBitcoin
         cert_subject = "%s#%s/%s" % (user_address, user_auth_type, user_name)
         return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
@@ -814,7 +826,7 @@ class ContentManager(object):
             raise VerifyError("No rules for this file")
 
         if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
-            return True  # Does not need cert
+            return  # Does not need cert
 
         if "cert_user_id" not in content:
             raise VerifyError("Missing cert_user_id")
@@ -830,7 +842,8 @@ class ContentManager(object):
             else:
                 raise VerifyError("Invalid cert signer: %s" % domain)
 
-        return self.verifyCertSign(rules["user_address"], content["cert_auth_type"], name, cert_address, content["cert_sign"])
+        if not self.verifyCertSign(rules["user_address"], content["cert_auth_type"], name, cert_address, content["cert_sign"]):
+            raise VerifyError("Invalid cert!")
 
     # Checks if the content.json content is valid
     # Return: True or False
@@ -929,7 +942,6 @@ class ContentManager(object):
     # Return: None = Same as before, False = Invalid, True = Valid
     def verifyFile(self, inner_path, file, ignore_same=True):
         if inner_path.endswith("content.json"):  # content.json: Check using sign
-            from Crypt import CryptBitcoin
             try:
                 if type(file) is dict:
                     new_content = file
@@ -940,7 +952,7 @@ class ContentManager(object):
                         else:
                             new_content = json.load(file)
                     except Exception as err:
-                        raise VerifyError("Invalid json file: %s" % err)
+                        raise VerifyError(f"Invalid json file: {err}")
                 if inner_path in self.contents:
                     old_content = self.contents.get(inner_path, {"modified": 0})
                     # Checks if its newer the ours
@@ -985,8 +997,8 @@ class ContentManager(object):
                         if not CryptBitcoin.verify(signers_data, self.site.address, new_content["signers_sign"]):
                             raise VerifyError("Invalid signers_sign!")
 
-                    if inner_path != "content.json" and not self.verifyCert(inner_path, new_content):  # Check if cert valid
-                        raise VerifyError("Invalid cert!")
+                    if inner_path != "content.json":
+                        self.verifyCert(inner_path, new_content)
 
                     valid_signs = 0
                     for address in valid_signers:
