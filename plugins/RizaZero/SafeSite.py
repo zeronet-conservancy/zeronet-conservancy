@@ -76,16 +76,18 @@ class RizaZeroSafeSitePlugin:
             if service == 'haskell':
                 if inner_path.endswith('.hs'):
                     print('happy haskell!')
-                    print(inner_path)
                     with TemporaryDirectory() as tmpdir:
-                        print(tmpdir)
                         hspth = f'{config.start_dir}/plugins/RizaZero/hs'
                         tmphs = f'{tmpdir}/hs'
+
                         shutil.copytree(hspth, tmphs)
                         fpath = f'{config.data_dir}/{addr}/{inner_path}'
+
+                        os.mkdir(f'{tmpdir}/hs/distrusted')
+
                         ftgt = f'{tmpdir}/hs/distrusted/App.hs'
+
                         shutil.copy2(fpath, ftgt)
-                        print(os.listdir(tmpdir+'/hs'))
                         proc = subprocess.Popen(
                             ['cabal', '-v0', 'run'], 
                             cwd=tmphs,
