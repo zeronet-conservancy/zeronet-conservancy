@@ -64,7 +64,22 @@ Following links relate to original ZeroNet:
 
 ### Install from your distribution repository
 
-- NixOS: https://search.nixos.org/packages?channel=22.05&show=zeronet-conservancy&type=packages&query=zeronet-conservancy
+- NixOS: https://search.nixos.org/packages?channel=22.05&show=zeronet-conservancy&type=packages&query=zeronet-conservancy (and see below)
+
+### Install from Nix package manager (Linux or MacOS)
+
+```
+# install & configure nix package manager
+nix-env -iA nixpkgs.zeronet-conservancy
+```
+
+or
+
+`nix-env -iA nixos.zeronet-conservancy`
+
+if you're on NixOS
+
+(thanks @fgaz for making & maintaining the package)
 
 ### Install from source (recommended)
 
