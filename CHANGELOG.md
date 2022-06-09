@@ -1,5 +1,6 @@
 ### zeronet-conservancy 0.7.6
 maintainers: @caryoscelus, @d4708, @FraYoshi, @prtngn
+- more trackers from Syncronite by default
 - introduce multiple donations methods (@caryoscelus)
 - easier termux startup script (@unmanbearpig)
 - Brazilian Portuguese readme translation (@iFallenHunt)
