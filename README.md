@@ -1,5 +1,7 @@
 # zeronet-conservancy
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+
 [по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md)
 
 zeronet-conservancy is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
