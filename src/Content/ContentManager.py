@@ -472,19 +472,15 @@ class ContentManager(object):
 
         dirs = inner_path.split("/")  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
-        inner_path_parts.insert(0, dirs.pop())  # Dont check in self dir
-        while True:
-            content_inner_path = "%s/content.json" % "/".join(dirs)
-            parent_content = self.contents.get(content_inner_path.strip("/"))
+        # We shouldn't check in self dir, so we need at least one up
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = f"{'/'.join(dirs)}/content.json".strip('/')
+            parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
                 return parent_content["includes"].get("/".join(inner_path_parts))
             elif parent_content and "user_contents" in parent_content:
                 return self.getUserContentRules(parent_content, inner_path, content)
-            else:  # No inner path in this dir, lets try the parent dir
-                if dirs:
-                    inner_path_parts.insert(0, dirs.pop())
-                else:  # No more parent dirs
-                    break
 
         return False
 
@@ -503,8 +499,8 @@ class ContentManager(object):
         try:
             if not content:
                 content = self.site.storage.loadJson(inner_path)  # Read the file if no content specified
-            user_urn = "%s/%s" % (content["cert_auth_type"], content["cert_user_id"])  # web/nofish@zeroid.bit
             cert_user_id = content["cert_user_id"]
+            user_urn = f'{content["cert_auth_type"]}/{cert_user_id}'  # e.g. web/caryoscelus@zeroid.bit
         except Exception:  # Content.json not exist
             user_urn = "n-a/n-a"
             cert_user_id = "n-a"
