@@ -5,7 +5,7 @@ import gevent.lock
 
 from Debug import Debug
 from Config import config
-from Content.ContentManager import VerifyError
+from Content.ContentManagerExc import VerifyError
 
 
 class WorkerDownloadError(Exception):

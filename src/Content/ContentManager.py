@@ -8,6 +8,8 @@ import sys
 
 import gevent
 
+from rich import print
+
 from Debug import Debug
 from Crypt import CryptHash
 from Config import config
@@ -18,14 +20,7 @@ from Peer import PeerHashfield
 from .ContentDbDict import ContentDbDict
 from Plugin import PluginManager
 
-
-class VerifyError(Exception):
-    pass
-
-
-class SignError(Exception):
-    pass
-
+from .ContentManagerExc import *
 
 @PluginManager.acceptPlugins
 class ContentManager(object):
@@ -459,29 +454,42 @@ class ContentManager(object):
     # Get rules for the file
     # Return: The rules for the file or False if not allowed
     def getRules(self, inner_path, content=None):
+        print(f'hello {inner_path}', content)
         if not inner_path.endswith("content.json"):  # Find the files content.json first
             file_info = self.getFileInfo(inner_path)
+            print(file_info)
             if not file_info:
                 return False  # File not found
             inner_path = file_info["content_inner_path"]
 
         if inner_path == "content.json":  # Root content.json
+            print('root content.json')
             rules = {}
             rules["signers"] = self.getValidSigners(inner_path, content)
             return rules
 
+        print('other')
         dirs = inner_path.split("/")  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
         # We shouldn't check in self dir, so we need at least one up
         while dirs:
+            print('still around')
             inner_path_parts.insert(0, dirs.pop())
             content_inner_path = f"{'/'.join(dirs)}/content.json".strip('/')
             parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
-                return parent_content["includes"].get("/".join(inner_path_parts))
+                print('huck')
+                print("/".join(inner_path_parts))
+                # print(parent_content["includes"])
+                r = parent_content["includes"].get("/".join(inner_path_parts))
+                print(r)
+                return r
             elif parent_content and "user_contents" in parent_content:
-                return self.getUserContentRules(parent_content, inner_path, content)
+                r = self.getUserContentRules(parent_content, inner_path, content)
+                print(r)
+                return r
 
+        print('fuck')
         return False
 
     # Get rules for a user file
@@ -505,21 +513,12 @@ class ContentManager(object):
             user_urn = "n-a/n-a"
             cert_user_id = "n-a"
 
-        if user_address in user_contents["permissions"]:
-            rules = copy.copy(user_contents["permissions"].get(user_address, {}))  # Default rules based on address
-        else:
-            rules = copy.copy(user_contents["permissions"].get(cert_user_id, {}))  # Default rules based on username
-
-        if rules is False:
-            banned = True
-            rules = {}
-        else:
-            banned = False
-        if "signers" in rules:
-            rules["signers"] = rules["signers"][:]  # Make copy of the signers
-        for permission_pattern, permission_rules in list(user_contents["permission_rules"].items()):  # Regexp rules
-            if not SafeRe.match(permission_pattern, user_urn):
-                continue  # Rule is not valid for user
+        rules = {}
+        banned = False
+        # we're using the most extensive legacy permissions
+        # to get what files should be writeable
+        # size limits are defined by user instead
+        for permission_rules in user_contents["permission_rules"].values():
             # Update rules if its better than current recorded ones
             for key, val in permission_rules.items():
                 if key not in rules:
@@ -540,11 +539,23 @@ class ContentManager(object):
         rules["cert_signers"] = user_contents.get("cert_signers", {})
         rules["cert_signers_pattern"] = user_contents.get("cert_signers_pattern")
 
-        if "signers" not in rules:
+        # apply user-defined limits
+        from Site import SiteManager
+        limits = SiteManager.site_manager.limits
+        if user_address in limits['users']:
+            max_size = limits['users'][user_address]
+        else:
+            max_size = limits['default']
+        rules['max_size'] = max_size
+        if not max_size:
+            banned = True
+        
+        if not banned:
+            rules["signers"] = [user_address]
+        else:
+            # "site owner" cannot override user files
             rules["signers"] = []
 
-        if not banned:
-            rules["signers"].append(user_address)  # Add user as valid signer
         rules["user_address"] = user_address
         rules["includes_allowed"] = False
 
@@ -807,7 +818,7 @@ class ContentManager(object):
         rules = self.getRules(inner_path, content)
 
         if not rules:
-            raise VerifyError("No rules for this file")
+            raise VerifyError(f"No rules for file {inner_path}")
 
         if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
             return True  # Does not need cert

@@ -25,8 +25,21 @@ class SiteManager(object):
         self.sites = {}
         self.sites_changed = int(time.time())
         self.loaded = False
+        self.loadLimits()
         gevent.spawn(self.saveTimer)
         atexit.register(lambda: self.save(recalculate_size=True))
+
+    def loadLimits(self):
+        self.log.info('Loading user limits')
+        json_path = f"{config.data_dir}/limits.json"
+        try:
+            with open(json_path) as f:
+                limit_data = json.load(f)
+        except Exception:
+            limit_data = {'default':4000, 'users':{}}
+            with open(json_path, 'w') as f:
+                json.dump(limit_data, f)
+        self.limits = limit_data
 
     # Load all sites from data/sites.json
     @util.Noparallel()
@@ -38,10 +51,10 @@ class SiteManager(object):
         load_s = time.time()
         # Load new adresses
         try:
-            json_path = "%s/sites.json" % config.data_dir
+            json_path = f"{config.data_dir}/sites.json"
             data = json.load(open(json_path))
         except Exception as err:
-            raise Exception("Unable to load %s: %s" % (json_path, err))
+            raise RuntimeError(f"Unable to load {json_path}: {err}")
 
         sites_need = []
 

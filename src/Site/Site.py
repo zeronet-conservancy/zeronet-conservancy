@@ -17,7 +17,7 @@ from Config import config
 from Peer import Peer
 from Worker import WorkerManager
 from Debug import Debug
-from Content import ContentManager
+from Content.ContentManager import ContentManager
 from .SiteStorage import SiteStorage
 from Crypt import CryptHash
 from util import helper
