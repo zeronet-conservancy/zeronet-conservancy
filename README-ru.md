@@ -2,6 +2,8 @@
 
 [in English](README.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md)
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+
 zeronet-conservancy — это форк/продолжение проекта [ZeroNet](https://github.com/HelloZeroNet/ZeroNet)
 (покинутого его создателем), предназначенный для поддержки существующей сети p2p и развития
 идей ценности децентрализации и свободы, постепенно развивающийся в более совершенную сеть

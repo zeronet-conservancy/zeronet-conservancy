@@ -2,6 +2,8 @@
 
 **警告**：这个翻译已经过时了。请阅读英文版。对此翻译的任何贡献都将受到高度赞赏
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+
 [in English](README.md) | [em português](README-ptbr.md) | [по-русски](README-ru.md)
 
 ## 为什么？

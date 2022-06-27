@@ -2,6 +2,8 @@
 
 [in English](README.md) | [по-русски](README-ru.md) | [简体中文](README-zh-cn.md)
 
+[![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+
 zeronet-conservancy é um garfo/continuação do projeto [ZeroNet](https://github.com/HelloZeroNet/ZeroNet)
 (que foi abandonada por seu criador) que se dedica a sustentar a rede p2p existente e a desenvolver
 seus valores de descentralização e liberdade, enquanto muda gradualmente para uma rede mais bem projetada
