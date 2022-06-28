@@ -1,3 +1,7 @@
+### zeronet-conservancy 0.7.6+
+maintainers: @caryoscelus, @FraYoshi, @prtngn, @unmanbearpig
+- xmr donations in sidebar fixed (@caryoscelus)
+
 ### zeronet-conservancy 0.7.6
 maintainers: @caryoscelus, @d4708, @FraYoshi, @prtngn
 - more trackers from Syncronite by default
