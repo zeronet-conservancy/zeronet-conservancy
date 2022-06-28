@@ -3,8 +3,7 @@ import urllib.request
 import http.client
 import logging
 from urllib.parse import urlparse
-from xml.dom.minidom import parseString
-from xml.parsers.expat import ExpatError
+from defusedxml.minidom import parseString
 
 from gevent import socket
 import gevent
@@ -105,7 +104,7 @@ def _parse_igd_profile(profile_xml):
     """
     try:
         dom = parseString(profile_xml)
-    except ExpatError as e:
+    except Exception as e:
         raise IGDError(
             'Unable to parse IGD reply: {0} \n\n\n {1}'.format(profile_xml, e))
 

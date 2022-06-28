@@ -12,3 +12,4 @@ gevent-ws
 coincurve
 maxminddb
 rich
+defusedxml>=0.7
