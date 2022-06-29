@@ -313,8 +313,8 @@ class FileServer(ConnectionServer):
     def announceSite(self, site):
         site.announce(mode="update", pex=False)
         active_site = time.time() - site.settings.get("modified", 0) < 24 * 60 * 60
-        if site.settings["own"] or active_site:
-            # Check connections more frequently on own and active sites to speed-up first connections
+        if active_site:
+            # Check connections more frequently on active sites to speed-up first connections
             site.needConnections(check_site_on_reconnect=True)
         site.sendMyHashfield(3)
         site.updateHashfield(3)
