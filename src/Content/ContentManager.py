@@ -401,10 +401,10 @@ class ContentManager(object):
     # Return: { "sha512": "c29d73d...21f518", "size": 41 , "content_inner_path": "content.json"}
     def getFileInfo(self, inner_path, new_file=False):
         dirs = inner_path.split("/")  # Parent dirs of content.json
-        inner_path_parts = [dirs.pop()]  # Filename relative to content.json
-        while True:
-            content_inner_path = "%s/content.json" % "/".join(dirs)
-            content_inner_path = content_inner_path.strip("/")
+        inner_path_parts = []  # Filename relative to content.json
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
             content = self.contents.get(content_inner_path)
 
             # Check in files
@@ -447,12 +447,6 @@ class ContentManager(object):
                 back["optional"] = None
                 return back
 
-            # No inner path in this dir, lets try the parent dir
-            if dirs:
-                inner_path_parts.insert(0, dirs.pop())
-            else:  # No more parent dirs
-                break
-
         # Not found
         return False
 
@@ -472,20 +466,15 @@ class ContentManager(object):
 
         dirs = inner_path.split("/")  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
-        inner_path_parts.insert(0, dirs.pop())  # Dont check in self dir
-        while True:
-            content_inner_path = "%s/content.json" % "/".join(dirs)
-            parent_content = self.contents.get(content_inner_path.strip("/"))
+        # Dont check in self dir
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
+            parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
                 return parent_content["includes"].get("/".join(inner_path_parts))
             elif parent_content and "user_contents" in parent_content:
                 return self.getUserContentRules(parent_content, inner_path, content)
-            else:  # No inner path in this dir, lets try the parent dir
-                if dirs:
-                    inner_path_parts.insert(0, dirs.pop())
-                else:  # No more parent dirs
-                    break
-
         return False
 
     # Get rules for a user file
