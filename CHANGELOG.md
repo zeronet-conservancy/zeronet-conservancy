@@ -1,5 +1,6 @@
 ### zeronet-conservancy 0.7.6+
 maintainers: @caryoscelus, @FraYoshi, @prtngn, @unmanbearpig
+- return UPnP using secure xml library (@caryoscelus)
 - xmr donations in sidebar fixed (@caryoscelus)
 
 ### zeronet-conservancy 0.7.6
