@@ -998,8 +998,10 @@ class ContentManager(object):
                         raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
                     else:
                         return self.verifyContent(inner_path, new_content)
-                else:  # Old style signing
+                elif sign:
                     raise VerifyError("Invalid old-style sign")
+                else:
+                    raise VerifyError("Not signed")
 
             except Exception as err:
                 self.log.warning("%s: verify sign error: %s" % (inner_path, Debug.formatException(err)))
