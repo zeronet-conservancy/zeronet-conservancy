@@ -78,19 +78,19 @@ class ContentManager(object):
 
         if os.path.isfile(content_path):
             try:
+                new_content = self.site.storage.loadJson(content_inner_path)
                 # Check if file is newer than what we have
                 if not force and old_content and not self.site.settings.get("own"):
-                    for line in open(content_path):
-                        if '"modified"' not in line:
-                            continue
-                        match = re.search(r"([0-9\.]+),$", line.strip(" \r\n"))
-                        if match and float(match.group(1)) <= old_content.get("modified", 0):
-                            self.log.debug("%s loadContent same json file, skipping" % content_inner_path)
-                            return [], []
-
-                new_content = self.site.storage.loadJson(content_inner_path)
+                    new_ts = int(float(new_content.get('modified', 0)))
+                    old_ts = int(float(old_content.get('modified', 0)))
+                    if new_ts < old_ts:
+                        self.log.debug('got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
+                        return [], []
+                    elif new_ts == old_ts:
+                        self.log.debug('got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
+                        return [], []
             except Exception as err:
-                self.log.warning("%s load error: %s" % (content_path, Debug.formatException(err)))
+                self.log.warning(f'{content_path} load error: {Debug.formatException(err)}')
                 return [], []
         else:
             self.log.debug("Content.json not exist: %s" % content_path)
