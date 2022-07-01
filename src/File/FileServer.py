@@ -306,7 +306,7 @@ class FileServer(ConnectionServer):
                 time.sleep(1)  # Prevent too quick request
 
             site = None
-            gc.collect()  # Implicit garbage collection
+            gc.collect()  # Explicit garbage collection
             startup = False
             time.sleep(60 * 20)
 
