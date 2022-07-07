@@ -176,7 +176,9 @@ will create team accounts on friendly crowdfunding platforms as well.
 
 If you want to make sure your donation is recognized as donation for this
 project, there is a dedicated bitcoin address for that, too:
-1Kjuw3reZvxRVNs27Gen7jPJYCn6LY7Fg6
+1Kjuw3reZvxRVNs27Gen7jPJYCn6LY7Fg6. And if you want to stay more anonymous and
+private, a Monero wallet:
+4AiYUcqVRH4C2CVr9zbBdkhRnJnHiJoypHEsq4N7mQziGUoosPCpPeg8SPr87nvwypaRzDgMHEbWWDekKtq8hm9LBmgcMzC
 
 If you want to donate in a different way, feel free to contact maintainer or
 create an issue
