@@ -758,9 +758,6 @@ class UiWebsocketPlugin(object):
     @flag.admin
     @flag.no_multiuser
     def actionSiteSetOwned(self, to, owned):
-        if self.site.address == config.updatesite:
-            return {"error": "You can't change the ownership of the updater site"}
-
         self.site.settings["own"] = bool(owned)
         self.site.updateWebsocket(owned=owned)
         return "ok"
