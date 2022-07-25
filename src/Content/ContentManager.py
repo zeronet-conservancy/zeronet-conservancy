@@ -718,7 +718,8 @@ class ContentManager(object):
 
         new_content["modified"] = int(time.time())  # Add timestamp
         if inner_path == "content.json":
-            new_content["zeronet_version"] = config.version
+            # add for backward compatibility, but don't expose user version
+            new_content["zeronet_version"] = config.user_agent
             new_content["signs_required"] = content.get("signs_required", 1)
 
         new_content["address"] = self.site.address

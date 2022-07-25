@@ -362,7 +362,7 @@ class Connection(object):
                 self.server.log.warning("Unknown target onion address: %s" % self.target_onion)
 
         handshake = {
-            "version": "conservancy",
+            "version": config.user_agent,
             "protocol": "v2",
             "use_bin_type": True,
             "peer_id": peer_id,
