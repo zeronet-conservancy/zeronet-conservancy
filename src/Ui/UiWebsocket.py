@@ -424,10 +424,6 @@ class UiWebsocket(object):
             extend["cert_sign"] = cert["cert_sign"]
             self.log.debug("Extending content.json with cert %s" % extend["cert_user_id"])
 
-        if not self.hasFilePermission(inner_path):
-            self.log.error("SiteSign error: you don't own this site & site owner doesn't allow you to do so.")
-            return self.response(to, {"error": "Forbidden, you can only modify your own sites"})
-
         if privatekey == "stored":  # Get privatekey from sites.json
             privatekey = self.user.getSiteData(self.site.address).get("privatekey")
             if not privatekey:
