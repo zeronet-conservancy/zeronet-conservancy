@@ -1,7 +1,18 @@
-### zeronet-conservancy 0.7.6+
-maintainers: @caryoscelus, @FraYoshi, @prtngn, @unmanbearpig
+### zeronet-conservancy 0.7.7+
+
+### zeronet-conservancy 0.7.7
+maintainers: @caryoscelus, @FraYoshi, @prtngn, @d47081 (ex @d4708)
 - return UPnP using secure xml library (@caryoscelus)
 - xmr donations in sidebar fixed (@caryoscelus)
+- add libffi-dev dependency (@d47081)
+- add more deb dependencies (@BlueRook)
+- add pyaes as external dependency (@caryoscelus)
+- remove built-in pyaes (thanks to @emdee-net)
+- fix error messages in sidebar (@caryoscelus)
+- reduce fingerprinting of site owner (@caryoscelus)
+- minor code improvements and reduce fingerprinting from zeronet-enhanced (by @geekless, adopted by @caryoscelus)
+- improve and speed up content.json loading (@caryoscelus)
+- multiple code improvements
 
 ### zeronet-conservancy 0.7.6
 maintainers: @caryoscelus, @d4708, @FraYoshi, @prtngn
