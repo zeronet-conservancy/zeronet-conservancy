@@ -1,6 +1,6 @@
 ### zeronet-conservancy 0.7.7+
 
-### zeronet-conservancy 0.7.7
+### zeronet-conservancy 0.7.7 (2022-07-27)
 maintainers: @caryoscelus, @FraYoshi, @prtngn, @d47081 (ex @d4708)
 - return UPnP using secure xml library (@caryoscelus)
 - xmr donations in sidebar fixed (@caryoscelus)
@@ -12,9 +12,11 @@ maintainers: @caryoscelus, @FraYoshi, @prtngn, @d47081 (ex @d4708)
 - reduce fingerprinting of site owner (@caryoscelus)
 - minor code improvements and reduce fingerprinting from zeronet-enhanced (by @geekless, adopted by @caryoscelus)
 - improve and speed up content.json loading (@caryoscelus)
+- show `--help` even if data directory is inaccessible (@caryoscelus)
+- ask for optional user mute reason (@caryoscelus)
 - multiple code improvements
 
-### zeronet-conservancy 0.7.6
+### zeronet-conservancy 0.7.6 (2022-06-10) (864b7feb797d12077)
 maintainers: @caryoscelus, @d4708, @FraYoshi, @prtngn
 - more trackers from Syncronite by default
 - introduce multiple donations methods (@caryoscelus)
