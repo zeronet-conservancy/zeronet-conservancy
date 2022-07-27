@@ -44,7 +44,7 @@ def main():
         print("Error: Python 3.x is required")
         sys.exit(0)
 
-    if "--silent" not in sys.argv:
+    if '--silent' not in sys.argv:
         fancy_greet()
 
     main = None

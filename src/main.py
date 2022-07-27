@@ -25,23 +25,34 @@ gevent.monkey.patch_all(thread=False, subprocess=False)
 update_after_shutdown = False  # If set True then update and restart zeronet after main loop ended
 restart_after_shutdown = False  # If set True then restart zeronet after main loop ended
 
-# Load config
 from Config import config
-config.parse(silent=True)  # Plugins need to access the configuration
-if not config.arguments:  # Config parse failed, show the help screen and exit
+
+def load_config():
+    config.parse(silent=True)  # Plugins need to access the configuration
+    if not config.arguments:  # Config parse failed, show the help screen and exit
+        config.parse()
+
+load_config()
+
+def init_dirs():
     config.parse()
+    if not os.path.isdir(config.data_dir):
+        os.mkdir(config.data_dir)
+        try:
+            os.chmod(config.data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        except Exception as err:
+            startupError("Can't change permission of %s: %s" % (config.data_dir, err))
 
-if not os.path.isdir(config.data_dir):
-    os.mkdir(config.data_dir)
-    try:
-        os.chmod(config.data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-    except Exception as err:
-        startupError("Can't change permission of %s: %s" % (config.data_dir, err))
+    sites_json = f"{config.data_dir}/sites.json"
+    if not os.path.isfile(sites_json):
+        with open(sites_json, "w") as f:
+            f.write("{}")
+    users_json = f"{config.data_dir}/users.json"
+    if not os.path.isfile(users_json):
+        with open(users_json, "w") as f:
+            f.write("{}")
 
-if not os.path.isfile("%s/sites.json" % config.data_dir):
-    open("%s/sites.json" % config.data_dir, "w").write("{}")
-if not os.path.isfile("%s/users.json" % config.data_dir):
-    open("%s/users.json" % config.data_dir, "w").write("{}")
+init_dirs()
 
 if config.action == "main":
     from util import helper
@@ -69,12 +80,14 @@ config.initLogging()
 
 # Debug dependent configuration
 from Debug import DebugHook
-
-# Load plugins
 from Plugin import PluginManager
-PluginManager.plugin_manager.loadPlugins()
-config.loadPlugins()
-config.parse()  # Parse again to add plugin configuration options
+
+def load_plugins():
+    PluginManager.plugin_manager.loadPlugins()
+    config.loadPlugins()
+    config.parse()  # Parse again to add plugin configuration options
+
+load_plugins()
 
 # Log current config
 logging.debug("Config: %s" % config)
