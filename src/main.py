@@ -29,7 +29,8 @@ from Config import config
 
 def load_config():
     config.parse(silent=True)  # Plugins need to access the configuration
-    if not config.arguments:  # Config parse failed, show the help screen and exit
+    if not config.arguments:
+        # Config parse failed completely, show the help screen and exit
         config.parse()
 
 load_config()
@@ -51,7 +52,16 @@ def init_dirs():
         with open(users_json, "w") as f:
             f.write("{}")
 
-init_dirs()
+# TODO: GET RID OF TOP-LEVEL CODE!!!
+
+try:
+    init_dirs()
+except:
+    import traceback as tb
+    print(tb.format_exc())
+    # at least make sure to print help if we're otherwise so helpless
+    config.parser.print_help()
+    sys.exit(1)
 
 if config.action == "main":
     from util import helper
