@@ -35,7 +35,6 @@ def load_config():
 load_config()
 
 def init_dirs():
-    config.parse()
     if not os.path.isdir(config.data_dir):
         os.mkdir(config.data_dir)
         try:
