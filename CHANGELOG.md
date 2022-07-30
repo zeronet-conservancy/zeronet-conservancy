@@ -1,6 +1,6 @@
 ### zeronet-conservancy 0.7.7+
 
-### zeronet-conservancy 0.7.7 (2022-07-27)
+### zeronet-conservancy 0.7.7 (2022-07-27) (f40dbfeb2163b9902495ba)
 maintainers: @caryoscelus, @FraYoshi, @prtngn, @d47081 (ex @d4708)
 - return UPnP using secure xml library (@caryoscelus)
 - xmr donations in sidebar fixed (@caryoscelus)
