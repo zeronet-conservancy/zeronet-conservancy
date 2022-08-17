@@ -101,8 +101,8 @@ def displayErrorMessage(err, error_log_path):
     res = ctypes.windll.user32.MessageBoxW(0, err_title, "ZeroNet error", MB_YESNOCANCEL | MB_ICONEXCLAIMATION)
     if res == ID_YES:
         import webbrowser
-        report_url = "https://github.com/HelloZeroNet/ZeroNet/issues/new?assignees=&labels=&template=bug-report.md&title=%s"
-        webbrowser.open(report_url % urllib.parse.quote("Unhandled exception: %s" % err_message))
+        report_url = "https://github.com/zeronet-conservancy/zeronet-conservancy/issues/new"
+        webbrowser.open(report_url)
     if res in [ID_YES, ID_NO]:
         subprocess.Popen(['notepad.exe', error_log_path])
 
