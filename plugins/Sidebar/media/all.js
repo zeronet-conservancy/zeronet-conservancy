@@ -1137,6 +1137,22 @@ window.initScrollable = function () {
           return false;
         };
       })(this));
+      this.tag.find("#button-favourite").off("click touched").on("click touched", (function(_this) {
+	return function() {
+	  _this.tag.find("#button-favourite").addClass("hidden");
+	  _this.tag.find("#button-unfavourite").removeClass("hidden");
+	  _this.wrapper.ws.cmd("siteFavourite", _this.wrapper.site_info.address);
+	  return false;
+	};
+      })(this));
+      this.tag.find("#button-unfavourite").off("click touched").on("click touched", (function(_this) {
+	return function() {
+	  _this.tag.find("#button-favourite").removeClass("hidden");
+	  _this.tag.find("#button-unfavourite").addClass("hidden");
+	  _this.wrapper.ws.cmd("siteUnfavourite", _this.wrapper.site_info.address);
+	  return false;
+	};
+      })(this));
       this.tag.find("#button-delete").off("click touchend").on("click touchend", (function(_this) {
         return function() {
           _this.handleSiteDeleteClick();

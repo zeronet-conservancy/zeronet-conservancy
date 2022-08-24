@@ -415,11 +415,26 @@ class UiWebsocketPlugin(object):
             class_pause = "hidden"
             class_resume = ""
 
+        dashboard = config.homepage
+        dsite = self.user.sites.get(dashboard, None)
+        if not dsite:
+            print('No dashboard found, cannot favourite')
+            class_favourite = "hidden"
+            class_unfavourite = "hidden"
+        elif dsite.get('sittings', {}).get('favorite_sites', {}).get(self.site.address, False):
+            class_favourite = ""
+            class_unfavourite = "hidden"
+        else:
+            class_favourite = "hidden"
+            class_unfavourite = ""
+
         body.append(_("""
             <li>
              <label>{_[Site control]}</label>
              <a href='#Update' class='button noupdate' id='button-update'>{_[Update]}</a>
              <a href='#Pause' class='button {class_pause}' id='button-pause'>{_[Pause]}</a>
+             <a href='#Favourite' class='button {class_favourite}' id='button-favourite'>{_[Favourite]}</a>
+             <a href='#Unfavourite' class='button {class_unfavourite}' id='button-unfavourite'>{_[Unfavourite]}</a>
              <a href='#Resume' class='button {class_resume}' id='button-resume'>{_[Resume]}</a>
              <a href='#Delete' class='button noupdate' id='button-delete'>{_[Delete]}</a>
             </li>
