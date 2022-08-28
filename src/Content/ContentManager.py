@@ -10,6 +10,7 @@ import gevent
 
 from Debug import Debug
 from Crypt import CryptHash
+from Crypt import CryptBitcoin
 from Config import config
 from util import helper
 from util import Diff
@@ -726,7 +727,6 @@ class ContentManager(object):
         new_content["inner_path"] = inner_path
 
         # Verify private key
-        from Crypt import CryptBitcoin
         self.log.info("Verifying private key...")
         privatekey_address = CryptBitcoin.privatekeyToAddress(privatekey)
         valid_signers = self.getValidSigners(inner_path, new_content)
@@ -793,7 +793,6 @@ class ContentManager(object):
         return 1  # Todo: Multisig
 
     def verifyCertSign(self, user_address, user_auth_type, user_name, issuer_address, sign):
-        from Crypt import CryptBitcoin
         cert_subject = "%s#%s/%s" % (user_address, user_auth_type, user_name)
         return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
@@ -919,7 +918,6 @@ class ContentManager(object):
     # Return: None = Same as before, False = Invalid, True = Valid
     def verifyFile(self, inner_path, file, ignore_same=True):
         if inner_path.endswith("content.json"):  # content.json: Check using sign
-            from Crypt import CryptBitcoin
             try:
                 if type(file) is dict:
                     new_content = file
@@ -930,7 +928,7 @@ class ContentManager(object):
                         else:
                             new_content = json.load(file)
                     except Exception as err:
-                        raise VerifyError("Invalid json file: %s" % err)
+                        raise VerifyError(f"Invalid json file: {err}")
                 if inner_path in self.contents:
                     old_content = self.contents.get(inner_path, {"modified": 0})
                     # Checks if its newer the ours
