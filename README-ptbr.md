@@ -80,7 +80,7 @@ Instalar o autoconf e outras ferramentas básicas de desenvolvimento, python3 e 
 ##### Android/Termux
  - install [Termux](https://termux.com/) (no Termux você pode instalar pacotes via `pkg install <nomes de pacotes>`)
  - Atualização do "pkg".
- - Pkg install python automake git binutils" (TODO: verificar nova instalação se há mais dependências para instalar)
+ - `pkg install python automake git binutils libtool` (TODO: verificar nova instalação se há mais dependências para instalar)
  - (opcional) `pkg install tor`
  - (opcional) rodar tor via comando `tor --ControlPort 9051 --CookieAuthentication 1` (você pode então abrir uma nova sessão deslizando para a direita)
 

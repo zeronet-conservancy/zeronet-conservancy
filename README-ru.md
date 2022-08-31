@@ -81,7 +81,7 @@ zeronet-conservancy — это форк/продолжение проекта [Z
 ##### Android/Termux
  - Установите [Termux](https://termux.com/) (в Termux вы можете устанавливать пакеты через команду `pkg install <package-names>`)
  - `pkg update`
- - `pkg install python automake git binutils` (TODO: проверьте новую установку на наличие дополнительных зависимостей для установки)
+ - `pkg install python automake git binutils libtool`
  - (optional) `pkg install tor`
  - (optional) запустить тор через команду `tor --ControlPort 9051 --CookieAuthentication 1` (вы можете открыть новый сеанс свайпом вправо)
 
