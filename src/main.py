@@ -69,20 +69,8 @@ if config.action == "main":
         lock = helper.openLocked("%s/lock.pid" % config.data_dir, "w")
         lock.write("%s" % os.getpid())
     except BlockingIOError as err:
-        startupError("Can't open lock file, your ZeroNet client is probably already running, exiting... (%s)" % err)
-        if config.open_browser and config.open_browser != "False":
-            print("Opening browser: %s...", config.open_browser)
-            import webbrowser
-            try:
-                if config.open_browser == "default_browser":
-                    browser = webbrowser.get()
-                else:
-                    browser = webbrowser.get(config.open_browser)
-                browser.open("http://%s:%s/%s" % (
-                    config.ui_ip if config.ui_ip != "*" else "127.0.0.1", config.ui_port, config.homepage
-                ), new=2)
-            except Exception as err:
-                startupError("Error starting browser: %s" % err)
+        startupError(f"Can't open lock file, your 0net client is probably already running, exiting... ({err})")
+        helper.openBrowser(config.open_browser)
         sys.exit()
 
 config.initLogging()

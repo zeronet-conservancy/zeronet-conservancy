@@ -354,3 +354,14 @@ def encodeResponse(func):  # Encode returned data from utf8 to bytes
                 yield back.encode()
 
     return wrapper
+
+def openBrowser(agent):
+    if agent and agent != "False":
+        print(f"Opening browser: {agent}...")
+        ui_ip = config.ui_ip if config.ui_ip != "*" else "127.0.0.1"
+        url = f'http://{ui_ip}:{config.ui_port}/{config.homepage}'
+        try:
+            import subprocess
+            subprocess.Popen([config.open_browser, url])
+        except Exception as err:
+            print(f"Error starting browser: {err}")
