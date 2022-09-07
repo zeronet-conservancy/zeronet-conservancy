@@ -99,7 +99,9 @@ Install autoconf and other basic development tools, python3 and pip.
 ##### Android/Termux
  - install [Termux](https://termux.com/) (in Termux you can install packages via `pkg install <package-names>`)
  - `pkg update`
- - `pkg install python automake git binutils libtool` (TODO: check fresh installation whether there are more dependencies to install)
+ - `pkg install python automake git binutils libtool`
+ - (on an older android versions you may also need to install) `pkg install openssl-tool libcrypt clang`
+ - (if you've installed the above packages and still run into launch issues, please report)
  - (optional) `pkg install tor`
  - (optional) run tor via `tor --ControlPort 9051 --CookieAuthentication 1` command (you can then open new session by swiping to the right)
 
