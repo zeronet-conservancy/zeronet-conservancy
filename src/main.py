@@ -122,7 +122,7 @@ elif config.tor == "always":
     logging.info("Patching sockets to tor socks proxy: %s" % config.tor_proxy)
     if config.fileserver_ip == "*":
         config.fileserver_ip = '127.0.0.1'  # Do not accept connections anywhere but localhost
-    SocksProxy.monkeyPatch(*config.tor_proxy.split(":"))
+    SocksProxy.monkeyPatch(*config.tor_proxy_split())
     config.disable_udp = True
 elif config.bind:
     bind = config.bind
