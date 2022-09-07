@@ -13,6 +13,7 @@ from Config import config
 from Debug import Debug
 import importlib
 
+from util import helper
 
 # Skip websocket handler if not necessary
 class UiWSGIHandler(WebSocketHandler):
@@ -144,22 +145,7 @@ class UiServer:
             self.log.info("Web interface: http://%s:%s/" % (config.ui_ip, config.ui_port))
         self.log.info("--------------------------------------")
 
-        if config.open_browser and config.open_browser != "False":
-            logging.info("Opening browser: %s...", config.open_browser)
-            import webbrowser
-            ui_ip = config.ui_ip if config.ui_ip != "*" else "127.0.0.1"
-            url = f'http://{ui_ip}:{config.ui_port}/{config.homepage}'
-            try:
-                if config.open_browser == "default_browser":
-                    browser = webbrowser.get()
-                else:
-                    browser = webbrowser.get(config.open_browser)
-                gevent.spawn_later(0.3, browser.open, url, new=2)
-            except webbrowser.Error as err:
-                import subprocess
-                subprocess.Popen([config.open_browser, url])
-            except Exception as err:
-                print("Error starting browser: %s" % err)
+        helper.openBrowser(config.open_browser)
 
         self.server = WSGIServer((self.ip, self.port), handler, handler_class=UiWSGIHandler, log=self.log)
         self.server.sockets = {}
