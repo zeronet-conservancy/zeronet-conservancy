@@ -16,7 +16,7 @@ class Config(object):
         self.version = "0.7.7+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5035
+        self.rev = 5036
         self.argv = argv
         self.action = None
         self.test_parser = None
@@ -753,6 +753,28 @@ class Config(object):
             self.initConsoleLogger()
         if file_logging:
             self.initFileLogger()
+
+    def tor_proxy_split(self):
+        if self.tor_proxy:
+            if ':' in config.tor_proxy:
+                ip, port = config.tor_proxy.rsplit(":", 1)
+            else:
+                ip = 'localhost'
+                port = config.tor_proxy
+            return ip, int(port)
+        else:
+            return 'localhost', 9050
+
+    def tor_controller_split(self):
+        if self.tor_controller:
+            if ':' in config.tor_controller:
+                ip, port = config.tor_controller.rsplit(":", 1)
+            else:
+                ip = 'localhost'
+                port = config.tor_controller
+            return ip, int(port)
+        else:
+            return 'localhost', 9051
 
 
 class ErrorLogHandler(logging.StreamHandler):
