@@ -362,6 +362,6 @@ def openBrowser(agent):
         url = f'http://{ui_ip}:{config.ui_port}/{config.homepage}'
         try:
             import subprocess
-            subprocess.Popen([config.open_browser, url])
+            return subprocess.Popen([config.open_browser, url])
         except Exception as err:
             print(f"Error starting browser: {err}")

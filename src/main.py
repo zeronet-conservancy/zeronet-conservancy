@@ -66,12 +66,13 @@ except:
 if config.action == "main":
     from util import helper
     try:
-        lock = helper.openLocked("%s/lock.pid" % config.data_dir, "w")
-        lock.write("%s" % os.getpid())
+        lock = helper.openLocked(f"{config.data_dir}/lock.pid", "w")
+        lock.write(f"{os.getpid()}")
     except BlockingIOError as err:
         startupError(f"Can't open lock file, your 0net client is probably already running, exiting... ({err})")
-        helper.openBrowser(config.open_browser)
-        sys.exit()
+        proc = helper.openBrowser(config.open_browser)
+        r = proc.wait()
+        sys.exit(r)
 
 config.initLogging()
 
