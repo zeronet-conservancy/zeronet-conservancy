@@ -133,10 +133,12 @@ Install autoconf and other basic development tools, python3 and pip.
 * File transactions are not compressed
 * No private sites
 * No DHT support
+* No I2P support
 * Centralized elements like zeroid (we're working on this!)
 * No reliable spam protection (and on this too)
 * Doesn't work directly from browser (one of the top priorities for mid-future)
 * No data transparency
+* No reproducible builds
 
 
 ## How can I create a ZeroNet site?
