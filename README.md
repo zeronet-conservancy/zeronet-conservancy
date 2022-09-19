@@ -90,7 +90,7 @@ if you're on NixOS
 
 ##### Generic unix-like (including mac os x)
 
-Install autoconf and other basic development tools, python3 and pip.
+Install autoconf and other basic development tools, python3 and pip, then proceed to "building python dependencies"
 
 ##### Apt-based (debian, ubuntu, etc)
  - `sudo apt update`
@@ -116,7 +116,7 @@ Install autoconf and other basic development tools, python3 and pip.
  - `source venv/bin/activate`
  - `python3 zeronet.py`
 
-#### Build Docker image
+#### (alternatively) Build Docker image
 - build 0net image: `docker build -t 0net:conservancy . -f Dockerfile`
 - or build 0net image with integrated tor: `docker build -t 0net:conservancy . -f Dockerfile.integrated_tor`
 - and run it: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net:conservancy`
@@ -124,9 +124,31 @@ Install autoconf and other basic development tools, python3 and pip.
 - or you can run it with docker-compose: `docker compose up -d 0net` up two containers - 0net and tor separately.
 - or: `docker compose up -d 0net-tor` for run 0net and tor in one container.
 
-#### alternative script
+#### Alternative script
  - after installing general dependencies and cloning repo (as above), run `start-venv.sh` which will create a virtual env for you and install python requirements
  - more convenience scripts to be added soon
+
+### Building under windows os
+
+(this instruction is work-in-progress, please help us test it and improve it!)
+
+- install python from https://www.python.org/downloads/
+- install some windows compiler suitable for python , this proved to be the most difficult part for me as non-windows user (see here https://wiki.python.org/moin/WindowsCompilers and i'll link more references later)
+- [optionally to get latest dev version] install git from https://git-scm.com/downloads
+- [optionally to use tor for better connectivity and anonymization] install tor browser from https://www.torproject.org/download/
+- open git bash console
+- type/copypaste `git clone https://github.com/zeronet-conservancy/zeronet-conservancy.git` into command line
+- wait till git downloads latest dev version and continue in console
+- `cd zeronet-conservancy`
+- `python -m venv venv` (create virtual python environment)
+- `venv\Scripts\activate` (this activates the environment)
+- `pip install -r requirements.txt` (install python dependencies)
+- (NOTE: if previous step fails, it most likely means you haven't installed c/c++ compiler successfully)
+- [optional for tor for better connectivity and anonymity] launch Tor Browser
+- (NOTE: windows might show a window saying it blocked access to internet for "security reasons" — you should allow the access)
+- `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151` (launch zeronet-conservancy!)
+- [for full tor anonymity launch this instead] `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151 --tor always`
+- navigate to http://127.0.0.1:43110 in your favourite browser!
 
 ## Current limitations
 
