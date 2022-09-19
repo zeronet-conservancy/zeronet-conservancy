@@ -593,7 +593,7 @@ class UiWebsocketPlugin(object):
         import shutil
         from util import helper
 
-        if config.offline:
+        if config.offline or config.tor == 'always':
             return False
 
         self.log.info("Downloading GeoLite2 City database...")
