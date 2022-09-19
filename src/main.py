@@ -1,4 +1,3 @@
-# Included modules
 import os
 import sys
 import stat

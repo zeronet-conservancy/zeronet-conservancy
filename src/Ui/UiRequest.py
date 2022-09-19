@@ -124,6 +124,7 @@ class UiRequest(object):
             ).encode("utf8")
             return iter([ret_error, ret_body])
 
+        # TODO: phase out .bit support
         # Prepend .bit host for transparent proxy
         if self.isDomain(self.env.get("HTTP_HOST")):
             path = re.sub("^/", "/" + self.env.get("HTTP_HOST") + "/", path)
