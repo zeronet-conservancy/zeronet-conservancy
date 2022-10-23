@@ -767,6 +767,8 @@ class ContentManager(object):
 
         self.log.info("File %s signed!" % inner_path)
 
+        config.onsyncAction()
+
         if filewrite:  # Written to file
             return True
         else:  # Return the new content

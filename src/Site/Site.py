@@ -282,6 +282,8 @@ class Site(object):
                 inner_path, time.time() - s, len(self.worker_manager.tasks)
             ))
 
+        config.onsyncAction()
+
         return True
 
     # Return bad files with less than 3 retry

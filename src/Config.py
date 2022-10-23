@@ -314,6 +314,7 @@ class Config(object):
         self.parser.add_argument('--ui_trans_proxy', help='Allow access using a transparent proxy', action='store_true')
 
         self.parser.add_argument('--onexit', help='Run this command on exit', default=None, type=str, metavar='onexit')
+        self.parser.add_argument('--onsync', help='Run this command when sync occurs', default=None, type=str, metavar='onsync')
         self.parser.add_argument('--open_browser', help='Open homepage in web browser automatically',
                                  nargs='?', const="default_browser", metavar='browser_name')
         self.parser.add_argument('--homepage', help='Web interface Homepage', default='191CazMVNaAcT9Y1zhkxd9ixMBPs59g2um',
@@ -498,6 +499,12 @@ class Config(object):
 
             atexit.register(exit_launch, self.onexit)
             self.onexit_registered = True
+
+    def onsyncAction(self):
+        '''Action that happens when 0net sync (either incoming or outgoing) occurs'''
+        if self.onsync is not None:
+            print(f'syncing command: {self.onsync}')
+            os.system(self.onsync)
 
     # Parse command line arguments
     def parseCommandline(self, argv, silent=False):
