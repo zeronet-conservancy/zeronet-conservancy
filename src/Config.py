@@ -123,6 +123,7 @@ class Config(object):
         self.openssl_bin_file = None
 
         self.trackers_file = False
+        self.onexit_registered = False
         self.createParser()
         self.createArguments()
 
@@ -488,7 +489,7 @@ class Config(object):
 
         self.loadTrackersFile()
 
-        if self.onexit is not None and not getattr(self, 'onexit_registered', None):
+        if self.onexit is not None and not self.onexit_registered:
             import atexit
 
             def exit_launch(cmd):
