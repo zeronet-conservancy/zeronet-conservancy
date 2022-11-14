@@ -12,6 +12,7 @@ import urllib.parse
 import gevent
 
 import util
+import main
 from Config import config
 from Plugin import PluginManager
 from Debug import Debug
@@ -115,11 +116,11 @@ class UiWebsocketPlugin(object):
             local_html = ""
 
         peer_ips = [peer.key for peer in site.getConnectablePeers(20, allow_private=False)]
+        self_onion = main.file_server.tor_manager.site_onions.get(site.address, None)
+        if self_onion is not None:
+            peer_ips.append(self_onion+'.onion')
         peer_ips.sort(key=lambda peer_ip: ".onion:" in peer_ip)
-        copy_link = "http://127.0.0.1:43110/%s/?zeronet_peers=%s" % (
-            site.content_manager.contents.get("content.json", {}).get("domain", site.address),
-            ",".join(peer_ips)
-        )
+        copy_link = f'http://127.0.0.1:43110/{site.address}/?zeronet_peers={",".join(peer_ips)}'
 
         body.append(_("""
             <li>
