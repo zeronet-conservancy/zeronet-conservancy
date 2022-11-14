@@ -1,4 +1,18 @@
 ### zeronet-conservancy 0.7.7+
+maintainers: @caryoscelus
+- improve starting script
+- fix default ssl version to be secure
+- disable geoip-related ip address leak when in tor-only mode
+- windows os build/running instruction (WIP)
+- better command line parsing
+- ArchLinux AUR package
+- update android instruction (thanks oseido for reporting)
+- better browser launch handling
+- ability to add/remove from favourites from sidebar
+- NoNewSites plugin
+- show help message even when startup fails
+- fix plugin options handling regression
+- multiple code improvements
 
 ### zeronet-conservancy 0.7.7 (2022-07-27) (f40dbfeb2163b9902495ba)
 maintainers: @caryoscelus, @FraYoshi, @prtngn, @d47081 (ex @d4708)
