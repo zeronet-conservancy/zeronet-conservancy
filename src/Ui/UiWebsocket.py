@@ -262,7 +262,14 @@ class UiWebsocket(object):
                 del(content["signers_sign"])
 
         settings = site.settings.copy()
-        del settings["wrapper_key"]  # Dont expose wrapper key
+        # remove fingerprinting information for non-admin sites
+        if 'ADMIN' not in self.site.settings['permissions']:
+            del settings['wrapper_key']
+            settings['added'] = 0
+            settings['serving'] = True
+            settings['ajax_key'] = ''
+            settings['peers'] = 1
+            settings['cache'] = {}
 
         ret = {
             "auth_address": self.user.getAuthAddress(site.address, create=create_user),
@@ -281,9 +288,20 @@ class UiWebsocket(object):
             "workers": len(site.worker_manager.workers),
             "content": content
         }
+        if 'ADMIN' not in self.site.settings['permissions']:
+            ret.update({
+                "content_updated": 0,
+                "bad_files": len(site.bad_files), # ?
+                "size_limit": site.getSizeLimit(), # ?
+                "next_size_limit": site.getNextSizeLimit(), # ?
+                "peers": 1,
+                "started_task_num": 0,
+                "tasks": 0,
+                "workers": 0,
+            })
         if site.settings["own"]:
             ret["privatekey"] = bool(self.user.getSiteData(site.address, create=create_user).get("privatekey"))
-        if site.isServing() and content:
+        if site.isServing() and content and "ADMIN" in self.site.settings['permissions']:
             ret["peers"] += 1  # Add myself if serving
         return ret
 
