@@ -365,7 +365,11 @@ class UiWebsocket(object):
         return back
 
     def formatAnnouncerInfo(self, site):
-        return {"address": site.address, "stats": site.announcer.stats}
+        if "ADMIN" in self.site.settings['permissions']:
+            stats = site.announcer.stats
+        else:
+            stats = {}
+        return {"address": site.address, "stats": stats}
 
     # - Actions -
 
