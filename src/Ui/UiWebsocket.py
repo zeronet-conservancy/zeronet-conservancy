@@ -288,38 +288,62 @@ class UiWebsocket(object):
         return ret
 
     def formatServerInfo(self):
-        import main
-        file_server = main.file_server
-        if file_server.port_opened == {}:
-            ip_external = None
+        # unprivileged sites should not get any fingerprinting information
+        if "ADMIN" in self.site.settings['permissions']:
+            import main
+            file_server = main.file_server
+            if file_server.port_opened == {}:
+                ip_external = None
+            else:
+                ip_external = any(file_server.port_opened.values())
+            back = {
+                'ip_external' : ip_external,
+                'port_opened' : file_server.port_opened,
+                'platform' : sys.platform,
+                'dist_type' : config.dist_type,
+                'fileserver_ip' : config.fileserver_ip,
+                'fileserver_port' : config.fileserver_port,
+                'tor_enabled' : file_server.tor_manager.enabled,
+                'tor_status' : file_server.tor_manager.status,
+                'tor_has_meek_bridges' : file_server.tor_manager.has_meek_bridges,
+                'tor_use_bridges' : config.tor_use_bridges,
+                'ui_ip' : config.ui_ip,
+                'ui_port' : config.ui_port,
+                'version' : config.version,
+                'rev' : config.rev,
+                'timecorrection' : file_server.timecorrection,
+                'language' : config.language,
+                'debug' : config.debug,
+                'offline' : config.offline,
+                'plugins' : PluginManager.plugin_manager.plugin_names,
+                'plugins_rev' : PluginManager.plugin_manager.plugins_rev,
+                'user_settings' : self.user.settings,
+                'lib_verify_best' : CryptBitcoin.lib_verify_best
+            }
         else:
-            ip_external = any(file_server.port_opened.values())
-        back = {
-            "ip_external": ip_external,
-            "port_opened": file_server.port_opened,
-            "platform": sys.platform,
-            "fileserver_ip": config.fileserver_ip,
-            "fileserver_port": config.fileserver_port,
-            "tor_enabled": file_server.tor_manager.enabled,
-            "tor_status": file_server.tor_manager.status,
-            "tor_has_meek_bridges": file_server.tor_manager.has_meek_bridges,
-            "tor_use_bridges": config.tor_use_bridges,
-            "ui_ip": config.ui_ip,
-            "ui_port": config.ui_port,
-            "version": config.version,
-            "rev": config.rev,
-            "timecorrection": file_server.timecorrection,
-            "language": config.language,
-            "debug": config.debug,
-            "offline": config.offline,
-            "plugins": PluginManager.plugin_manager.plugin_names,
-            "plugins_rev": PluginManager.plugin_manager.plugins_rev,
-            "user_settings": self.user.settings
-        }
-        if "ADMIN" in self.site.settings["permissions"]:
-            # back["updatesite"] = config.updatesite
-            back["dist_type"] = config.dist_type
-            back["lib_verify_best"] = CryptBitcoin.lib_verify_best
+            back = {
+                'ip_external' : None,
+                'port_opened' : False,
+                'platform' : 'generic',
+                'dist_type' : 'generic',
+                'fileserver_ip' : '127.0.0.1',
+                'fileserver_port' : 15441,
+                'tor_enabled' : True,
+                'tor_status' : 'OK',
+                'tor_has_meek_bridges' : True,
+                'tor_use_bridges' : True,
+                'ui_ip' : '127.0.0.1',
+                'ui_port' : 43110,
+                'version' : config.user_agent,
+                'rev' : config.user_agent_rev,
+                'timecorrection' : 0.0,
+                'language' : config.language, #?
+                'debug' : False,
+                'offline' : False,
+                'plugins' : [],
+                'plugins_rev' : {},
+                'user_settings' : self.user.settings #?
+            }
         return back
 
     def formatAnnouncerInfo(self, site):
