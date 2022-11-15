@@ -1,5 +1,7 @@
 ### zeronet-conservancy 0.7.7+
 maintainers: @caryoscelus
+- improve copying peers from sidebar
+- reduce fingerprinting information available to unprivileged sites
 - improve starting script
 - fix default ssl version to be secure
 - disable geoip-related ip address leak when in tor-only mode
