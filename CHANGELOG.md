@@ -1,5 +1,6 @@
 ### zeronet-conservancy 0.7.7+
 maintainers: @caryoscelus
+- remove potential vulnerability via setuptools (@ajesse11x)
 - improve copying peers from sidebar
 - reduce fingerprinting information available to unprivileged sites
 - improve starting script
