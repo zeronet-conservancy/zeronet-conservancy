@@ -369,7 +369,7 @@ class Connection(object):
             "fileserver_port": self.server.port,
             "port_opened": self.server.port_opened.get(self.ip_type, None),
             "target_ip": self.ip,
-            "rev": 8192,
+            "rev": config.user_agent_rev,
             "crypt_supported": crypt_supported,
             "crypt": self.crypt,
             "time": int(time.time())
