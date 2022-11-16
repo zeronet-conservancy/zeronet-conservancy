@@ -453,7 +453,8 @@ class UiWebsocketPlugin(object):
         donate_generic = site.content_manager.contents.get("content.json", {}).get("donate", None) or site.content_manager.contents.get("content.json", {}).get("donate-generic", None)
         donate_btc = site.content_manager.contents.get("content.json", {}).get("donate-btc", None)
         donate_xmr = site.content_manager.contents.get("content.json", {}).get("donate-xmr", None)
-        donate_enabled = bool(donate_generic or donate_btc or donate_xmr)
+        donate_ada = site.content_manager.contents.get("content.json", {}).get("donate-ada", None)
+        donate_enabled = bool(donate_generic or donate_btc or donate_xmr or donate_ada)
         if donate_enabled:
             body.append(_("""
             <li>
@@ -481,6 +482,15 @@ class UiWebsocketPlugin(object):
             </div>
             <div class='flex'>
               <a href='monero:{donate_xmr}' class='button'>{_[Donate Monero]}</a>
+            </div>
+            """))
+        if donate_ada:
+            body.append(_("""
+            <div class='flex'>
+              <span style="font-size:90%">{donate_ada}</span><br/>
+            </div>
+            <div class='flex'>
+              <a href='web+cardano:{donate_ada}' class='button'>{_[Donate Ada/Cardano]}</a>
             </div>
             """))
         if donate_enabled:
