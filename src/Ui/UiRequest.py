@@ -372,7 +372,7 @@ class UiRequest(object):
     # Redirect to an url
     def actionRedirect(self, url):
         self.start_response('301 Redirect', [('Location', str(url))])
-        yield self.formatRedirect(url)
+        return self.formatRedirect(url)
 
     def actionIndex(self):
         return self.actionRedirect("/" + config.homepage + "/")
@@ -634,7 +634,9 @@ class UiRequest(object):
         match = re.match(r"/(media/)?(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if match:
             path_parts = match.groupdict()
-            if self.isDomain(path_parts["address"]):
+            addr = path_parts["address"]
+            if self.isDomain(addr):
+                path_parts["domain"] = addr
                 path_parts["address"] = self.resolveDomain(path_parts["address"])
             path_parts["request_address"] = path_parts["address"]  # Original request address (for Merger sites)
             path_parts["inner_path"] = path_parts["inner_path"].lstrip("/")
@@ -650,6 +652,12 @@ class UiRequest(object):
             path_parts = self.parsePath(path)
         except SecurityError as err:
             return self.error403(err)
+
+        if "domain" in path_parts:
+            addr = path_parts['address']
+            path = path_parts['inner_path']
+            query = self.env['QUERY_STRING']
+            return self.actionRedirect(f"/{addr}/{path}?{query}")
 
         if not path_parts:
             return self.error404(path)

@@ -1,3 +1,5 @@
+## please note that this file uses custom db cursor and thus may surprise you with how sql queries are performed
+
 import sqlite3
 import json
 import time
