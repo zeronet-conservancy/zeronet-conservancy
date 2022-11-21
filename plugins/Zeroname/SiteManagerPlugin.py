@@ -63,7 +63,7 @@ class ConfigPlugin(object):
         group = self.parser.add_argument_group("Zeroname plugin")
         group.add_argument(
             "--bit_resolver", help="ZeroNet site to resolve .bit domains",
-            default="1Name2NXVi1RDPDgf5617UoW7xA6YrhM9F", metavar="address"
+            default="1GnACKctkJrGWHTqxk9T9zXo2bLQc2PDnF", metavar="address"
         )
 
         return super(ConfigPlugin, self).createArguments()
