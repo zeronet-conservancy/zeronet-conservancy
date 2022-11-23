@@ -1,4 +1,6 @@
-### zeronet-conservancy 0.7.7+
+### zeronet-conservancy 0.7.8+
+
+### zeronet-conservancy 0.7.8 (2022-11-23) (110307a4198cb13cc907ae)
 maintainers: @caryoscelus
 - use archived version of .bit domain registry to avoid malicious rewrites
 - readdress .bit domains as part of their deprecation
