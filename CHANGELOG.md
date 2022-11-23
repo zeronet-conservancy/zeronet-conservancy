@@ -1,5 +1,6 @@
 ### zeronet-conservancy 0.7.7+
 maintainers: @caryoscelus
+- use archived version of .bit domain registry to avoid malicious rewrites
 - readdress .bit domains as part of their deprecation
 - remove potential vulnerability via setuptools (@ajesse11x)
 - improve copying peers from sidebar
