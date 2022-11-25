@@ -5,11 +5,13 @@ RUN apk --update --no-cache --no-progress add tor gcc libffi-dev musl-dev make o
  && echo "CookieAuthentication 1" >> /etc/tor/torrc
 
 WORKDIR /app
-COPY . .
+COPY CHANGELOG.md .
+COPY plugins/ .
+COPY src/ .
+COPY requirements.txt .
+COPY zeronet.py .
 
-RUN python3 -m venv venv \
- && source venv/bin/activate \
- && python3 -m pip install -r requirements.txt
+RUN python3 -m pip install -r requirements.txt
 
 CMD (tor&) \
  && source venv/bin/activate \
