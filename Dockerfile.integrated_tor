@@ -1,8 +1,8 @@
 FROM python:3.10.4-alpine
 
+RUN apk --update --no-progress add tor gcc libffi-dev musl-dev make openssl g++
 RUN echo "ControlPort 9051" >> /etc/tor/torrc
 RUN echo "CookieAuthentication 1" >> /etc/tor/torrc
-RUN apk --update --no-progress add tor gcc libffi-dev musl-dev make openssl g++
 
 WORKDIR /app
 COPY --chown=root:root CHANGELOG.md .
