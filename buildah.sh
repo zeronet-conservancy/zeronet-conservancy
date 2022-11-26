@@ -10,14 +10,15 @@ cp -r zeronet.py $mnt/znc/
 cp -r container-run-with-tor.sh $mnt/znc/
 cp -r requirements.txt $mnt/znc/
 
-# reproducibility: erase date from all the copied files
-find $mnt/znc -exec touch -d @1669459000 -m {} +
-
 buildah run $ctr apk add tor gcc libffi-dev musl-dev make openssl g++
 buildah run $ctr python3 -m pip install -r /znc/requirements.txt
+
+# reproducibility: erase date from all the copied/installed files
+find $mnt/ -exec touch -d @1669459000 -m {} +
 
 buildah umount "$ctr"
 
 # buildah config --entrypoint '["/znc/container-run-with-tor.sh"]' --cmd '' "$ctr"
 
 buildah commit --timestamp 1669459000 "$ctr" znc-tmp
+buildah rm "$ctr"
