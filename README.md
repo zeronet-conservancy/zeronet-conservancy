@@ -2,6 +2,8 @@
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
 
+(NOTE THAT TRANSLATIONS ARE USUALLY BEHIND THIS FILE)
+
 [по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md)
 
 zeronet-conservancy is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
@@ -38,13 +40,14 @@ brand new, completely transparent and audited network is ready and this project 
  * Automatic uPnP port opening (if opted in)
  * Plugin for multiuser (openproxy) support
  * Works with any modern browser/OS
+ * Works offline and can be synced via alternative transports (or when connection is back)
 
 
 ## How does it work?
 
 * After starting `zeronet.py` you will be able to visit zeronet sites using
   `http://127.0.0.1:43110/{zeronet_address}` (eg.
-  `http://127.0.0.1:43110/126NXcevn1AUehWFZLTBw7FrX1crEizQdr`).
+  `http://127.0.0.1:43110/1MCoA8rQHhwu4LY2t2aabqcGSRqrL8uf2X/`).
 * When you visit a new zeronet site, it tries to find peers using the BitTorrent
   network so it can download the site files (html, css, js...) from them.
 * Each visited site is also served by you.
@@ -60,14 +63,14 @@ Following links relate to original ZeroNet:
 
 - [Slideshow about ZeroNet cryptography, site updates, multi-user sites »](https://docs.google.com/presentation/d/1_2qK1IuOKJ51pgBvllZ9Yu7Au2l551t3XBgyTSvilew/pub?start=false&loop=false&delayms=3000)
 - [Frequently asked questions »](https://zeronet.io/docs/faq/)
-- [ZeroNet Developer Documentation »](https://zeronet.io/docs/site_development/getting_started/)
+- [ZeroNet Developer Documentation »](https://zeronet.io/docs/site_development/getting_started/) (getting outdated)
 
 ## How to join
 
 ### Install from your distribution repository
 
 - NixOS: https://search.nixos.org/packages?channel=22.05&show=zeronet-conservancy&type=packages&query=zeronet-conservancy (and see below)
-- ArchLinux: https://aur.archlinux.org/packages/zeronet-conservancy-git (fresh git version)
+- ArchLinux: [latest release](https://aur.archlinux.org/packages/zeronet-conservancy), [fresh git version](https://aur.archlinux.org/packages/zeronet-conservancy-git)
 
 ### Install from Nix package manager (Linux or MacOS)
 
@@ -161,14 +164,16 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 * Doesn't work directly from browser (one of the top priorities for mid-future)
 * No data transparency
 * No reproducible builds
+* No on-disk encryption
+* No reproducible builds (hence no builds beyond certain GNU/Linux distributions)
 
 
 ## How can I create a ZeroNet site?
 
- * Click on **⋮** > **"Create new, empty site"** menu item on the [admin page](http://127.0.0.1:43110/126NXcevn1AUehWFZLTBw7FrX1crEizQdr).
+ * Click on **⋮** > **"Create new, empty site"** menu item on the [dashboard](http://127.0.0.1:43110/191CazMVNaAcT9Y1zhkxd9ixMBPs59g2um/).
  * You will be **redirected** to a completely new site that is only modifiable by you!
  * You can find and modify your site's content in **data/[yoursiteaddress]** directory
- * After the modifications open your site, drag the topright "0" button to the left, then press **sign** and **publish** buttons on the bottom
+ * After the modifications open your site, drag the topright "0" button to the left, then press **sign and publish** button on the bottom
 
 Next steps: [ZeroNet Developer Documentation](https://zeronet.io/docs/site_development/getting_started/)
 
@@ -178,6 +183,12 @@ Next steps: [ZeroNet Developer Documentation](https://zeronet.io/docs/site_devel
 
 We need more maintainers! Become one today! You don't need to know how to code,
 there's a lot of other work to do.
+
+### Make builds for your platforms
+
+We need reproducible stand-alone builds for major platforms, as well as presense in various FLOSS
+repositories. If you're using one of Linux distributions which don't have packages yet, why not make
+a package for it or (if you don't know how) ask a maintainer now?
 
 ### Fix bugs & add features
 
