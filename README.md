@@ -220,3 +220,26 @@ private, a Monero wallet:
 
 If you want to donate in a different way, feel free to contact maintainer or
 create an issue
+
+# We're using GitHub under protest
+
+This project is currently hosted on GitHub. This is not ideal; GitHub is a
+proprietary, trade-secret system that is not Free/Libre and Open Souce Software
+(FLOSS). We are deeply concerned about using a proprietary system like GitHub
+to develop our FLOSS project. We have an
+[open issue](https://github.com/zeronet-conservancy/zeronet-conservancy/issues/89)
+to track moving away from GitHub in the long term.  We urge you to read about the
+[Give up GitHub](https://GiveUpGitHub.org) campaign from
+[the Software Freedom Conservancy](https://sfconservancy.org) to understand
+some of the reasons why GitHub is not a good place to host FOSS projects.
+
+If you are a contributor who personally has already quit using GitHub, feel
+free to [check out from our mirror on notabug](https://notabug.org/caryoscelus/zeronet-conservancy)
+and develop there or send git patches directly to project maintainer via
+preffered [contact channel](https://caryoscelus.github.io/contacts/).
+
+Any use of this project's code by GitHub Copilot, past or present, is done
+without our permission. We do not consent to GitHub's use of this project's
+code in Copilot.
+
+![Logo of the GiveUpGitHub campaign](https://sfconservancy.org/img/GiveUpGitHub.png)
