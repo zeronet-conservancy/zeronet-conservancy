@@ -35,6 +35,8 @@ class Site(object):
     def __init__(self, address, allow_create=True, settings=None):
         self.address = str(re.sub("[^A-Za-z0-9]", "", address))  # Make sure its correct address
         self.address_hash = hashlib.sha256(self.address.encode("ascii")).digest()
+        # sha1 is used for clearnet trackers
+        self.address_sha1 = hashlib.sha1(self.address.encode("ascii")).digest()
         self.address_short = "%s..%s" % (self.address[:6], self.address[-4:])  # Short address for logging
         self.log = logging.getLogger("Site:%s" % self.address_short)
         self.addEventListeners()
