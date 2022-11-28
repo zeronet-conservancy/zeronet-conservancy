@@ -422,7 +422,7 @@ class UiWebsocketPlugin(object):
             print('No dashboard found, cannot favourite')
             class_favourite = "hidden"
             class_unfavourite = "hidden"
-        elif dsite.get('sittings', {}).get('favorite_sites', {}).get(self.site.address, False):
+        elif not dsite.get('settings', {}).get('favorite_sites', {}).get(self.site.address, False):
             class_favourite = ""
             class_unfavourite = "hidden"
         else:
