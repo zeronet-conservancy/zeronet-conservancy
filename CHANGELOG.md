@@ -2,7 +2,8 @@
 
 ### zeronet-conservancy 0.7.8.1 (2022-11-28)
 maintainers: @caryoscelus
-- fix tracker connection regression introduced in dc804b9d5f3a2a9f1fffa1b97d82e0e04c44508b
+- fix favourite/unfavourite in sidebar
+- fix tracker connection regression introduced in dc804b9d5f3a2a9f1fffa1b97d82e0e04c44508b (thanks to @bitcoren)
 - GiveUpGitHub notice
 - update README
 - new, more compact boot logo in console (more suitable for small screens)
