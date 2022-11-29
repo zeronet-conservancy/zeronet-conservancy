@@ -1,6 +1,6 @@
 ### zeronet-conservancy 0.7.8.1+
 
-### zeronet-conservancy 0.7.8.1 (2022-11-28)
+### zeronet-conservancy 0.7.8.1 (2022-11-28) (0054eca9df0c9c8c2f4a78)
 maintainers: @caryoscelus
 - fix favourite/unfavourite in sidebar
 - fix tracker connection regression introduced in dc804b9d5f3a2a9f1fffa1b97d82e0e04c44508b (thanks to @bitcoren)
