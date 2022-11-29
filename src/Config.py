@@ -97,10 +97,10 @@ trackers = [
 class Config(object):
 
     def __init__(self, argv):
-        self.version = "0.7.8.1"
+        self.version = "0.7.8.1+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5040
+        self.rev = 5041
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
