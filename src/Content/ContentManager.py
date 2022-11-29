@@ -793,7 +793,7 @@ class ContentManager(object):
         return 1  # Todo: Multisig
 
     def verifyCertSign(self, user_address, user_auth_type, user_name, issuer_address, sign):
-        cert_subject = "%s#%s/%s" % (user_address, user_auth_type, user_name)
+        cert_subject = f'{user_address}#{user_auth_type}/{user_name}'
         return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
     def verifyCert(self, inner_path, content):
