@@ -1,6 +1,6 @@
 setuptools>=65.5.1 # not directly required, pinned by Snyk to avoid a vulnerability
 gevent>=20.9.0
-msgpack>=0.4.4
+msgpack>=0.6.0
 base58
 merkletools
 rsa
