@@ -1,4 +1,6 @@
 ### zeronet-conservancy 0.7.8.1+
+maintainers: @caryoscelus
+- update README (build/dev instructions; thanks to @fgaz)
 - better debugging of update non-propagation
 - sec update of msgpck dependency (@chncaption)
 - deprecate python-3.6 as it apparently is no longer used (by active users)
