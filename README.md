@@ -87,7 +87,7 @@ if you're on NixOS
 
 (thanks @fgaz for making & maintaining the package)
 
-### Install from source (recommended)
+### Install from source
 
 #### System dependencies
 
@@ -108,7 +108,7 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - (optional) `pkg install tor`
  - (optional) run tor via `tor --ControlPort 9051 --CookieAuthentication 1` command (you can then open new session by swiping to the right)
 
-#### Building python dependencies & running
+#### Building python dependencies venv & running
  - clone this repo (NOTE: on Android/Termux you should clone it into "home" folder of Termux, because virtual environment cannot live in `storage/`)
  - `python3 -m venv venv` (make python virtual environment, the last `venv` is just a name, if you use different you should replace it in later commands)
  - `source venv/bin/activate` (activate environment)
@@ -118,6 +118,11 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - to start it again from fresh terminal, you need to navigate to repo directory and:
  - `source venv/bin/activate`
  - `python3 zeronet.py`
+
+#### (alternatively) On NixOS
+- clone this repo
+- `nix-shell '<nixpkgs>' -A zeronet-conservancy` to enter shell with installed dependencies
+- `./zeronet.py`
 
 #### (alternatively) Build Docker image
 - build 0net image: `docker build -t 0net-conservancy:latest . -f Dockerfile`
