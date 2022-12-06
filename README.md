@@ -151,7 +151,7 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - `cd zeronet-conservancy`
 - `python -m venv venv` (create virtual python environment)
 - `venv\Scripts\activate` (this activates the environment)
-- `pip install -r requirements.txt` (install python dependencies)
+- `pip install -r requirements.txt` (install python dependencies) (some users reported that this command doesn't successfully install requirements and only manual installation of dependencies one by one works)
 - (NOTE: if previous step fails, it most likely means you haven't installed c/c++ compiler successfully)
 - [optional for tor for better connectivity and anonymity] launch Tor Browser
 - (NOTE: windows might show a window saying it blocked access to internet for "security reasons" — you should allow the access)
