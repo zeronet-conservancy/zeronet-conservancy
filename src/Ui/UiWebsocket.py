@@ -511,6 +511,8 @@ class UiWebsocket(object):
 
     # Sign and publish content.json
     def actionSitePublish(self, to, privatekey=None, inner_path="content.json", sign=True, remove_missing_optional=False, update_changed_files=False):
+        # TODO: check certificates (https://github.com/zeronet-conservancy/zeronet-conservancy/issues/190)
+        # TODO: update certificates (https://github.com/zeronet-conservancy/zeronet-conservancy/issues/194)
         if sign:
             inner_path = self.actionSiteSign(
                 to, privatekey, inner_path, response_ok=False,
