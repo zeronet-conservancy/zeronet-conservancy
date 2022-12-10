@@ -85,16 +85,16 @@ class ContentManager(object):
                     new_ts = int(float(new_content.get('modified', 0)))
                     old_ts = int(float(old_content.get('modified', 0)))
                     if new_ts < old_ts:
-                        self.log.debug('got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
+                        self.log.debug(f'got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
                         return [], []
                     elif new_ts == old_ts:
-                        self.log.debug('got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
+                        self.log.debug(f'got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
                         return [], []
             except Exception as err:
                 self.log.warning(f'{content_path} load error: {Debug.formatException(err)}')
                 return [], []
         else:
-            self.log.debug("Content.json not exist: %s" % content_path)
+            self.log.debug(f'Content.json not exist: {content_path}')
             return [], []  # Content.json not exist
 
         try:
