@@ -176,7 +176,7 @@ class UiRequest(object):
             return self.actionConsole()
         # Wrapper-less static files
         elif path.startswith("/raw/"):
-            return self.actionSiteMedia(path.replace("/raw", "/media", 1), header_noscript=True)
+            return self.actionSiteMedia(path.replace("/raw", "/media", 1), header_noscript=True, raw=True)
 
         elif path.startswith("/add/"):
             return self.actionSiteAdd()
@@ -647,7 +647,7 @@ class UiRequest(object):
             return None
 
     # Serve a media for site
-    def actionSiteMedia(self, path, header_length=True, header_noscript=False):
+    def actionSiteMedia(self, path, header_length=True, header_noscript=False, raw=False):
         try:
             path_parts = self.parsePath(path)
         except SecurityError as err:
@@ -657,7 +657,8 @@ class UiRequest(object):
             addr = path_parts['address']
             path = path_parts['inner_path']
             query = self.env['QUERY_STRING']
-            return self.actionRedirect(f"/{addr}/{path}?{query}")
+            raw = "/raw" if raw else ""
+            return self.actionRedirect(f"{raw}/{addr}/{path}?{query}")
 
         if not path_parts:
             return self.error404(path)
