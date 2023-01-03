@@ -3,49 +3,14 @@ import os
 import sys
 from src.Config import config
 
-def grad(n):
-    s = 0x08
-    r = 0xff
-    g = 0x00
-    b = 0x00
-    for i in range(n):
-        if r >= s and b < s:
-            r -= s
-            g += s
-        elif g >= s and r < s:
-            g -= s
-            b += s
-        elif b >= s and g < s:
-            b -= s
-            r += s
-    return f'#{r:02x}{g:02x}{b:02x}'
-
-def fancy_greet():
-    from rich.console import Console
-    from rich.text import Text
-    zc_msg = f'''
-|||   . . _  _._|_     _. . . _ .__ _.. _.  . __.. _  __.  .
-|||  //\|/ |/_| |  == /  / \|/ |(  /_||/ |  | __||/ |/   \_|
-|||  \_/|  |\_  |.    \__\_/|  |_) \_ |   \/ |__||  |\__ _/
-|||
-|||  v{config.version}
-'''
-    lns = zc_msg.split('\n')
-    console = Console()
-    for l in lns:
-        txt = Text(l)
-        txt.stylize('bold')
-        for i in range(len(l)):
-            txt.stylize(grad(i), i, i+1)
-        console.print(txt)
-
 def main():
     if sys.version_info.major < 3:
         print("Error: Python 3.x is required")
         sys.exit(0)
 
     if '--silent' not in sys.argv:
-        fancy_greet()
+        from greet import fancy_greet
+        fancy_greet(config.version)
 
     main = None
     try:
