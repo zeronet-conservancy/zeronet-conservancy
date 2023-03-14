@@ -14,7 +14,6 @@ from Config import config
 from util import helper
 from util import RateLimit
 from util import Cached
-from .Site import Site
 from Debug import Debug
 
 @PluginManager.acceptPlugins
@@ -31,6 +30,7 @@ class SiteManager(object):
     # Load all sites from data/sites.json
     @util.Noparallel()
     def load(self, cleanup=True, startup=False):
+        from .Site import Site
         self.log.info("Loading sites... (cleanup: %s, startup: %s)" % (cleanup, startup))
         self.loaded = False
         address_found = []
@@ -169,6 +169,7 @@ class SiteManager(object):
         return site
 
     def add(self, address, all_file=True, settings=None, **kwargs):
+        from .Site import Site
         self.sites_changed = int(time.time())
         # Try to find site with differect case
         for recover_address, recover_site in list(self.sites.items()):
