@@ -122,6 +122,10 @@ def restart():
 def start():
     app_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(app_dir)  # Change working dir to zeronet.py dir
+    if sys.platform == 'darwin' and '/usr/bin' not in sys.path:
+        # workaround for nix installation on mac os x
+        # https://github.com/zeronet-conservancy/zeronet-conservancy/issues/201
+        sys.path.insert('/usr/bin')
     sys.path.insert(0, os.path.join(app_dir, "src/lib"))  # External liblary directory
     sys.path.insert(0, os.path.join(app_dir, "src"))  # Imports relative to src
 
