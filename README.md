@@ -10,6 +10,12 @@ zeronet-conservancy is a fork/continuation of [ZeroNet](https://github.com/Hello
 (that has been abandoned by its creator) that is dedicated to sustaining existing p2p network and developing
 its values of decentralization and freedom, while gradually switching to a better designed network
 
+## No active maintainer warning
+
+This fork was created and maintained by @caryoscelus, but due to vanishing interest and in order to avoid having
+another one-person project, they stepped down. This means there currently is no active maintainer (you're are
+welcome to become one!), however some development might still happen.
+
 ## Why fork?
 
 During onion-v3 switch crisis, we needed a fork that worked with onion-v3 and didn't depend on trust to one or
@@ -213,7 +219,7 @@ need to know their alternatives.
 
 ### Financially support maintainers
 
-Currently the lead developer / maintainer of this fork is @caryoscelus. You can
+This fork was created and maintained by @caryoscelus. You can
 see ways to donate to them on https://caryoscelus.github.io/donate/ (or check
 sidebar if you're reading this on github for more ways). As our team grows, we
 will create team accounts on friendly crowdfunding platforms as well.

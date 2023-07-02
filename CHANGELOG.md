@@ -1,5 +1,7 @@
-### zeronet-conservancy 0.7.8.1+
-maintainers: @caryoscelus
+### zeronet-conservancy 0.7.9+
+
+### zeronet-conservancy 0.7.9 (2023-07-02)
+maintainers: @caryoscelus -> none
 - update README (build/dev instructions; thanks to @fgaz)
 - better debugging of update non-propagation
 - sec update of msgpck dependency (@chncaption)
@@ -7,6 +9,7 @@ maintainers: @caryoscelus
 - improvement in imports and naming (@caryoscelus)
 - siteSign accepts absolute paths as well as paths relative to working directory (@caryoscelus)
 - updated trackers from Syncronite by @Styromaniac
+- no longer officially maintained
 
 ### zeronet-conservancy 0.7.8.1 (2022-11-28) (0054eca9df0c9c8c2f4a78)
 maintainers: @caryoscelus
