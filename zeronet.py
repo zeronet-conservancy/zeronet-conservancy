@@ -3,7 +3,11 @@ import os
 import sys
 from src.Config import config
 
-def main():
+# fix further imports from src dir
+sys.modules['Config'] = sys.modules['src.Config']
+
+def launch():
+    '''renamed from main to avoid clashes with main module'''
     if sys.version_info.major < 3:
         print("Error: Python 3.x is required")
         sys.exit(0)
@@ -12,7 +16,6 @@ def main():
         from greet import fancy_greet
         fancy_greet(config.version)
 
-    main = None
     try:
         import main
         main.start()
@@ -131,7 +134,7 @@ def start():
         import update
         update.update()
     else:
-        main()
+        launch()
 
 
 if __name__ == '__main__':
