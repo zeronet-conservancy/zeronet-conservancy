@@ -5,6 +5,7 @@ maintainers: @caryoscelus
 - sec update of msgpck dependency (@chncaption)
 - deprecate python-3.6 as it apparently is no longer used (by active users)
 - improvement in imports and naming (@caryoscelus)
+- siteSign accepts absolute paths as well as paths relative to working directory (@caryoscelus)
 
 ### zeronet-conservancy 0.7.8.1 (2022-11-28) (0054eca9df0c9c8c2f4a78)
 maintainers: @caryoscelus
