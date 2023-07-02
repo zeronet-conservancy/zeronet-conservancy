@@ -100,6 +100,7 @@ maintainers: @caryoscelus
 ### zeronet-conservancy 0.7.3 (2022-01-21) Rev5000
 maintainers: @caryoscelus
 - forked from the latest py3 branch of ZeroNet
+- fixed potential vulnerability discovered by @imachug
 - onion v3 support (thanks to @anonymoose, @zeroseed and @geekless)
 - partial readme rewrite (thanks to @mitya57)
 - disable updating through zite (unsafe)
