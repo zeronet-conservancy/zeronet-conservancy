@@ -1,6 +1,7 @@
 ### zeronet-conservancy 0.7.9+
+- fixed ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
 
-### zeronet-conservancy 0.7.9 (2023-07-02)
+### zeronet-conservancy 0.7.9 (2023-07-02) (f966a4203fe33bd9f35)
 maintainers: @caryoscelus -> none
 - update README (build/dev instructions; thanks to @fgaz)
 - better debugging of update non-propagation
