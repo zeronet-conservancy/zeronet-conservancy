@@ -104,7 +104,7 @@ maintainers: @caryoscelus
 ### zeronet-conservancy 0.7.3 (2022-01-21) Rev5000
 maintainers: @caryoscelus
 - forked from the latest py3 branch of ZeroNet
-- fixed potential vulnerability discovered by @imachug
+- fixed potential vulnerability discovered by @purplesyringa
 - onion v3 support (thanks to @anonymoose, @zeroseed and @geekless)
 - partial readme rewrite (thanks to @mitya57)
 - disable updating through zite (unsafe)
@@ -193,7 +193,7 @@ maintainers: shortcutme a.k.a nofish a.k.a HelloZeroNet a.k.a Tamas Kocsis
  - Link to site's sidebar with "#ZeroNet:OpenSidebar" hash
 
 ### Changed
- - Allow .. in file names [Thanks to imachug]
+ - Allow .. in file names [Thanks to purplesyringa]
  - Change unstable trackers
  - More clean errors on sites.json/users.json load error
  - Various tweaks for tracker rating on unstable connections
@@ -204,12 +204,12 @@ maintainers: shortcutme a.k.a nofish a.k.a HelloZeroNet a.k.a Tamas Kocsis
 
 ### Fixed
  - Fix parsing config lines that have no value
- - Fix start.py [Thanks to imachug]
+ - Fix start.py [Thanks to purplesyringa]
  - Allow multiple values of the same key in the config file [Thanks ssdifnskdjfnsdjk for reporting]
  - Fix parsing config file lines that has % in the value [Thanks slrslr for reporting]
  - Fix bootstrapper plugin hash reloads [Thanks geekless for reporting]
  - Fix CryptMessage plugin OpenSSL dll loading on Windows (ZeroMail errors) [Thanks cxgreat2014 for reporting]
- - Fix startup error when using OpenSSL 1.1 [Thanks to imachug]
+ - Fix startup error when using OpenSSL 1.1 [Thanks to purplesyringa]
  - Fix a bug that did not loaded merged site data for 5 sec after the merged site got added
  - Fix typo that allowed to add new plugins in public proxy mode. [Thanks styromaniac for reporting]
  - Fix loading non-big files with "|all" postfix [Thanks to krzotr]
@@ -232,10 +232,10 @@ Note: The fix is also back ported to ZeroNet Py 2.x version (Rev3870)
  - Generated SSL certificate randomization to avoid protocol filters (Thanks to ValdikSS)
  - Offline mode
  - P2P source code update using ZeroNet protocol
- - ecdsaSign/Verify commands to CryptMessage plugin (Thanks to imachug)
+ - ecdsaSign/Verify commands to CryptMessage plugin (Thanks to purplesyringa)
  - Efficient file rename: change file names instead of re-downloading the file.
  - Make redirect optional on site cloning (Thanks to Lola)
- - EccPrivToPub / EccPubToPriv functions (Thanks to imachug)
+ - EccPrivToPub / EccPubToPriv functions (Thanks to purplesyringa)
  - Detect and change dark/light theme based on OS setting (Thanks to filips123)
 
 ### Changed
@@ -254,7 +254,7 @@ Note: The fix is also back ported to ZeroNet Py 2.x version (Rev3870)
  - Fix site download as zip file
  - Fix displaying sites with utf8 title
  - Error message if dbRebuild fails (Thanks to Lola)
- - Fix browser reopen if executing start.py again. (Thanks to imachug)
+ - Fix browser reopen if executing start.py again. (Thanks to purplesyringa)
 
 
 ### ZeroNet 0.6.5 (2019-02-16) Rev3851 (Last release targeting Python 2.7.x)
@@ -343,7 +343,7 @@ Affected versions: All versions before ZeroNet Rev3616
  - Detect network level tracker blocking and easy setting meek proxy for tracker connections.
  - Support downloading 2GB+ sites as .zip (Thx to Radtoo)
  - Support ZeroNet as a transparent proxy (Thx to JeremyRand)
- - Allow fileQuery as CORS command (Thx to imachug)
+ - Allow fileQuery as CORS command (Thx to purplesyringa)
  - Windows distribution includes Tor and meek client by default
  - Download sites as zip link to sidebar
  - File server port randomization
@@ -406,7 +406,7 @@ Affected versions: All versions before ZeroNet Rev3616
 ### Added
  - New plugin: Chart
  - Collect and display charts about your contribution to ZeroNet network
- - Allow list as argument replacement in sql queries. (Thanks to imachug)
+ - Allow list as argument replacement in sql queries. (Thanks to purplesyringa)
  - Newsfeed query time statistics (Click on "From XX sites in X.Xs on ZeroHello)
  - New UiWebsocket API command: As to run commands as other site
  - Ranged ajax queries for big files
@@ -427,7 +427,7 @@ Affected versions: All versions before ZeroNet Rev3616
  - Only zoom sidebar globe if mouse button is pressed down
 
 ### Fixed
- - Open port checking error reporting (Thanks to imachug)
+ - Open port checking error reporting (Thanks to purplesyringa)
  - Out-of-range big file requests
  - Don't output errors happened on gevent greenlets twice
  - Newsfeed skip sites with no database
@@ -507,7 +507,7 @@ Affected versions: All versions before ZeroNet Rev3616
  - Opened port checking (Thanks l5h5t7 & saber28 for reporting)
  - Standalone update.py argument parsing (Thanks Zalex for reporting)
  - uPnP crash on startup (Thanks Vertux for reporting)
- - CoffeeScript 1.12.6 compatibility (Thanks kavamaken & imachug)
+ - CoffeeScript 1.12.6 compatibility (Thanks kavamaken & purplesyringa)
  - Multi value argument parsing
  - Database error when running from directory that contains special characters (Thanks Pupiloho for reporting)
  - Site lock violation logging
