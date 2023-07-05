@@ -1,5 +1,6 @@
 ### zeronet-conservancy 0.7.9+
-- fixed ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
+- update merkletools dependency to avoid legacy pysha3 (@caryoscelus)
+- fix ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
 
 ### zeronet-conservancy 0.7.9 (2023-07-02) (f966a4203fe33bd9f35)
 maintainers: @caryoscelus -> none
