@@ -234,6 +234,19 @@ class Actions(object):
                 # Not found in users.json, ask from console
                 import getpass
                 privatekey = getpass.getpass("Private key (input hidden):")
+        # inner_path can be either relative to site directory or absolute/relative path
+        if os.path.isabs(inner_path):
+            full_path = os.path.abspath(inner_path)
+        else:
+            full_path = os.path.abspath(config.working_dir + '/' + inner_path)
+        print(full_path)
+        if os.path.isfile(full_path):
+            if address in full_path:
+                # assuming site address is unique, keep only path after it
+                inner_path = full_path.split(address+'/')[1]
+            else:
+                # oops, file that we found seems to be rogue, so reverting to old behaviour
+                logging.warning(f'using {inner_path} relative to site directory')
         try:
             succ = site.content_manager.sign(
                 inner_path=inner_path, privatekey=privatekey,

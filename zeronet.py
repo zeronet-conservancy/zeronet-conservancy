@@ -3,51 +3,19 @@ import os
 import sys
 from src.Config import config
 
-def grad(n):
-    s = 0x08
-    r = 0xff
-    g = 0x00
-    b = 0x00
-    for i in range(n):
-        if r >= s and b < s:
-            r -= s
-            g += s
-        elif g >= s and r < s:
-            g -= s
-            b += s
-        elif b >= s and g < s:
-            b -= s
-            r += s
-    return f'#{r:02x}{g:02x}{b:02x}'
+# fix further imports from src dir
+sys.modules['Config'] = sys.modules['src.Config']
 
-def fancy_greet():
-    from rich.console import Console
-    from rich.text import Text
-    zc_msg = f'''
-|||  __. _.. _ . . _  _._|_     _. . . _ .-- _.. _.  . __.. _  _..  .
-|||   / /_||/ / \|/ |/_| |  == /  / \|/ | \ /_||/ |  | __||/ |/   \_|
-|||  /_.\_ |  \_/|  |\_  |.    \__\_/|  |._|\_ |   \/ |__||  |\__   |
-|||                                                                _/
-|||  v{config.version}
-'''
-    lns = zc_msg.split('\n')
-    console = Console()
-    for l in lns:
-        txt = Text(l)
-        txt.stylize('bold')
-        for i in range(len(l)):
-            txt.stylize(grad(i), i, i+1)
-        console.print(txt)
-
-def main():
+def launch():
+    '''renamed from main to avoid clashes with main module'''
     if sys.version_info.major < 3:
         print("Error: Python 3.x is required")
         sys.exit(0)
 
     if '--silent' not in sys.argv:
-        fancy_greet()
+        from greet import fancy_greet
+        fancy_greet(config.version)
 
-    main = None
     try:
         import main
         main.start()
@@ -155,6 +123,7 @@ def restart():
 
 
 def start():
+    config.working_dir = os.getcwd()
     app_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(app_dir)  # Change working dir to zeronet.py dir
     sys.path.insert(0, os.path.join(app_dir, "src/lib"))  # External liblary directory
@@ -166,7 +135,7 @@ def start():
         import update
         update.update()
     else:
-        main()
+        launch()
 
 
 if __name__ == '__main__':

@@ -42,7 +42,7 @@ zeronet-conservancy — это форк/продолжение проекта [Z
 
 * После запуска `zeronet.py` вы сможете посетить zeronet сайты используя адрес
   `http://127.0.0.1:43110/{zeronet_address}`
-(например. `http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D`).
+(например. `http://127.0.0.1:43110/1MCoA8rQHhwu4LY2t2aabqcGSRqrL8uf2X`).
 * Когда вы посещаете новый сайт zeronet, он пытается найти пиров с помощью BitTorrent
   чтобы загрузить файлы сайтов (html, css, js ...) из них.
 * Каждый посещенный зайт также обслуживается вами. (Т.е хранится у вас на компьютере)
@@ -65,6 +65,7 @@ zeronet-conservancy — это форк/продолжение проекта [Z
 ### Установить из репозитория вашего дистрибутива
 
 - NixOS: https://search.nixos.org/packages?channel=22.05&show=zeronet-conservancy&type=packages&query=zeronet-conservancy
+- ArchLinux: [последний релиз](https://aur.archlinux.org/packages/zeronet-conservancy), [git-версия](https://aur.archlinux.org/packages/zeronet-conservancy-git)
 
 ### Установить из исходного кода (рекомендовано)
 
@@ -85,7 +86,11 @@ zeronet-conservancy — это форк/продолжение проекта [Z
  - (optional) `pkg install tor`
  - (optional) запустить тор через команду `tor --ControlPort 9051 --CookieAuthentication 1` (вы можете открыть новый сеанс свайпом вправо)
 
-#### Создание зависимостей Python и запуск
+#### Скрипт, который всё сделает за вас
+ - после установки общих зависимостей и клонирования репозитория (как указано выше) запустите `start-venv.sh` который создаст для вас виртуальную среду (если её ещё нет) и установит необходимые пакеты Python
+ - больше удобных скриптов будует добавлено в ближайшее время
+
+#### Установка Python-зависимостей и запуск
  - клонируйте репозиторий (NOTE: на Android/Termux вы должны клонировать его в «домашнюю» папку Termux, потому что виртуальная среда не может находиться в `storage/`)
  - `python3 -m venv venv` (создайте виртуальную среду python, последнее `venv` это просто имя/название, если вы используете другое, вы должны заменить его в более поздних командах.)
  - `source venv/bin/activate` (активируйте среду)
@@ -96,17 +101,13 @@ zeronet-conservancy — это форк/продолжение проекта [Z
  - `source venv/bin/activate`
  - `python3 zeronet.py`
 
-#### Создание образа Docker
-- создание образа: `docker build -t 0net:conservancy . -f Dockerfile`
-- или создрание образа с встроенным tor: `docker build -t 0net:conservancy . -f Dockerfile.integrated_tor`
-- и его запуск: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net:conservancy`
+#### (альтернативно) Создание образа Docker
+- создание образа: `docker build -t 0net-conservancy:latest . -f Dockerfile`
+- или создрание образа с встроенным tor: `docker build -t 0net-conservancy:latest . -f Dockerfile.integrated_tor`
+- и его запуск: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net-conservancy:latest`
 - /path/to/0n/data/directory - директория, куда будут сохраняться все данные в том числе секретные ключи. Если вы запускаете в боевом режиме, не потеряйте эту папку!
-- или вы можете воспользоваться docker-compose: `docker compose up -d 0net` запускает два контейнера раздельно, для 0net и tor сервисов.
+- или вы можете воспользоваться docker-compose: `docker compose up -d 0net-conservancy` запускает два контейнера раздельно, для 0net и tor сервисов.
 - или: `docker compose up -d 0net-tor` запускает один контейнер с tor и 0net.
-
-#### альтернативный скрипт
- - после установки общих зависимостей и клонирования репозитория (как указано выше) запустите `start-venv.sh` который создаст для вас виртуальную среду и установит требования Python
- - больше удобных скриптов будует добавлено в ближайшее время
 
 ## Текущие ограничения 
 
@@ -158,8 +159,10 @@ zeronet-conservancy — это форк/продолжение проекта [Z
 также создаст командные аккаунты на дружественных краудфандинговых платформах.
 
 Если вы хотите, чтобы ваше пожертвование было признано пожертвованием для этого
-проекта, для этого также есть специальный биткойн-адрес:
-1Kjuw3reZvxRVNs27Gen7jPJYCn6LY7Fg6
+проекта, для этого также есть специальный биткоин-адрес:
+1Kjuw3reZvxRVNs27Gen7jPJYCn6LY7Fg6. Либо если хотите сделать более анонимный донат, вы
+можете пожертвовать Monero:
+4AiYUcqVRH4C2CVr9zbBdkhRnJnHiJoypHEsq4N7mQziGUoosPCpPeg8SPr87nvwypaRzDgMHEbWWDekKtq8hm9LBmgcMzC
 
 Если вы хотите сделать пожертвование другим способом, не стесняйтесь обращаться к сопровождающему или
 создать запрос
