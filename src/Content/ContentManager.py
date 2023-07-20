@@ -514,6 +514,11 @@ class ContentManager(object):
         for permission_pattern, permission_rules in list(user_contents["permission_rules"].items()):  # Regexp rules
             if not SafeRe.match(permission_pattern, user_urn):
                 continue  # Rule is not valid for user
+            if permission_rules is None:
+                self.log.info(f'Permission rule for {permission_pattern} is null, '
+                               'we set max_size[_optional] to zero. '
+                               'NOTE: This is not supported by <0.7.10')
+                permission_rules = {'max_size': 0, 'max_size_optional': 0}
             # Update rules if its better than current recorded ones
             for key, val in permission_rules.items():
                 if key not in rules:
