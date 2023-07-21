@@ -1,6 +1,7 @@
 name: tests
 
-on: []
+on:
+  workflow_dispatch:
 
 jobs:
   test:
