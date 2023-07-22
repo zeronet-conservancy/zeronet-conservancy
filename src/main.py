@@ -422,47 +422,61 @@ class Actions(object):
         ws = websocket.create_connection(ws_address)
         return ws
 
-    def sitePublish(self, address, peer_ip=None, peer_port=15441, inner_path="content.json"):
-        global file_server
-        from Site.Site import Site
+    def sitePublish(self, address, peer_ip=None, peer_port=15441, inner_path="content.json", recursive=False):
         from Site import SiteManager
-        from File import FileServer  # We need fileserver to handle incoming file requests
-        from Peer import Peer
-        file_server = FileServer()
-        site = SiteManager.site_manager.get(address)
         logging.info("Loading site...")
+        site = SiteManager.site_manager.get(address)
         site.settings["serving"] = True  # Serving the site even if its disabled
+
+        if not recursive:
+            inner_paths = [inner_path]
+        else:
+            inner_paths = list(site.content_manager.contents.keys())
 
         try:
             ws = self.getWebsocket(site)
+
+        except Exception as err:
+            self.sitePublishFallback(site, peer_ip, peer_port, inner_paths, err)
+
+        else:
             logging.info("Sending siteReload")
             self.siteCmd(address, "siteReload", inner_path)
 
-            logging.info("Sending sitePublish")
-            self.siteCmd(address, "sitePublish", {"inner_path": inner_path, "sign": False})
+            for inner_path in inner_paths:
+                logging.info(f"Sending sitePublish for {inner_path}")
+                self.siteCmd(address, "sitePublish", {"inner_path": inner_path, "sign": False})
             logging.info("Done.")
+            ws.close()
 
-        except Exception as err:
-            logging.info("Can't connect to local websocket client: %s" % err)
-            logging.info("Creating FileServer....")
-            file_server_thread = gevent.spawn(file_server.start, check_sites=False)  # Dont check every site integrity
-            time.sleep(0.001)
+    def sitePublishFallback(self, site, peer_ip, peer_port, inner_paths, err):
+        if err is not None:
+            logging.info(f"Can't connect to local websocket client: {err}")
+        logging.info("Publish using fallback mechanism. "
+                     "Note that there might be not enough time for peer discovery, "
+                     "but you can specify target peer on command line.")
+        logging.info("Creating FileServer....")
+        file_server_thread = gevent.spawn(file_server.start, check_sites=False)  # Dont check every site integrity
+        time.sleep(0.001)
 
-            # Started fileserver
-            file_server.portCheck()
-            if peer_ip:  # Announce ip specificed
-                site.addPeer(peer_ip, peer_port)
-            else:  # Just ask the tracker
-                logging.info("Gathering peers from tracker")
-                site.announce()  # Gather peers
+        # Started fileserver
+        file_server.portCheck()
+        if peer_ip:  # Announce ip specificed
+            site.addPeer(peer_ip, peer_port)
+        else:  # Just ask the tracker
+            logging.info("Gathering peers from tracker")
+            site.announce()  # Gather peers
+
+        for inner_path in inner_paths:
             published = site.publish(5, inner_path)  # Push to peers
-            if published > 0:
-                time.sleep(3)
-                logging.info("Serving files (max 60s)...")
-                gevent.joinall([file_server_thread], timeout=60)
-                logging.info("Done.")
-            else:
-                logging.info("No peers found, sitePublish command only works if you already have visitors serving your site")
+
+        if published > 0:
+            time.sleep(3)
+            logging.info("Serving files (max 60s)...")
+            gevent.joinall([file_server_thread], timeout=60)
+            logging.info("Done.")
+        else:
+            logging.info("No peers found, sitePublish command only works if you already have visitors serving your site")
 
     # Crypto commands
     def cryptPrivatekeyToAddress(self, privatekey=None):

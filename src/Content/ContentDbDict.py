@@ -95,17 +95,6 @@ class ContentDbDict(dict):
             back.append((key, val))
         return back
 
-    def values(self):
-        back = []
-        for key, val in dict.iteritems(self):
-            if not val:
-                try:
-                    val = self.loadItem(key)
-                except Exception:
-                    continue
-            back.append(val)
-        return back
-
     def get(self, key, default=None):
         try:
             return self.__getitem__(key)

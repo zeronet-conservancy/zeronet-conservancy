@@ -309,6 +309,8 @@ class Config(object):
                             default=15441, nargs='?')
         action.add_argument('--inner_path', help='Content.json you want to publish (default: content.json)',
                             default="content.json", metavar="inner_path")
+        action.add_argument('--recursive', help="Whether to publish all of site's content.json. "
+                            "Overrides --inner_path. (default: false)", action='store_true', dest='recursive')
 
         # SiteVerify
         action = self.subparsers.add_parser("siteVerify", help='Verify site files using sha512: address')
