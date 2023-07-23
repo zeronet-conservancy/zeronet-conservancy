@@ -320,6 +320,10 @@ class Config(object):
         action.add_argument('cmd', help='API command name')
         action.add_argument('parameters', help='Parameters of the command', nargs='?')
 
+        # Import bundled sites
+        action = self.subparsers.add_parser("importBundle", help='Import sites from a .zip bundle')
+        action.add_argument('bundle', help='Path to a data bundle')
+
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
         action.add_argument('address', help='Site to rebuild')
@@ -426,6 +430,8 @@ class Config(object):
         self.parser.add_argument('--disable_udp', help='Disable UDP connections', action='store_true')
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
+        self.parser.add_argument('--bootstrap_url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/caryoscelus/zeronet-conservancy/bootstrap/bootstrap.url', type=str)
+        self.parser.add_argument('--disable_bootstrap', help='Disable downloading bootstrap information from clearnet', action='store_true')
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=trackers, metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', metavar='path', nargs='*')
         self.parser.add_argument('--trackers_proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
