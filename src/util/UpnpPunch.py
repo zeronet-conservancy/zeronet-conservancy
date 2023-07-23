@@ -181,7 +181,6 @@ def _get_local_ips():
 
 def _create_open_message(local_ip,
                          port,
-                         description="UPnPPunch",
                          protocol="TCP",
                          upnp_schema='WANIPConnection'):
     """
@@ -205,14 +204,13 @@ def _create_open_message(local_ip,
 </s:Envelope>""".format(port=port,
                         protocol=protocol,
                         host_ip=local_ip,
-                        description=description,
+                        description='',
                         upnp_schema=upnp_schema)
     return (REMOVE_WHITESPACE.sub('><', soap_message), 'AddPortMapping')
 
 
 def _create_close_message(local_ip,
                           port,
-                          description=None,
                           protocol='TCP',
                           upnp_schema='WANIPConnection'):
     soap_message = """<?xml version="1.0"?>
@@ -294,12 +292,12 @@ def _send_requests(messages, location, upnp_schema, control_path):
     raise UpnpError('Sending requests using UPnP failed.')
 
 
-def _orchestrate_soap_request(ip, port, msg_fn, desc=None, protos=("TCP", "UDP")):
+def _orchestrate_soap_request(ip, port, msg_fn, protos=("TCP", "UDP")):
     logger.debug("Trying using local ip: %s" % ip)
     idg_data = _collect_idg_data(ip)
 
     soap_messages = [
-        msg_fn(ip, port, desc, proto, idg_data['upnp_schema'])
+        msg_fn(ip, port, proto, idg_data['upnp_schema'])
         for proto in protos
     ]
 
@@ -307,7 +305,6 @@ def _orchestrate_soap_request(ip, port, msg_fn, desc=None, protos=("TCP", "UDP")
 
 
 def _communicate_with_igd(port=15441,
-                          desc="UpnpPunch",
                           retries=3,
                           fn=_create_open_message,
                           protos=("TCP", "UDP")):
@@ -321,7 +318,7 @@ def _communicate_with_igd(port=15441,
     def job(local_ip):
         for retry in range(retries):
             try:
-                _orchestrate_soap_request(local_ip, port, fn, desc, protos)
+                _orchestrate_soap_request(local_ip, port, fn, protos)
                 return True
             except Exception as e:
                 logger.debug('Upnp request using "{0}" failed: {1}'.format(local_ip, e))
@@ -357,20 +354,18 @@ def _communicate_with_igd(port=15441,
     return success
 
 
-def ask_to_open_port(port=15441, desc="UpnpPunch", retries=3, protos=("TCP", "UDP")):
+def ask_to_open_port(port=15441, retries=3, protos=("TCP", "UDP")):
     logger.debug("Trying to open port %d." % port)
     return _communicate_with_igd(port=port,
-                          desc=desc,
                           retries=retries,
                           fn=_create_open_message,
                           protos=protos)
 
 
-def ask_to_close_port(port=15441, desc="UpnpPunch", retries=3, protos=("TCP", "UDP")):
+def ask_to_close_port(port=15441, retries=3, protos=("TCP", "UDP")):
     logger.debug("Trying to close port %d." % port)
     # retries=1 because multiple successes cause 500 response and failure
     return _communicate_with_igd(port=port,
-                          desc=desc,
                           retries=retries,
                           fn=_create_close_message,
                           protos=protos)
