@@ -797,10 +797,6 @@ class Config(object):
             except Exception as err:
                 print("Can't change permission of %s: %s" % (self.log_dir, err))
 
-        # Make warning hidden from console
-        logging.WARNING = 15  # Don't display warnings if not in debug mode
-        logging.addLevelName(15, "WARNING")
-
         logging.getLogger('').name = "-"  # Remove root prefix
 
         self.error_logger = ErrorLogHandler()
