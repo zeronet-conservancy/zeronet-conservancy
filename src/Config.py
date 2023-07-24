@@ -433,7 +433,7 @@ class Config(object):
         self.parser.add_argument('--bootstrap_url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/caryoscelus/zeronet-conservancy/bootstrap/bootstrap.url', type=str)
         self.parser.add_argument('--disable_bootstrap', help='Disable downloading bootstrap information from clearnet', action='store_true')
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=trackers, metavar='protocol://address', nargs='*')
-        self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', metavar='path', nargs='*')
+        self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers_proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
         self.parser.add_argument('--use_libsecp256k1', help='Use Libsecp256k1 liblary for speedup', type='bool', choices=[True, False], default=True)
         self.parser.add_argument('--use_openssl', help='Use OpenSSL liblary for speedup', type='bool', choices=[True, False], default=True)
