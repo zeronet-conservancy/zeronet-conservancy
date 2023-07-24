@@ -37,8 +37,14 @@ load_config()
 def importBundle(bundle):
     from zipfile import ZipFile
     from Crypt.CryptBitcoin import isValidAddress
-    from Site import SiteManager
-    SiteManager.site_manager.load()
+    import json
+
+    sites_json_path = f"{config.data_dir}/sites.json"
+    try:
+        with open(sites_json_path) as f:
+            sites = json.load(f)
+    except Exception as err:
+        sites = {}
 
     with ZipFile(bundle) as zf:
         all_files = zf.namelist()
@@ -59,10 +65,11 @@ def importBundle(bundle):
                     info.filename = tgt
                     zf.extract(info)
                 logging.info(f'add site {d}')
-                SiteManager.site_manager.add(d, noload=True)
+                sites[d] = {}
             else:
                 logging.info(f'Warning: unknown file in a bundle: {prefix+d}')
-    SiteManager.site_manager.save()
+    with open(sites_json_path, 'w') as f:
+        json.dump(sites, f)
 
 def init_dirs():
     data_dir = config.data_dir
