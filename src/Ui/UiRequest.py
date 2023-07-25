@@ -282,9 +282,15 @@ class UiRequest(object):
 
     # Send response headers
     def sendHeader(self, status=200, content_type="text/html", noscript=False, allow_ajax=False, script_nonce=None, extra_headers=[]):
-        ref = self.env.get("HTTP_REFERER")
         url = self.getRequestUrl()
-        if status != 404 and ref and not self.isSameHost(ref, url):
+        referer = self.env.get('HTTP_REFERER')
+        origin = self.env.get('HTTP_ORIGIN')
+        fetch_site = self.env.get('HTTP_SEC_FETCH_SITE')
+        fetch_mode = self.env.get('HTTP_SEC_FETCH_MODE')
+        not_same_ref = referer and not self.isSameHost(referer, url)
+        not_same_origin = origin and not self.isSameHost(origin, url)
+        cross_site_not_navigate = not referer and fetch_site == 'cross-site' and not fetch_mode == 'navigate'
+        if status != 404 and (not_same_ref or not_same_origin or cross_site_not_navigate):
             # pretend nothing is here for third-party access
             return self.error404()
 
