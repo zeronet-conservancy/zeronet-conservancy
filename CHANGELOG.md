@@ -1,6 +1,11 @@
 ### zeronet-conservancy 0.7.9+
 - update merkletools dependency to avoid legacy pysha3 (@caryoscelus)
 - fix ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
+- more anonymous UPnP (thanks to 0netdwf for reporting)
+- remove old zeroname plugins (.bit deprecation)
+- sitePublish --recursive option
+- windows build instruction improvement
+- various improvements
 
 ### zeronet-conservancy 0.7.9 (2023-07-02) (f966a4203fe33bd9f35)
 maintainers: @caryoscelus -> none
