@@ -165,6 +165,13 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - [for full tor anonymity launch this instead] `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151 --tor always`
 - navigate to http://127.0.0.1:43110 in your favourite browser!
 
+To build .exe
+
+- follow the same steps as above, but additionally
+- `pip install pyinstaller`
+- `pyinstaller -p src -p plugins --hidden-import merkletools --hidden-import lib.bencode_open --hidden-import Crypt.Crypt --hidden-import Db.DbQuery --hidden-import lib.subtl --hidden-import lib.subtl.subtl --hidden-import sockshandler --add-data "src;src" --add-data "plugins;plugins" --clean zeronet.py`
+- dist/zeronet should contain working zeronet.exe!
+
 ## Current limitations
 
 * File transactions are not compressed
