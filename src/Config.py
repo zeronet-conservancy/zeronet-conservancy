@@ -260,7 +260,7 @@ class Config(object):
         self.parser.add_argument('--disable_udp', help='Disable UDP connections', action='store_true')
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
-        self.parser.add_argument('--bootstrap_url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/caryoscelus/zeronet-conservancy/bootstrap/bootstrap.url', type=str)
+        self.parser.add_argument('--bootstrap_url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
         self.parser.add_argument('--disable_bootstrap', help='Disable downloading bootstrap information from clearnet', action='store_true')
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
