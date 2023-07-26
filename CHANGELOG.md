@@ -1,10 +1,16 @@
-### zeronet-conservancy 0.7.9+
+### zeronet-conservancy 0.7.10+
+
+### zeronet-conservancy 0.7.10 (2023-07-26)
+prepared by @caryoscelus
 - update merkletools dependency to avoid legacy pysha3 (@caryoscelus)
 - fix ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
 - more anonymous UPnP (thanks to 0netdwf for reporting)
 - remove old zeroname plugins (.bit deprecation)
 - sitePublish --recursive option
 - windows build instruction improvement
+- importBundle command line action
+- use Syncronite tracker site by default
+- fix leak of local 0net sites to clearnet sites (originally reported by @egosown/beardog)
 - various improvements
 
 ### zeronet-conservancy 0.7.9 (2023-07-02) (f966a4203fe33bd9f35)
