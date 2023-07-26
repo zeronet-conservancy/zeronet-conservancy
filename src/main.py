@@ -34,24 +34,79 @@ def load_config():
 
 load_config()
 
-def init_dirs():
-    if not os.path.isdir(config.data_dir):
-        os.mkdir(config.data_dir)
-        try:
-            os.chmod(config.data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        except Exception as err:
-            startupError("Can't change permission of %s: %s" % (config.data_dir, err))
+def importBundle(bundle):
+    from zipfile import ZipFile
+    from Crypt.CryptBitcoin import isValidAddress
+    import json
 
-    sites_json = f"{config.data_dir}/sites.json"
+    sites_json_path = f"{config.data_dir}/sites.json"
+    try:
+        with open(sites_json_path) as f:
+            sites = json.load(f)
+    except Exception as err:
+        sites = {}
+
+    with ZipFile(bundle) as zf:
+        all_files = zf.namelist()
+        top_files = list(set(map(lambda f: f.split('/')[0], all_files)))
+        if len(top_files) == 1 and not isValidAddress(top_files[0]):
+            prefix = top_files[0]+'/'
+        else:
+            prefix = ''
+        top_2 = list(set(filter(lambda f: len(f)>0,
+                                map(lambda f: f.removeprefix(prefix).split('/')[0], all_files))))
+        for d in top_2:
+            if isValidAddress(d):
+                logging.info(f'unpack {d} into {config.data_dir}')
+                for fname in filter(lambda f: f.startswith(prefix+d) and not f.endswith('/'), all_files):
+                    tgt = config.data_dir + '/' + fname.removeprefix(prefix)
+                    logging.info(f'-- {fname} --> {tgt}')
+                    info = zf.getinfo(fname)
+                    info.filename = tgt
+                    zf.extract(info)
+                logging.info(f'add site {d}')
+                sites[d] = {}
+            else:
+                logging.info(f'Warning: unknown file in a bundle: {prefix+d}')
+    with open(sites_json_path, 'w') as f:
+        json.dump(sites, f)
+
+def init_dirs():
+    data_dir = config.data_dir
+    if not os.path.isdir(data_dir):
+        os.mkdir(data_dir)
+        try:
+            os.chmod(data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        except Exception as err:
+            startupError(f"Can't change permission of {data_dir}: {err}")
+
+        # download latest bootstrap bundle
+        if not config.disable_bootstrap and not config.offline:
+            import requests
+            from io import BytesIO
+
+            print(f'fetching {config.bootstrap_url}')
+            response = requests.get(config.bootstrap_url)
+            if response.status_code != 200:
+                startupError(f"Cannot load bootstrap bundle (response status: {response.status_code})")
+            url = response.text
+            print(f'got {url}')
+            response = requests.get(url)
+            if response.status_code < 200 or response.status_code >= 300:
+                startupError(f"Cannot load boostrap bundle (response status: {response.status_code})")
+            importBundle(BytesIO(response.content))
+
+    sites_json = f"{data_dir}/sites.json"
     if not os.path.isfile(sites_json):
         with open(sites_json, "w") as f:
             f.write("{}")
-    users_json = f"{config.data_dir}/users.json"
+    users_json = f"{data_dir}/users.json"
     if not os.path.isfile(users_json):
         with open(users_json, "w") as f:
             f.write("{}")
 
 # TODO: GET RID OF TOP-LEVEL CODE!!!
+config.initConsoleLogger()
 
 try:
     init_dirs()
@@ -73,7 +128,7 @@ if config.action == "main":
         r = proc.wait()
         sys.exit(r)
 
-config.initLogging()
+config.initLogging(console_logging=False)
 
 # Debug dependent configuration
 from Debug import DebugHook
@@ -414,6 +469,9 @@ class Actions(object):
             return res["result"]
         else:
             return res
+
+    def importBundle(self, bundle):
+        importBundle(bundle)
 
     def getWebsocket(self, site):
         import websocket

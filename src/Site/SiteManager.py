@@ -31,17 +31,18 @@ class SiteManager(object):
     @util.Noparallel()
     def load(self, cleanup=True, startup=False):
         from .Site import Site
-        self.log.info("Loading sites... (cleanup: %s, startup: %s)" % (cleanup, startup))
+        self.log.info(f'Loading sites... ({cleanup=}, {startup=})')
         self.loaded = False
         address_found = []
         added = 0
         load_s = time.time()
         # Load new adresses
         try:
-            json_path = "%s/sites.json" % config.data_dir
+            json_path = f"{config.data_dir}/sites.json"
             data = json.load(open(json_path))
         except Exception as err:
-            raise Exception("Unable to load %s: %s" % (json_path, err))
+            self.log.error(f"Unable to load {json_path}: {err}")
+            data = {}
 
         sites_need = []
 
