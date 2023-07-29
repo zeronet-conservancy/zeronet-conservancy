@@ -928,10 +928,7 @@ class ContentManager(object):
                     new_content = file
                 else:
                     try:
-                        if sys.version_info.major == 3 and sys.version_info.minor < 6:
-                            new_content = json.loads(file.read().decode("utf8"))
-                        else:
-                            new_content = json.load(file)
+                        new_content = json.load(file)
                     except Exception as err:
                         raise VerifyError(f"Invalid json file: {err}")
                 if inner_path in self.contents:
