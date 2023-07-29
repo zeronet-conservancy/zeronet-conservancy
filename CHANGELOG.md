@@ -1,6 +1,6 @@
 ### zeronet-conservancy 0.7.10+
 
-### zeronet-conservancy 0.7.10 (2023-07-26)
+### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
 prepared by @caryoscelus
 - update merkletools dependency to avoid legacy pysha3 (@caryoscelus)
 - fix ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
