@@ -12,10 +12,10 @@ import time
 class Config(object):
 
     def __init__(self, argv):
-        self.version = "0.7.10"
+        self.version = "0.7.10+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5120
+        self.rev = 5121
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
