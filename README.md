@@ -6,15 +6,14 @@
 
 [по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md)
 
-zeronet-conservancy is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
+Zeronet-Conservancy is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
 (that has been abandoned by its creator) that is dedicated to sustaining existing p2p network and developing
 its values of decentralization and freedom, while gradually switching to a better designed network
 
 ## No active maintainer warning
 
 This fork was created and maintained by @caryoscelus, but due to vanishing interest and in order to avoid having
-another one-person project, they stepped down. This means there currently is no active maintainer (you're are
-welcome to become one!), however some development might still happen.
+another one-person project, the development is limitted.
 
 ## Why fork?
 
@@ -75,25 +74,34 @@ Following links relate to original ZeroNet:
 
 ### Install from your distribution repository
 
-- NixOS: https://search.nixos.org/packages?channel=22.05&show=zeronet-conservancy&type=packages&query=zeronet-conservancy (and see below)
+- NixOS: [zeronet-conservancy packages search](https://search.nixos.org/packages?from=0&size=50&sort=relevance&type=packages&query=zeronet-conservancy) (and see below)
 - ArchLinux: [latest release](https://aur.archlinux.org/packages/zeronet-conservancy), [fresh git version](https://aur.archlinux.org/packages/zeronet-conservancy-git)
 
 ### Install from Nix package manager (Linux or MacOS)
 
-```
-# install & configure nix package manager
-nix-env -iA nixpkgs.zeronet-conservancy
-```
-
+if you're on NixOS, install & configure nix package manager:
+```nix-env -iA nixpkgs.zeronet-conservancy```
 or
-
-`nix-env -iA nixos.zeronet-conservancy`
-
-if you're on NixOS
-
+```nix-env -iA nixos.zeronet-conservancy```
 (thanks @fgaz for making & maintaining the package)
 
-### Install from source
+### Install from source - simplified, using Git and Python PIP
+
+1. Install Git and Python PIP package:
+
+- Debian and Ubuntu based: `sudo apt install git python3-pip -y`
+- Red Hat and Fedora based: `yum install epel-release -y 2>/dev/null;yum install git python3 python3-wheel`
+- Fedora based dandified: `sudo dnf install git python3-pip python3-wheel -y`
+- Arch and Manjaro based: `sudo pacman -S git python-pip -v --no-confirm`
+- openSUSE: `sudo zypper install python3-pip python3-setuptools python3-wheel`
+
+2. Clone Github repository and install required Python modules. First edit zndir path at the begining of the command, to be the path where you want to store Zeronet-Conservancy:
+
+`zndir="/home/user/myapps/zeronet" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin master; fi; cd "$zndir" && pip install -r requirements.txt|grep -v "already satisfied"; echo "Try to run: python3 $(pwd)/zeronet.py"`
+
+(This command can also be used to keep Zeronet-Conservancy up to date)
+
+### Install from source - detailed
 
 #### System dependencies
 
@@ -143,9 +151,9 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - after installing general dependencies and cloning repo (as above), run `start-venv.sh` which will create a virtual env for you and install python requirements
  - more convenience scripts to be added soon
 
-### Building under windows os
+### Building under Windows OS
 
-(this instruction is work-in-progress, please help us test it and improve it!)
+(These instructions are work-in-progress, please help us test it and improve it!)
 
 - install python from https://www.python.org/downloads/
 - install some windows compiler suitable for python , this proved to be the most difficult part for me as non-windows user (see here https://wiki.python.org/moin/WindowsCompilers and i'll link more references later)
