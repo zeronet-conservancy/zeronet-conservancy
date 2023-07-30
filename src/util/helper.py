@@ -195,44 +195,6 @@ def mergeDicts(dicts):
     return dict(back)
 
 
-# Request https url using gevent SSL error workaround
-def httpRequest(url, as_file=False):
-    if url.startswith("http://"):
-        import urllib.request
-        response = urllib.request.urlopen(url)
-    else:  # Hack to avoid Python gevent ssl errors
-        import socket
-        import http.client
-        import ssl
-
-        host, request = re.match("https://(.*?)(/.*?)$", url).groups()
-
-        conn = http.client.HTTPSConnection(host)
-        sock = socket.create_connection((conn.host, conn.port), conn.timeout, conn.source_address)
-
-        context = ssl.create_default_context()
-        context.minimum_version = ssl.TLSVersion.TLSv1_2
-
-        conn.sock = context.wrap_socket(sock, conn.key_file, conn.cert_file)
-        conn.request("GET", request)
-        response = conn.getresponse()
-        if response.status in [301, 302, 303, 307, 308]:
-            logging.info("Redirect to: %s" % response.getheader('Location'))
-            response = httpRequest(response.getheader('Location'))
-
-    if as_file:
-        import io
-        data = io.BytesIO()
-        while True:
-            buff = response.read(1024 * 16)
-            if not buff:
-                break
-            data.write(buff)
-        return data
-    else:
-        return response
-
-
 def timerCaller(secs, func, *args, **kwargs):
     gevent.spawn_later(secs, timerCaller, secs, func, *args, **kwargs)
     func(*args, **kwargs)

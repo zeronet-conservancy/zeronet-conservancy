@@ -602,7 +602,7 @@ class UiWebsocketPlugin(object):
     def downloadGeoLiteDb(self, db_path):
         import gzip
         import shutil
-        from util import helper
+        import requests
 
         if config.offline or config.tor == 'always':
             return False
@@ -617,19 +617,18 @@ class UiWebsocketPlugin(object):
             downloadl_err = None
             try:
                 # Download
-                response = helper.httpRequest(db_url)
-                data_size = response.getheader('content-length')
+                response = requests.get(db_url, stream=True)
+                data_size = response.headers.get('content-length')
+                if data_size is None:
+                    data.write(response.content)
+                data_size = int(data_size)
                 data_recv = 0
                 data = io.BytesIO()
-                while True:
-                    buff = response.read(1024 * 512)
-                    if not buff:
-                        break
+                for buff in response.iter_content(chunk_size=1024 * 512):
                     data.write(buff)
                     data_recv += 1024 * 512
-                    if data_size:
-                        progress = int(float(data_recv) / int(data_size) * 100)
-                        self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], progress])
+                    progress = int(float(data_recv) / data_size * 100)
+                    self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], progress])
                 self.log.info("GeoLite2 City database downloaded (%s bytes), unpacking..." % data.tell())
                 data.seek(0)
 
