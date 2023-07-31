@@ -151,6 +151,10 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - after installing general dependencies and cloning repo (as above), run `start-venv.sh` which will create a virtual env for you and install python requirements
  - more convenience scripts to be added soon
 
+### Windows build
+
+Download and extract .zip archive [zeronet-conservancy-0.7.10-unofficial-win64.zip](https://github.com/zeronet-conservancy/zeronet-conservancy/releases/download/v0.7.10/zeronet-conservancy-0.7.10-unofficial-win64.zip)
+
 ### Building under Windows OS
 
 (These instructions are work-in-progress, please help us test it and improve it!)
