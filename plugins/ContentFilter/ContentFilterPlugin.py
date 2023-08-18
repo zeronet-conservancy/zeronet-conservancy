@@ -216,6 +216,18 @@ class SiteStoragePlugin(object):
             filter_storage.includeUpdateAll()
         return super(SiteStoragePlugin, self).onUpdated(inner_path, file=file)
 
+@PluginManager.registerTo("FileRequest")
+class FileRequestPlugin:
+    def actionUpdate(self, params):
+        inner_path = params.get('inner_path', '')
+        self.log.info(f'FileRequest.actionUpdate {inner_path}')
+        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        for auth_address in matches:
+            if filter_storage.isMuted(auth_address):
+                self.log.info(f'Mute match in FileRequest.actionUpdate: {auth_address}, ignoring {inner_path}')
+                self.response({'ok': f'Thanks, file {inner_path} updated!'})
+                return False
+        return super(FileRequestPlugin, self).actionUpdate(params)
 
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):
