@@ -14,7 +14,7 @@ class WsLogStreamer(logging.StreamHandler):
         self.ui_websocket = ui_websocket
 
         if filter:
-            SafeRe.guard(filter):
+            SafeRe.guard(filter)
             self.filter_re = re.compile(".*" + filter)
         else:
             self.filter_re = None
