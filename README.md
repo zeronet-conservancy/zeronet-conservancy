@@ -146,7 +146,7 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - or: `docker compose up -d 0net-tor` for run 0net and tor in one container.
 (please check if these instructions are still accurate)
 
-#### Alternative one-liner (installing python dependencies globally)
+#### Alternative one-liner (by @ssdifnskdjfnsdjk) (installing python dependencies globally)
 
 Clone Github repository and install required Python modules. First
 edit zndir path at the begining of the command, to be the path where
