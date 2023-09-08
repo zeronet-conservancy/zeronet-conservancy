@@ -72,6 +72,40 @@ Following links relate to original ZeroNet:
 
 ## How to join
 
+### (unofficial) Windows OS build
+
+Download and extract .zip archive
+[zeronet-conservancy-0.7.10-unofficial-win64.zip](https://github.com/zeronet-conservancy/zeronet-conservancy/releases/download/v0.7.10/zeronet-conservancy-0.7.10-unofficial-win64.zip)
+
+### Building under Windows OS
+
+(These instructions are work-in-progress, please help us test it and improve it!)
+
+- install python from https://www.python.org/downloads/
+- install some windows compiler suitable for python , this proved to be the most difficult part for me as non-windows user (see here https://wiki.python.org/moin/WindowsCompilers and i'll link more references later)
+- [optionally to get latest dev version] install git from https://git-scm.com/downloads
+- [optionally to use tor for better connectivity and anonymization] install tor browser from https://www.torproject.org/download/
+- open git bash console
+- type/copypaste `git clone https://github.com/zeronet-conservancy/zeronet-conservancy.git` into command line
+- wait till git downloads latest dev version and continue in console
+- `cd zeronet-conservancy`
+- `python -m venv venv` (create virtual python environment)
+- `venv\Scripts\activate` (this activates the environment)
+- `pip install -r requirements.txt` (install python dependencies) (some users reported that this command doesn't successfully install requirements and only manual installation of dependencies one by one works)
+- (NOTE: if previous step fails, it most likely means you haven't installed c/c++ compiler successfully)
+- [optional for tor for better connectivity and anonymity] launch Tor Browser
+- (NOTE: windows might show a window saying it blocked access to internet for "security reasons" — you should allow the access)
+- `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151` (launch zeronet-conservancy!)
+- [for full tor anonymity launch this instead] `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151 --tor always`
+- navigate to http://127.0.0.1:43110 in your favourite browser!
+
+To build .exe
+
+- follow the same steps as above, but additionally
+- `pip install pyinstaller`
+- `pyinstaller -p src -p plugins --hidden-import merkletools --hidden-import lib.bencode_open --hidden-import Crypt.Crypt --hidden-import Db.DbQuery --hidden-import lib.subtl --hidden-import lib.subtl.subtl --hidden-import sockshandler --add-data "src;src" --add-data "plugins;plugins" --clean zeronet.py`
+- dist/zeronet should contain working zeronet.exe!
+
 ### Install from your distribution repository
 
 - NixOS: [zeronet-conservancy packages search](https://search.nixos.org/packages?from=0&size=50&sort=relevance&type=packages&query=zeronet-conservancy) (and see below)
@@ -121,7 +155,9 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - (optional) `pkg install tor`
  - (optional) run tor via `tor --ControlPort 9051 --CookieAuthentication 1` command (you can then open new session by swiping to the right)
 
-#### Building python dependencies, venv & running
+#### System dependencies and Zeronet-Conservancy
+
+##### Building python dependencies, venv & running
  - clone this repo (NOTE: on Android/Termux you should clone it into "home" folder of Termux, because virtual environment cannot live in `storage/`)
  - `python3 -m venv venv` (make python virtual environment, the last `venv` is just a name, if you use different you should replace it in later commands)
  - `source venv/bin/activate` (activate environment)
@@ -132,12 +168,18 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - `source venv/bin/activate`
  - `python3 zeronet.py`
 
-#### (alternatively) On NixOS
+##### (alternatively) Linux one-liner to clone this repo and install dependencies
+
+This one-liner Linux command can be used to install `zeronet-conservancy` and its dependencies and to keep it up to date. Edit `zndir` path at the begining of the command, to be the path where you want to store `zeronet-conservancy` and execute.
+
+`zndir="/home/user/myapps/zeronet" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin master; fi; cd "$zndir" && pip install -r requirements.txt|grep -v "already satisfied"; echo "Try to run: python3 $(pwd)/zeronet.py"`
+
+##### (alternatively) On NixOS
 - clone this repo
 - `nix-shell '<nixpkgs>' -A zeronet-conservancy` to enter shell with installed dependencies
 - `./zeronet.py`
 
-#### (alternatively) Build Docker image
+##### (alternatively) Build Docker image
 - build 0net image: `docker build -t 0net-conservancy:latest . -f Dockerfile`
 - or build 0net image with integrated tor: `docker build -t 0net-conservancy:latest . -f Dockerfile.integrated_tor`
 - and run it: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net-conservancy:latest`
@@ -146,55 +188,11 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - or: `docker compose up -d 0net-tor` for run 0net and tor in one container.
 (please check if these instructions are still accurate)
 
-#### Alternative one-liner (by @ssdifnskdjfnsdjk) (installing python dependencies globally)
-
-Clone Github repository and install required Python modules. First
-edit zndir path at the begining of the command, to be the path where
-you want to store `zeronet-conservancy`:
-
-`zndir="/home/user/myapps/zeronet" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin master; fi; cd "$zndir" && pip install -r requirements.txt|grep -v "already satisfied"; echo "Try to run: python3 $(pwd)/zeronet.py"`
-
-(This command can also be used to keep `zeronet-conservancy` up to date)
-
-#### Alternative script
+##### (alternatively) start-venv.sh script
  - after installing general dependencies and cloning repo (as above),
    run `start-venv.sh` which will create a virtual env for you and
    install python requirements
  - more convenience scripts to be added soon
-
-### (unofficial) Windows OS build
-
-Download and extract .zip archive
-[zeronet-conservancy-0.7.10-unofficial-win64.zip](https://github.com/zeronet-conservancy/zeronet-conservancy/releases/download/v0.7.10/zeronet-conservancy-0.7.10-unofficial-win64.zip)
-
-### Building under Windows OS
-
-(These instructions are work-in-progress, please help us test it and improve it!)
-
-- install python from https://www.python.org/downloads/
-- install some windows compiler suitable for python , this proved to be the most difficult part for me as non-windows user (see here https://wiki.python.org/moin/WindowsCompilers and i'll link more references later)
-- [optionally to get latest dev version] install git from https://git-scm.com/downloads
-- [optionally to use tor for better connectivity and anonymization] install tor browser from https://www.torproject.org/download/
-- open git bash console
-- type/copypaste `git clone https://github.com/zeronet-conservancy/zeronet-conservancy.git` into command line
-- wait till git downloads latest dev version and continue in console
-- `cd zeronet-conservancy`
-- `python -m venv venv` (create virtual python environment)
-- `venv\Scripts\activate` (this activates the environment)
-- `pip install -r requirements.txt` (install python dependencies) (some users reported that this command doesn't successfully install requirements and only manual installation of dependencies one by one works)
-- (NOTE: if previous step fails, it most likely means you haven't installed c/c++ compiler successfully)
-- [optional for tor for better connectivity and anonymity] launch Tor Browser
-- (NOTE: windows might show a window saying it blocked access to internet for "security reasons" — you should allow the access)
-- `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151` (launch zeronet-conservancy!)
-- [for full tor anonymity launch this instead] `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151 --tor always`
-- navigate to http://127.0.0.1:43110 in your favourite browser!
-
-To build .exe
-
-- follow the same steps as above, but additionally
-- `pip install pyinstaller`
-- `pyinstaller -p src -p plugins --hidden-import merkletools --hidden-import lib.bencode_open --hidden-import Crypt.Crypt --hidden-import Db.DbQuery --hidden-import lib.subtl --hidden-import lib.subtl.subtl --hidden-import sockshandler --add-data "src;src" --add-data "plugins;plugins" --clean zeronet.py`
-- dist/zeronet should contain working zeronet.exe!
 
 ## Current limitations
 
