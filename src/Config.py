@@ -71,7 +71,7 @@ class Config(object):
         elif this_file.endswith("/core/src/Config.py"):
             # Running as exe or source is at Application Support directory, put var files to outside of core dir
             start_dir = this_file.replace("/core/src/Config.py", "")
-        elif this_file.endswith("usr/share/zeronet/src/Config.py"):
+        elif not os.access(this_file.replace('/src/Config.py', ''), os.R_OK | os.W_OK):
             # Running from non-writeable location, e.g., AppImage
             start_dir = os.path.expanduser("~/ZeroNet")
         else:
