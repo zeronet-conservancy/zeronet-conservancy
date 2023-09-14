@@ -256,6 +256,7 @@ class Config(object):
         self.parser.add_argument('--ip_local', help='My local ips', default=ip_local, type=int, metavar='ip', nargs='*')
         self.parser.add_argument('--ip_external', help='Set reported external ip (tested on start if None)', metavar='ip', nargs='*')
         self.parser.add_argument('--offline', help='Disable network communication', action='store_true')
+        self.parser.add_argument('--disable_port_check', help='Disable checking port', action='store_true')
 
         self.parser.add_argument('--disable_udp', help='Disable UDP connections', action='store_true')
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
