@@ -158,7 +158,7 @@ class ContentFilterStorage(object):
             dir_inner_path = helper.getDirname(row["inner_path"])
             for file_name in site.storage.walk(dir_inner_path):
                 if action == "remove":
-                    site.storage.onUpdated(dir_inner_path + file_name, False)
+                    site.storage.delete(dir_inner_path + file_name)
                 else:
                     site.storage.onUpdated(dir_inner_path + file_name)
                 site.onFileDone(dir_inner_path + file_name)

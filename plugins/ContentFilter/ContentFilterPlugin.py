@@ -58,7 +58,7 @@ class UiWebsocketPlugin(object):
     def actionMuteAdd(self, to, auth_address, cert_user_id, reason):
         self.cmd(
             "prompt",
-            [_["Hide all content from <b>%s</b>?"] % html.escape(cert_user_id), reason, _["Mute"]],
+            [_["Remove all content from <b>%s</b>?"] % html.escape(cert_user_id), reason, _["Mute"]],
             lambda res: self.cbMuteAdd(to, auth_address, cert_user_id, res if res else reason)
         )
 
