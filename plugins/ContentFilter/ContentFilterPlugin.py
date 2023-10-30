@@ -58,7 +58,7 @@ class UiWebsocketPlugin(object):
     def actionMuteAdd(self, to, auth_address, cert_user_id, reason):
         self.cmd(
             "prompt",
-            [_["Hide all content from <b>%s</b>?"] % html.escape(cert_user_id), reason, _["Mute"]],
+            [_["Remove all content from <b>%s</b>?"] % html.escape(cert_user_id), reason, _["Mute"]],
             lambda res: self.cbMuteAdd(to, auth_address, cert_user_id, res if res else reason)
         )
 
@@ -216,6 +216,28 @@ class SiteStoragePlugin(object):
             filter_storage.includeUpdateAll()
         return super(SiteStoragePlugin, self).onUpdated(inner_path, file=file)
 
+@PluginManager.registerTo("Site")
+class SitePlugin(object):
+    def needFile(self, inner_path, update=False, blocking=True, peer=None, priority=0):
+        self.log.debug(f'needFile {inner_path}')
+        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        for auth_address in matches:
+            if filter_storage.isMuted(auth_address):
+                self.log.info(f'Mute match in Site.needFile: {auth_address}, ignoring {inner_path}')
+                return False
+        return super(SitePlugin, self).needFile(inner_path, update, blocking, peer, priority)
+
+@PluginManager.registerTo("FileRequest")
+class FileRequestPlugin:
+    def actionUpdate(self, params):
+        inner_path = params.get('inner_path', '')
+        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        for auth_address in matches:
+            if filter_storage.isMuted(auth_address):
+                self.log.info(f'Mute match in FileRequest.actionUpdate: {auth_address}, ignoring {inner_path}')
+                self.response({'ok': f'Thanks, file {inner_path} updated!'})
+                return False
+        return super(FileRequestPlugin, self).actionUpdate(params)
 
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):
