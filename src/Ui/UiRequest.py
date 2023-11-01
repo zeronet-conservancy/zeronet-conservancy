@@ -231,8 +231,12 @@ class UiRequest(object):
     # Return: <dict> Posted variables
     def getPosted(self):
         if self.env['REQUEST_METHOD'] == "POST":
+            try:
+                content_length = int(self.env.get('CONTENT_LENGTH', 0))
+            except ValueError:
+                content_length = 0
             return dict(urllib.parse.parse_qsl(
-                self.env['wsgi.input'].readline().decode()
+                self.env['wsgi.input'].read(content_length).decode()
             ))
         else:
             return {}
