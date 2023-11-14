@@ -49,7 +49,7 @@ class SecurityError(Exception):
 
 
 @PluginManager.acceptPlugins
-class UiRequest(object):
+class UiRequest:
 
     def __init__(self, server, get, env, start_response):
         if server:
@@ -99,8 +99,52 @@ class UiRequest(object):
     def resolveDomain(self, domain):
         return self.server.site_manager.resolveDomainCached(domain)
 
-    # Call the request handler function base on path
+    def isCrossOriginRequest(self):
+        """Prevent detecting sites on this 0net instance
+
+        In particular, we block non-user requests from other hosts as well as
+        cross-site
+        """
+
+        url = self.getRequestUrl()
+        fetch_mode = self.env.get('HTTP_SEC_FETCH_MODE')
+        origin = self.env.get('HTTP_ORIGIN')
+        referer = self.env.get('HTTP_REFERER')
+
+        # Allow all user-initiated requests
+        if fetch_mode == 'navigate':
+            return False
+
+        # Deny requests that cannot be traced
+        if not origin and not referer:
+            return True
+
+        # Deny requests from non-0net origins
+        if origin and not self.isSameHost(origin, url):
+            return True
+
+        # Allow non-site specific requests
+        if self.getRequestSite() == '/':
+            return False
+
+        # Deny cross site requests
+        if not self.isSameOrigin(referer, url):
+            return True
+
+        return False
+
     def route(self, path):
+        """Main routing
+
+        If no internal action is performed, calls action[Path] from plugins
+
+        This behaviour is not very flexible or easy to follow, so perhaps
+        we'd want something else..
+        """
+
+        if self.isCrossOriginRequest():
+            return self.error404()
+
         # Restict Ui access by ip
         if config.ui_restrict and self.env['REMOTE_ADDR'] not in config.ui_restrict:
             return self.error403(details=False)
@@ -284,37 +328,43 @@ class UiRequest(object):
             is_script_nonce_supported = True
         return is_script_nonce_supported
 
+    def getRequestSite(self):
+        """Return 0net site addr associated with current request
+
+        If request is site-agnostic, returns /
+        """
+        path = self.env["PATH_INFO"]
+        match = re.match(r'(/raw)?(?P<site>/1[a-zA-Z0-9]*)', path)
+        if not match:
+            match = re.match(r'(/raw)?/(?P<domain>[a-zA-Z0-9\.\-_]*)', path)
+            if match:
+                domain = match.group('domain')
+                if self.isDomain(domain):
+                    addr = self.resolveDomain(domain)
+                    return '/'+addr
+            return '/'
+        return match.group('site')
+
     # Send response headers
     def sendHeader(self, status=200, content_type="text/html", noscript=False, allow_ajax=False, script_nonce=None, extra_headers=[]):
-        url = self.getRequestUrl()
-        referer = self.env.get('HTTP_REFERER')
-        origin = self.env.get('HTTP_ORIGIN')
-        fetch_site = self.env.get('HTTP_SEC_FETCH_SITE')
-        fetch_mode = self.env.get('HTTP_SEC_FETCH_MODE')
-        not_same_ref = referer and not self.isSameHost(referer, url)
-        not_same_origin = origin and not self.isSameHost(origin, url)
-        cross_site_not_navigate = not referer and fetch_site == 'cross-site' and not fetch_mode == 'navigate'
-        if status != 404 and (not_same_ref or not_same_origin or cross_site_not_navigate):
-            # pretend nothing is here for third-party access
-            return self.error404()
-
         headers = {}
         headers["Version"] = "HTTP/1.1"
         headers["Connection"] = "Keep-Alive"
         headers["Keep-Alive"] = "max=25, timeout=30"
         headers["X-Frame-Options"] = "SAMEORIGIN"
+        headers["Referrer-Policy"] = "same-origin"
 
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
         elif script_nonce and self.isScriptNonceSupported():
-            headers["Content-Security-Policy"] = "default-src 'none'; script-src 'nonce-{0}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src 'self' blob:".format(script_nonce)
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src 'self' blob:"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
 
         if self.env["REQUEST_METHOD"] == "OPTIONS":
             # Allow json access
-            headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Cookie, Range"
+            headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Cookie, Range, Referer"
             headers["Access-Control-Allow-Credentials"] = "true"
 
         # Download instead of display file types that can be dangerous
@@ -624,15 +674,18 @@ class UiRequest(object):
         if not url_a or not url_b:
             return False
 
-        url_a = url_a.replace("/raw/", "/")
-        url_b = url_b.replace("/raw/", "/")
+        host_pattern = r'(?P<host>http[s]?://.*?)(/|$)'
 
-        origin_pattern = "http[s]{0,1}://(.*?/).*"
+        match_a = re.match(host_pattern, url_a)
+        match_b = re.match(host_pattern, url_b)
 
-        origin_a = re.sub(origin_pattern, "\\1", url_a)
-        origin_b = re.sub(origin_pattern, "\\1", url_b)
+        if not match_a or not match_b:
+            return False
 
-        return origin_a == origin_b
+        host_a = match_a.group('host')
+        host_b = match_b.group('host')
+
+        return host_a == host_b
 
     def isSameOrigin(self, url_a, url_b):
         """Check if 0net origin is the same"""
