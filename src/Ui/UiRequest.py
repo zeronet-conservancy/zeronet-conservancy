@@ -231,8 +231,12 @@ class UiRequest(object):
     # Return: <dict> Posted variables
     def getPosted(self):
         if self.env['REQUEST_METHOD'] == "POST":
+            try:
+                content_length = int(self.env.get('CONTENT_LENGTH', 0))
+            except ValueError:
+                content_length = 0
             return dict(urllib.parse.parse_qsl(
-                self.env['wsgi.input'].readline().decode()
+                self.env['wsgi.input'].read(content_length).decode()
             ))
         else:
             return {}
@@ -282,13 +286,23 @@ class UiRequest(object):
 
     # Send response headers
     def sendHeader(self, status=200, content_type="text/html", noscript=False, allow_ajax=False, script_nonce=None, extra_headers=[]):
+        url = self.getRequestUrl()
+        referer = self.env.get('HTTP_REFERER')
+        origin = self.env.get('HTTP_ORIGIN')
+        fetch_site = self.env.get('HTTP_SEC_FETCH_SITE')
+        fetch_mode = self.env.get('HTTP_SEC_FETCH_MODE')
+        not_same_ref = referer and not self.isSameHost(referer, url)
+        not_same_origin = origin and not self.isSameHost(origin, url)
+        cross_site_not_navigate = not referer and fetch_site == 'cross-site' and not fetch_mode == 'navigate'
+        if status != 404 and (not_same_ref or not_same_origin or cross_site_not_navigate):
+            # pretend nothing is here for third-party access
+            return self.error404()
+
         headers = {}
         headers["Version"] = "HTTP/1.1"
         headers["Connection"] = "Keep-Alive"
         headers["Keep-Alive"] = "max=25, timeout=30"
         headers["X-Frame-Options"] = "SAMEORIGIN"
-        if content_type != "text/html" and self.env.get("HTTP_REFERER") and self.isSameOrigin(self.getReferer(), self.getRequestUrl()):
-            headers["Access-Control-Allow-Origin"] = "*"  # Allow load font files from css
 
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
@@ -398,8 +412,9 @@ class UiRequest(object):
             if self.isWebSocketRequest():
                 return self.error403("WebSocket request not allowed to load wrapper")  # No websocket
 
-            if "text/html" not in self.env.get("HTTP_ACCEPT", ""):
-                return self.error403("Invalid Accept header to load wrapper: %s" % self.env.get("HTTP_ACCEPT", ""))
+            http_accept = self.env.get("HTTP_ACCEPT", "")
+            if "text/html" not in http_accept and "*/*" not in http_accept:
+                return self.error403(f"Invalid Accept header to load wrapper: {http_accept}")
             if "prefetch" in self.env.get("HTTP_X_MOZ", "") or "prefetch" in self.env.get("HTTP_PURPOSE", ""):
                 return self.error403("Prefetch not allowed to load wrapper")
 
@@ -604,7 +619,23 @@ class UiRequest(object):
         self.server.add_nonces.append(add_nonce)
         return add_nonce
 
+    def isSameHost(self, url_a, url_b):
+        """Check if urls have the same HOST (to prevent leaking resources to clearnet sites)"""
+        if not url_a or not url_b:
+            return False
+
+        url_a = url_a.replace("/raw/", "/")
+        url_b = url_b.replace("/raw/", "/")
+
+        origin_pattern = "http[s]{0,1}://(.*?/).*"
+
+        origin_a = re.sub(origin_pattern, "\\1", url_a)
+        origin_b = re.sub(origin_pattern, "\\1", url_b)
+
+        return origin_a == origin_b
+
     def isSameOrigin(self, url_a, url_b):
+        """Check if 0net origin is the same"""
         if not url_a or not url_b:
             return False
 

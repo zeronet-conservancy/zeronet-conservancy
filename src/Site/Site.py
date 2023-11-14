@@ -87,7 +87,11 @@ class Site(object):
     # Load site settings from data/sites.json
     def loadSettings(self, settings=None):
         if not settings:
-            settings = json.load(open("%s/sites.json" % config.data_dir)).get(self.address)
+            try:
+                settings = json.load(open(f'{config.data_dir}/sites.json')).get(self.address)
+            except Exception as err:
+                logging.error(f'Error loading {config.data_dir}/sites.json: {err}')
+                settings = {}
         if settings:
             self.settings = settings
             if "cache" not in settings:

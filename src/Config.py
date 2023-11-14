@@ -9,185 +9,13 @@ import logging.handlers
 import stat
 import time
 
-trackers = [
-    'zero://188.242.242.224:26474',
-    'zero://2001:19f0:8001:1d2f:5400:2ff:fe83:5bf7:23141',
-    'zero://200:1e7a:5100:ef7c:6fa4:d8ae:b91c:a74:15441',
-    'zero://23.184.48.134:15441',
-    'zero://57hzgtu62yzxqgbvgxs7g3lfck3za4zrda7qkskar3tlak5recxcebyd.onion:15445',
-    'zero://6i54dd5th73oelv636ivix6sjnwfgk2qsltnyvswagwphub375t3xcad.onion:15441',
-    'zero://f2hnjbggc3c2u2apvxdugirnk6bral54ibdoul3hhvu7pd4fso5fq3yd.onion:15441',
-    'zero://gugt43coc5tkyrhrc3esf6t6aeycvcqzw7qafxrjpqbwt4ssz5czgzyd.onion:15441',
-    'zero://k5w77dozo3hy5zualyhni6vrh73iwfkaofa64abbilwyhhd3wgenbjqd.onion:15441',
-    'zero://ow7in4ftwsix5klcbdfqvfqjvimqshbm2o75rhtpdnsderrcbx74wbad.onion:15441',
-    'zero://pn4q2zzt2pw4nk7yidxvsxmydko7dfibuzxdswi6gu6ninjpofvqs2id.onion:15441',
-    'zero://skdeywpgm5xncpxbbr4cuiip6ey4dkambpanog6nruvmef4f3e7o47qd.onion:15441',
-    'zero://wlxav3szbrdhest4j7dib2vgbrd7uj7u7rnuzg22cxbih7yxyg2hsmid.onion:15441',
-    'zero://zy7wttvjtsijt5uwmlar4yguvjc2gppzbdj4v6bujng6xwjmkdg7uvqd.onion:15441',
-    'http://bt.okmp3.ru:2710/announce',
-    'http://fxtt.ru:80/announce',
-    'http://incine.ru:6969/announce',
-    'http://moeweb.pw:6969/announce',
-    'http://open.acgnxtracker.com:80/announce',
-    'http://t.acg.rip:6699/announce',
-    'http://t.nyaatracker.com:80/announce',
-    'http://t.overflow.biz:6969/announce',
-    'http://tracker.files.fm:6969/announce',
-    'http://tracker.mywaifu.best:6969/announce',
-    'http://tracker.vrpnet.org:6969/announce',
-    'http://vps02.net.orel.ru:80/announce',
-    'udp://960303.xyz:6969/announce',
-    'udp://aarsen.me:6969/announce',
-    'udp://astrr.ru:6969/announce',
-    'udp://ben.kerbertools.xyz:6969/announce',
-    'udp://bt1.archive.org:6969/announce',
-    'udp://bt2.archive.org:6969/announce',
-    'udp://bt.ktrackers.com:6666/announce',
-    'udp://bubu.mapfactor.com:6969/announce',
-    'udp://c.ns.cluefone.com:6969/announce',
-    'udp://cutscloud.duckdns.org:6969/announce',
-    'udp://download.nerocloud.me:6969/announce',
-    'udp://epider.me:6969/announce',
-    'udp://exodus.desync.com:6969/announce',
-    'udp://htz3.noho.st:6969/announce',
-    'udp://ipv4.tracker.harry.lu:80/announce',
-    'udp://laze.cc:6969/announce',
-    'udp://mail.artixlinux.org:6969/announce',
-    'udp://mirror.aptus.co.tz:6969/announce',
-    'udp://moonburrow.club:6969/announce',
-    'udp://movies.zsw.ca:6969/announce',
-    'udp://mts.tvbit.co:6969/announce',
-    'udp://new-line.net:6969/announce',
-    'udp://open.demonii.com:1337/announce',
-    'udp://open.stealth.si:80/announce',
-    'udp://opentracker.i2p.rocks:6969/announce',
-    'udp://p4p.arenabg.com:1337/announce',
-    'udp://psyco.fr:6969/announce',
-    'udp://public.publictracker.xyz:6969/announce',
-    'udp://rep-art.ynh.fr:6969/announce',
-    'udp://run.publictracker.xyz:6969/announce',
-    'udp://sanincode.com:6969/announce',
-    'udp://slicie.icon256.com:8000/announce',
-    'udp://tamas3.ynh.fr:6969/announce',
-    'udp://thouvenin.cloud:6969/announce',
-    'udp://torrentclub.space:6969/announce',
-    'udp://tracker.0x.tf:6969/announce',
-    'udp://tracker1.bt.moack.co.kr:80/announce',
-    'udp://tracker.4.babico.name.tr:3131/announce',
-    'udp://tracker.altrosky.nl:6969/announce',
-    'udp://tracker.artixlinux.org:6969/announce',
-    'udp://tracker.farted.net:6969/announce',
-    'udp://tracker.jonaslsa.com:6969/announce',
-    'udp://tracker.joybomb.tw:6969/announce',
-    'udp://tracker.monitorit4.me:6969/announce',
-    'udp://tracker.opentrackr.org:1337/announce',
-    'udp://tracker.pomf.se:80/announce',
-    'udp://tracker.publictracker.xyz:6969/announce',
-    'udp://tracker.srv00.com:6969/announce',
-    'udp://tracker.tcp.exchange:6969/announce',
-    'udp://tracker.theoks.net:6969/announce',
-    'udp://transkaroo.joustasie.net:6969/announce',
-    'udp://uploads.gamecoast.net:6969/announce',
-    'udp://v2.iperson.xyz:6969/announce',
-    'udp://vibe.sleepyinternetfun.xyz:1738/announce',
-    'udp://www.skynetcenter.me:6969/announce',
-    'udp://www.torrent.eu.org:451/announce',
-    'zero://194.5.98.39:15441',
-    'zero://145.239.95.38:15441',
-    'zero://178.128.34.249:26117',
-    'zero://217.18.217.143:39288',
-    'zero://83.246.141.203:22207',
-    'zero://syncronite.loki:15441',
-    'zero://2a05:dfc1:4000:1e00::a:15441',
-    'zero://2400:6180:100:d0::8fd:8001:21697',
-    'zero://2001:19f0:8001:1d2f:5400:2ff:fe83:5bf7:30530',
-    'zero://73pyhfwfwsrhfw76knkjfnw6o3lk53zfo7hlxdmxbj75sjcnol5cioad.onion:15442',
-    'zero://fzlzmxuz2bust72cuy5g4w6d62tx624xcjaupf2kp7ffuitbiniy2hqd.onion:15441',
-    'zero://rlcjomszyitxpwv7kzopmqgzk3bdpsxeull4c3s6goszkk6h2sotfoad.onion:15441',
-    'zero://tqmo2nffqo4qc5jgmz3me5eri3zpgf3v2zciufzmhnvznjve5c3argad.onion:15441',
-    'http://107.189.31.134:6969/announce',
-    'http://119.28.71.45:8080/announce',
-    'http://129.146.193.240:6699/announce',
-    'http://159.69.65.157:6969/announce',
-    'http://163.172.29.130:80/announce',
-    'http://185.130.47.2:6969/announce',
-    'http://45.67.35.111:6969/announce',
-    'http://61.222.178.254:6969/announce',
-    'http://83.31.30.182:6969/announce',
-    'http://93.158.213.92:1337/announce',
-    'http://95.217.167.10:6969/announce',
-    'udp://102.223.180.235:6969/announce',
-    'udp://103.122.21.50:6969/announce',
-    'udp://104.131.98.232:6969/announce',
-    'udp://104.244.77.87:6969/announce',
-    'udp://107.189.11.58:6969/announce',
-    'udp://107.189.31.134:6969/announce',
-    'udp://139.144.68.88:6969/announce',
-    'udp://149.28.239.70:6969/announce',
-    'udp://15.204.205.14:6969/announce',
-    'udp://156.234.201.18:80/announce',
-    'udp://158.101.161.60:3131/announce',
-    'udp://163.172.29.130:80/announce',
-    'udp://167.99.185.219:6969/announce',
-    'udp://176.31.250.174:6969/announce',
-    'udp://176.56.4.238:6969/announce',
-    'udp://178.32.222.98:3391/announce',
-    'udp://184.105.151.166:6969/announce',
-    'udp://185.102.219.163:6969/announce',
-    'udp://185.181.60.155:80/announce',
-    'udp://185.217.199.21:6969/announce',
-    'udp://185.44.82.25:1337/announce',
-    'udp://185.68.21.244:6969/announce',
-    'udp://192.3.165.191:6969/announce',
-    'udp://192.3.165.198:6969/announce',
-    'udp://192.95.46.115:6969/announce',
-    'udp://193.176.158.162:6969/announce',
-    'udp://193.37.214.12:6969/announce',
-    'udp://193.42.111.57:9337/announce',
-    'udp://198.100.149.66:6969/announce',
-    'udp://20.100.205.229:6969/announce',
-    'udp://207.241.226.111:6969/announce',
-    'udp://207.241.231.226:6969/announce',
-    'udp://209.141.59.16:6969/announce',
-    'udp://212.237.53.230:6969/announce',
-    'udp://23.153.248.2:6969/announce',
-    'udp://23.254.228.89:6969/announce',
-    'udp://37.187.111.136:6969/announce',
-    'udp://37.27.4.53:6969/announce',
-    'udp://38.7.201.142:6969/announce',
-    'udp://45.154.253.6:6969/announce',
-    'udp://45.63.30.114:6969/announce',
-    'udp://45.9.60.30:6969/announce',
-    'udp://46.38.238.105:6969/announce',
-    'udp://49.12.76.8:8080/announce',
-    'udp://5.102.159.190:6969/announce',
-    'udp://5.196.89.204:6969/announce',
-    'udp://51.15.79.209:6969/announce',
-    'udp://51.159.54.68:6666/announce',
-    'udp://51.68.174.87:6969/announce',
-    'udp://51.81.222.188:6969/announce',
-    'udp://52.58.128.163:6969/announce',
-    'udp://61.222.178.254:6969/announce',
-    'udp://77.73.69.230:6969/announce',
-    'udp://83.102.180.21:80/announce',
-    'udp://83.31.30.182:6969/announce',
-    'udp://85.206.172.159:6969/announce',
-    'udp://85.239.33.28:6969/announce',
-    'udp://86.57.161.157:6969/announce',
-    'udp://91.216.110.52:451/announce',
-    'udp://93.158.213.92:1337/announce',
-    'udp://94.103.87.87:6969/announce',
-    'udp://95.216.74.39:6969/announce',
-    'udp://95.31.11.224:6969/announce',
-]
-
 class Config(object):
 
     def __init__(self, argv):
-        self.version = "0.7.9+"
+        self.version = "0.7.10+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5110
+        self.rev = 5121
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
@@ -243,7 +71,7 @@ class Config(object):
         elif this_file.endswith("/core/src/Config.py"):
             # Running as exe or source is at Application Support directory, put var files to outside of core dir
             start_dir = this_file.replace("/core/src/Config.py", "")
-        elif this_file.endswith("usr/share/zeronet/src/Config.py"):
+        elif not os.access(this_file.replace('/src/Config.py', ''), os.R_OK | os.W_OK):
             # Running from non-writeable location, e.g., AppImage
             start_dir = os.path.expanduser("~/ZeroNet")
         else:
@@ -309,6 +137,8 @@ class Config(object):
                             default=15441, nargs='?')
         action.add_argument('--inner_path', help='Content.json you want to publish (default: content.json)',
                             default="content.json", metavar="inner_path")
+        action.add_argument('--recursive', help="Whether to publish all of site's content.json. "
+                            "Overrides --inner_path. (default: false)", action='store_true', dest='recursive')
 
         # SiteVerify
         action = self.subparsers.add_parser("siteVerify", help='Verify site files using sha512: address')
@@ -319,6 +149,10 @@ class Config(object):
         action.add_argument('address', help='Site address')
         action.add_argument('cmd', help='API command name')
         action.add_argument('parameters', help='Parameters of the command', nargs='?')
+
+        # Import bundled sites
+        action = self.subparsers.add_parser("importBundle", help='Import sites from a .zip bundle')
+        action.add_argument('bundle', help='Path to a data bundle')
 
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
@@ -422,12 +256,15 @@ class Config(object):
         self.parser.add_argument('--ip_local', help='My local ips', default=ip_local, type=int, metavar='ip', nargs='*')
         self.parser.add_argument('--ip_external', help='Set reported external ip (tested on start if None)', metavar='ip', nargs='*')
         self.parser.add_argument('--offline', help='Disable network communication', action='store_true')
+        self.parser.add_argument('--disable_port_check', help='Disable checking port', action='store_true')
 
         self.parser.add_argument('--disable_udp', help='Disable UDP connections', action='store_true')
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
-        self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=trackers, metavar='protocol://address', nargs='*')
-        self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', metavar='path', nargs='*')
+        self.parser.add_argument('--bootstrap_url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
+        self.parser.add_argument('--disable_bootstrap', help='Disable downloading bootstrap information from clearnet', action='store_true')
+        self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
+        self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers_proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
         self.parser.add_argument('--use_libsecp256k1', help='Use Libsecp256k1 liblary for speedup', type='bool', choices=[True, False], default=True)
         self.parser.add_argument('--use_openssl', help='Use OpenSSL liblary for speedup', type='bool', choices=[True, False], default=True)
@@ -796,10 +633,6 @@ class Config(object):
                 os.chmod(self.log_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             except Exception as err:
                 print("Can't change permission of %s: %s" % (self.log_dir, err))
-
-        # Make warning hidden from console
-        logging.WARNING = 15  # Don't display warnings if not in debug mode
-        logging.addLevelName(15, "WARNING")
 
         logging.getLogger('').name = "-"  # Remove root prefix
 

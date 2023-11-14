@@ -99,3 +99,16 @@ def verify(data, valid_address, sign, lib_verify=None):  # Verify data using add
         return sign_address in valid_address
     else:  # One possible address
         return sign_address == valid_address
+
+def isValidAddress(addr):
+    '''Check if provided address is valid bitcoin address'''
+    if addr[0] != '1':
+        # no support for new-style addrs
+        return False
+    from base58 import b58decode
+    bs = b58decode(addr)
+    main = bs[:-4]
+    checksum = bs[-4:]
+    h1 = hashlib.sha256(main).digest()
+    h2 = hashlib.sha256(h1).digest()
+    return h2[:4] == checksum

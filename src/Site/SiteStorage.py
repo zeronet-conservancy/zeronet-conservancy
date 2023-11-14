@@ -452,19 +452,21 @@ class SiteStorage(object):
                     bad_files.append(file_inner_path)
                     continue
 
+                error = None
                 if quick_check:
                     ok = os.path.getsize(file_path) == content["files"][file_relative_path]["size"]
                     if not ok:
-                        err = "Invalid size"
+                        error = "Invalid size"
                 else:
                     try:
                         ok = self.site.content_manager.verifyFile(file_inner_path, open(file_path, "rb"))
                     except Exception as err:
+                        error = err
                         ok = False
 
                 if not ok:
                     back["num_file_invalid"] += 1
-                    self.log.debug("[INVALID] %s: %s" % (file_inner_path, err))
+                    self.log.debug("[INVALID] %s: %s" % (file_inner_path, error))
                     if add_changed or content.get("cert_user_id"):  # If updating own site only add changed user files
                         bad_files.append(file_inner_path)
 

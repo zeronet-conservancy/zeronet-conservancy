@@ -3,6 +3,7 @@ import sys
 import stat
 import time
 import logging
+from util.compat import *
 
 startup_errors = []
 def startupError(msg):
@@ -34,24 +35,79 @@ def load_config():
 
 load_config()
 
-def init_dirs():
-    if not os.path.isdir(config.data_dir):
-        os.mkdir(config.data_dir)
-        try:
-            os.chmod(config.data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        except Exception as err:
-            startupError("Can't change permission of %s: %s" % (config.data_dir, err))
+def importBundle(bundle):
+    from zipfile import ZipFile
+    from Crypt.CryptBitcoin import isValidAddress
+    import json
 
-    sites_json = f"{config.data_dir}/sites.json"
+    sites_json_path = f"{config.data_dir}/sites.json"
+    try:
+        with open(sites_json_path) as f:
+            sites = json.load(f)
+    except Exception as err:
+        sites = {}
+
+    with ZipFile(bundle) as zf:
+        all_files = zf.namelist()
+        top_files = list(set(map(lambda f: f.split('/')[0], all_files)))
+        if len(top_files) == 1 and not isValidAddress(top_files[0]):
+            prefix = top_files[0]+'/'
+        else:
+            prefix = ''
+        top_2 = list(set(filter(lambda f: len(f)>0,
+                                map(lambda f: removeprefix(f, prefix).split('/')[0], all_files))))
+        for d in top_2:
+            if isValidAddress(d):
+                logging.info(f'unpack {d} into {config.data_dir}')
+                for fname in filter(lambda f: f.startswith(prefix+d) and not f.endswith('/'), all_files):
+                    tgt = config.data_dir + '/' + removeprefix(fname, prefix)
+                    logging.info(f'-- {fname} --> {tgt}')
+                    info = zf.getinfo(fname)
+                    info.filename = tgt
+                    zf.extract(info)
+                logging.info(f'add site {d}')
+                sites[d] = {}
+            else:
+                logging.info(f'Warning: unknown file in a bundle: {prefix+d}')
+    with open(sites_json_path, 'w') as f:
+        json.dump(sites, f)
+
+def init_dirs():
+    data_dir = config.data_dir
+    if not os.path.isdir(data_dir):
+        os.mkdir(data_dir)
+        try:
+            os.chmod(data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
+        except Exception as err:
+            startupError(f"Can't change permission of {data_dir}: {err}")
+
+        # download latest bootstrap bundle
+        if not config.disable_bootstrap and not config.offline:
+            import requests
+            from io import BytesIO
+
+            print(f'fetching {config.bootstrap_url}')
+            response = requests.get(config.bootstrap_url)
+            if response.status_code != 200:
+                startupError(f"Cannot load bootstrap bundle (response status: {response.status_code})")
+            url = response.text
+            print(f'got {url}')
+            response = requests.get(url)
+            if response.status_code < 200 or response.status_code >= 300:
+                startupError(f"Cannot load boostrap bundle (response status: {response.status_code})")
+            importBundle(BytesIO(response.content))
+
+    sites_json = f"{data_dir}/sites.json"
     if not os.path.isfile(sites_json):
         with open(sites_json, "w") as f:
             f.write("{}")
-    users_json = f"{config.data_dir}/users.json"
+    users_json = f"{data_dir}/users.json"
     if not os.path.isfile(users_json):
         with open(users_json, "w") as f:
             f.write("{}")
 
 # TODO: GET RID OF TOP-LEVEL CODE!!!
+config.initConsoleLogger()
 
 try:
     init_dirs()
@@ -73,7 +129,7 @@ if config.action == "main":
         r = proc.wait()
         sys.exit(r)
 
-config.initLogging()
+config.initLogging(console_logging=False)
 
 # Debug dependent configuration
 from Debug import DebugHook
@@ -272,18 +328,19 @@ class Actions(object):
         for content_inner_path in site.content_manager.contents:
             s = time.time()
             logging.info("Verifing %s signature..." % content_inner_path)
-            err = None
+            error = None
             try:
                 file_correct = site.content_manager.verifyFile(
                     content_inner_path, site.storage.open(content_inner_path, "rb"), ignore_same=False
                 )
             except Exception as err:
                 file_correct = False
+                error = err
 
             if file_correct is True:
                 logging.info("[OK] %s (Done in %.3fs)" % (content_inner_path, time.time() - s))
             else:
-                logging.error("[ERROR] %s: invalid file: %s!" % (content_inner_path, err))
+                logging.error("[ERROR] %s: invalid file: %s!" % (content_inner_path, error))
                 input("Continue?")
                 bad_files += content_inner_path
 
@@ -414,6 +471,9 @@ class Actions(object):
         else:
             return res
 
+    def importBundle(self, bundle):
+        importBundle(bundle)
+
     def getWebsocket(self, site):
         import websocket
 
@@ -422,47 +482,61 @@ class Actions(object):
         ws = websocket.create_connection(ws_address)
         return ws
 
-    def sitePublish(self, address, peer_ip=None, peer_port=15441, inner_path="content.json"):
-        global file_server
-        from Site.Site import Site
+    def sitePublish(self, address, peer_ip=None, peer_port=15441, inner_path="content.json", recursive=False):
         from Site import SiteManager
-        from File import FileServer  # We need fileserver to handle incoming file requests
-        from Peer import Peer
-        file_server = FileServer()
-        site = SiteManager.site_manager.get(address)
         logging.info("Loading site...")
+        site = SiteManager.site_manager.get(address)
         site.settings["serving"] = True  # Serving the site even if its disabled
+
+        if not recursive:
+            inner_paths = [inner_path]
+        else:
+            inner_paths = list(site.content_manager.contents.keys())
 
         try:
             ws = self.getWebsocket(site)
+
+        except Exception as err:
+            self.sitePublishFallback(site, peer_ip, peer_port, inner_paths, err)
+
+        else:
             logging.info("Sending siteReload")
             self.siteCmd(address, "siteReload", inner_path)
 
-            logging.info("Sending sitePublish")
-            self.siteCmd(address, "sitePublish", {"inner_path": inner_path, "sign": False})
+            for inner_path in inner_paths:
+                logging.info(f"Sending sitePublish for {inner_path}")
+                self.siteCmd(address, "sitePublish", {"inner_path": inner_path, "sign": False})
             logging.info("Done.")
+            ws.close()
 
-        except Exception as err:
-            logging.info("Can't connect to local websocket client: %s" % err)
-            logging.info("Creating FileServer....")
-            file_server_thread = gevent.spawn(file_server.start, check_sites=False)  # Dont check every site integrity
-            time.sleep(0.001)
+    def sitePublishFallback(self, site, peer_ip, peer_port, inner_paths, err):
+        if err is not None:
+            logging.info(f"Can't connect to local websocket client: {err}")
+        logging.info("Publish using fallback mechanism. "
+                     "Note that there might be not enough time for peer discovery, "
+                     "but you can specify target peer on command line.")
+        logging.info("Creating FileServer....")
+        file_server_thread = gevent.spawn(file_server.start, check_sites=False)  # Dont check every site integrity
+        time.sleep(0.001)
 
-            # Started fileserver
-            file_server.portCheck()
-            if peer_ip:  # Announce ip specificed
-                site.addPeer(peer_ip, peer_port)
-            else:  # Just ask the tracker
-                logging.info("Gathering peers from tracker")
-                site.announce()  # Gather peers
+        # Started fileserver
+        file_server.portCheck()
+        if peer_ip:  # Announce ip specificed
+            site.addPeer(peer_ip, peer_port)
+        else:  # Just ask the tracker
+            logging.info("Gathering peers from tracker")
+            site.announce()  # Gather peers
+
+        for inner_path in inner_paths:
             published = site.publish(5, inner_path)  # Push to peers
-            if published > 0:
-                time.sleep(3)
-                logging.info("Serving files (max 60s)...")
-                gevent.joinall([file_server_thread], timeout=60)
-                logging.info("Done.")
-            else:
-                logging.info("No peers found, sitePublish command only works if you already have visitors serving your site")
+
+        if published > 0:
+            time.sleep(3)
+            logging.info("Serving files (max 60s)...")
+            gevent.joinall([file_server_thread], timeout=60)
+            logging.info("Done.")
+        else:
+            logging.info("No peers found, sitePublish command only works if you already have visitors serving your site")
 
     # Crypto commands
     def cryptPrivatekeyToAddress(self, privatekey=None):
