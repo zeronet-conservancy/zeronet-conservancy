@@ -74,28 +74,30 @@ def importBundle(bundle):
 
 def init_dirs():
     data_dir = config.data_dir
-    if not os.path.isdir(data_dir):
+    has_data_dir = os.path.isdir(data_dir)
+    need_bootstrap = not config.disable_bootstrap and (not has_data_dir or not os.path.isfile(f'{data_dir}/sites.json')) and not config.offline
+
+    if not has_data_dir:
         os.mkdir(data_dir)
         try:
             os.chmod(data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
         except Exception as err:
             startupError(f"Can't change permission of {data_dir}: {err}")
 
-        # download latest bootstrap bundle
-        if not config.disable_bootstrap and not config.offline:
-            import requests
-            from io import BytesIO
+    if need_bootstrap:
+        import requests
+        from io import BytesIO
 
-            print(f'fetching {config.bootstrap_url}')
-            response = requests.get(config.bootstrap_url)
-            if response.status_code != 200:
-                startupError(f"Cannot load bootstrap bundle (response status: {response.status_code})")
-            url = response.text
-            print(f'got {url}')
-            response = requests.get(url)
-            if response.status_code < 200 or response.status_code >= 300:
-                startupError(f"Cannot load boostrap bundle (response status: {response.status_code})")
-            importBundle(BytesIO(response.content))
+        print(f'fetching {config.bootstrap_url}')
+        response = requests.get(config.bootstrap_url)
+        if response.status_code != 200:
+            startupError(f"Cannot load bootstrap bundle (response status: {response.status_code})")
+        url = response.text
+        print(f'got {url}')
+        response = requests.get(url)
+        if response.status_code < 200 or response.status_code >= 300:
+            startupError(f"Cannot load boostrap bundle (response status: {response.status_code})")
+        importBundle(BytesIO(response.content))
 
     sites_json = f"{data_dir}/sites.json"
     if not os.path.isfile(sites_json):
