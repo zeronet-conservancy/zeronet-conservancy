@@ -18,7 +18,7 @@ def grad(n):
 def fancy_greet(version):
     from rich.console import Console
     from rich.text import Text
-    zc_msg = f'''
+    zc_msg = fr'''
 |||   . . _  _._|_     _. . . _ .__ _.. _.  . __.. _  __.  .
 |||  //\|/ |/_| |  == /  / \|/ |(  /_||/ |  | __||/ |/   \_|
 |||  \_/|  |\_  |.    \__\_/|  |_) \_ |   \/ |__||  |\__ _/

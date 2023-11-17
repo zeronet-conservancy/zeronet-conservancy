@@ -64,7 +64,7 @@ def pow2(x, p):
 
 
 def inv(z):
-    """$= z^{-1} \mod q$, for z != 0"""
+    r"""$= z^{-1} \mod q$, for z != 0"""
     # Adapted from curve25519_athlon.c in djb's Curve25519.
     z2 = z * z % q                                # 2
     z9 = pow2(z2, 2) * z % q                      # 9
