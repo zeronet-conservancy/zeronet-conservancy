@@ -1,29 +1,31 @@
 version: '3'
+
 services:
   tor:
     tty: true
     stdin_open: true
     build:
-      context: .
-      dockerfile: Dockerfile.tor
+      context: ..
+      dockerfile: docker/tor.Dockerfile
     networks:
       - 0net-network
-    ports:
-      - "9050:9050"
-      - "9051:9051"
     environment: &tor-environments
+      # since we are using tor internally, password doesn't really matter
       TOR_CONTROL_PASSWD: some_password
       TOR_SOCKS_PORT: 9050
       TOR_CONTROL_PORT: 9051
-  0net:
+
+  0net-conservancy:
     tty: true
     stdin_open: true
     build:
-      context: .
+      context: ..
+      dockerfile: docker/Dockerfile
     networks:
       - 0net-network
     volumes:
-      - 0net-data:/app/data
+      # NOTE: this refers to docker/data..
+      - ./data:/home/service-0net/data
     ports:
       - "26552:26552"
       - "43110:43110"
@@ -32,20 +34,21 @@ services:
     environment:
       TOR_ENABLED: enable
       <<: *tor-environments
+
   0net-tor:
     tty: true
     stdin_open: true
     build:
-      context: .
-      dockerfile: Dockerfile.integrated_tor
+      context: ..
+      dockerfile: docker/znctor.Dockerfile
     networks:
       - 0net-network
     volumes:
-      - 0net-data:/app/data
+      # NOTE: this refers to docker/data..
+      - ./data:/home/service-0net/data
     ports:
       - "26552:26552"
       - "43110:43110"
-volumes:
-  0net-data:
+
 networks:
   0net-network:

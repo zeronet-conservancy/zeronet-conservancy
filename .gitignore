@@ -19,6 +19,7 @@ __pycache__/
 
 # Data dir
 data/*
+docker/data/
 *.db
 
 # Virtualenv
