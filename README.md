@@ -97,7 +97,7 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 
 ##### Apt-based (debian, ubuntu, etc)
  - `sudo apt update`
- - `sudo apt install pkg-config libffi-dev python3-pip python3-venv python3-dev build-essential`
+ - `sudo apt install git pkg-config libffi-dev python3-pip python3-venv python3-dev build-essential libtool`
 
 ##### Red Hat and Fedora based
  - `yum install epel-release -y 2>/dev/null`

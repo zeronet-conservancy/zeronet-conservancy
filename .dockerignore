@@ -1,3 +1,5 @@
 venv
-Dockerfile*
+docker
 data
+__pycahce__
+log
