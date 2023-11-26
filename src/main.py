@@ -55,12 +55,12 @@ def importBundle(bundle):
         else:
             prefix = ''
         top_2 = list(set(filter(lambda f: len(f)>0,
-                                map(lambda f: removeprefix(f, prefix).split('/')[0], all_files))))
+                                map(lambda f: f.removeprefix(prefix).split('/')[0], all_files))))
         for d in top_2:
             if isValidAddress(d):
                 logging.info(f'unpack {d} into {config.data_dir}')
                 for fname in filter(lambda f: f.startswith(prefix+d) and not f.endswith('/'), all_files):
-                    tgt = config.data_dir + '/' + removeprefix(fname, prefix)
+                    tgt = config.data_dir + '/' + fname.removeprefix(prefix)
                     logging.info(f'-- {fname} --> {tgt}')
                     info = zf.getinfo(fname)
                     info.filename = tgt
