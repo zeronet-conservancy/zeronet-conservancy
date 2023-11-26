@@ -48,21 +48,21 @@ class SiteManager(object):
 
         for address, settings in data.items():
             if address not in self.sites:
-                if os.path.isfile("%s/%s/content.json" % (config.data_dir, address)):
+                if os.path.isfile(f"{config.data_dir}/{address}/content.json"):
                     # Root content.json exists, try load site
                     s = time.time()
                     try:
                         site = Site(address, settings=settings)
                         site.content_manager.contents.get("content.json")
                     except Exception as err:
-                        self.log.debug("Error loading site %s: %s" % (address, err))
+                        self.log.debug(f"Error loading site {address}: {err}")
                         continue
                     self.sites[address] = site
-                    self.log.debug("Loaded site %s in %.3fs" % (address, time.time() - s))
+                    self.log.debug(f"Loaded site {address} in {time.time() - s:.3f}s")
                     added += 1
                 elif startup:
                     # No site directory, start download
-                    self.log.debug("Found new site in sites.json: %s" % address)
+                    self.log.debug(f"Found new site in sites.json: {address}")
                     sites_need.append([address, settings])
                     added += 1
 
@@ -73,19 +73,19 @@ class SiteManager(object):
             for address in list(self.sites.keys()):
                 if address not in address_found:
                     del(self.sites[address])
-                    self.log.debug("Removed site: %s" % address)
+                    self.log.debug(f"Removed site: {address}")
 
             # Remove orpan sites from contentdb
             content_db = ContentDb.getContentDb()
             for row in content_db.execute("SELECT * FROM site").fetchall():
                 address = row["address"]
                 if address not in self.sites and address not in address_found:
-                    self.log.info("Deleting orphan site from content.db: %s" % address)
+                    self.log.info(f"Deleting orphan site from content.db: {address}")
 
                     try:
                         content_db.execute("DELETE FROM site WHERE ?", {"address": address})
                     except Exception as err:
-                        self.log.error("Can't delete site %s from content_db: %s" % (address, err))
+                        self.log.error(f"Can't delete site {address} from content_db: {err}")
 
                     if address in content_db.site_ids:
                         del content_db.site_ids[address]
@@ -96,7 +96,7 @@ class SiteManager(object):
         for address, settings in sites_need:
             gevent.spawn(self.need, address, settings=settings)
         if added:
-            self.log.info("Added %s sites in %.3fs" % (added, time.time() - load_s))
+            self.log.info(f"Added {added} sites in {time.time() - load_s:.3f}s")
 
     def saveDelayed(self):
         RateLimit.callAsync("Save sites.json", allowed_again=5, func=self.save)
@@ -121,7 +121,7 @@ class SiteManager(object):
 
         s = time.time()
         if data:
-            helper.atomicWrite("%s/sites.json" % config.data_dir, helper.jsonDumps(data).encode("utf8"))
+            helper.atomicWrite(f"{config.data_dir}/sites.json", helper.jsonDumps(data).encode("utf8"))
         else:
             self.log.debug("Save error: No data")
         time_write = time.time() - s
@@ -130,7 +130,7 @@ class SiteManager(object):
         for address, site in self.list().items():
             site.settings["cache"] = {}
 
-        self.log.debug("Saved sites in %.2fs (generate: %.2fs, write: %.2fs)" % (time.time() - s, time_generate, time_write))
+        self.log.debug(f"Saved sites in {time.time() - s:.2f}s (generate: {time_generate:.2f}s, write: {time_write:.2f}s)")
 
     def saveTimer(self):
         while 1:
@@ -163,7 +163,7 @@ class SiteManager(object):
                 address = address_resolved
 
         if not self.loaded:  # Not loaded yet
-            self.log.debug("Loading site: %s)..." % address)
+            self.log.debug(f"Loading site: {address}...")
             self.load()
         site = self.sites.get(address)
 
@@ -179,7 +179,7 @@ class SiteManager(object):
 
         if not self.isAddress(address):
             return False  # Not address: %s % address
-        self.log.debug("Added new site: %s" % address)
+        self.log.debug(f"Added new site: {address}")
         config.loadTrackersFile()
         site = Site(address, settings=settings)
         self.sites[address] = site
@@ -204,7 +204,7 @@ class SiteManager(object):
 
     def delete(self, address):
         self.sites_changed = int(time.time())
-        self.log.debug("Deleted site: %s" % address)
+        self.log.debug(f"Deleted site: {address}")
         del(self.sites[address])
         # Delete from sites.json
         self.save()
