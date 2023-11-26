@@ -19,6 +19,7 @@ from Worker import WorkerManager
 from Debug import Debug
 from Content import ContentManager
 from .SiteStorage import SiteStorage
+from .SiteDbStorage import SiteDbStorage
 from Crypt import CryptHash
 from util import helper
 from util import Diff
@@ -30,9 +31,9 @@ from . import SiteManager
 
 
 @PluginManager.acceptPlugins
-class Site(object):
-
-    def __init__(self, address, allow_create=True, settings=None):
+class Site:
+    """Site object"""
+    def __init__(self, address, allow_create=True, settings=None, use_db_storage=False):
         self.address = str(re.sub("[^A-Za-z0-9]", "", address))  # Make sure its correct address
         self.address_hash = hashlib.sha256(self.address.encode("ascii")).digest()
         # sha1 is used for clearnet trackers
@@ -55,7 +56,11 @@ class Site(object):
 
         self.connection_server = None
         self.loadSettings(settings)  # Load settings from sites.json
-        self.storage = SiteStorage(self, allow_create=allow_create)  # Save and load site files
+        # Save and load site files
+        if use_db_storage:
+            self.storage = SiteDbStorage(self, allow_create=allow_create)
+        else:
+            self.storage = SiteStorage(self, allow_create=allow_create)
         self.content_manager = ContentManager(self)
         self.content_manager.loadContents()  # Load content.json files
         if "main" in sys.modules:  # import main has side-effects, breaks tests
