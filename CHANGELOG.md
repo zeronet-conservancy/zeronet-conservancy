@@ -1,4 +1,5 @@
 ### zeronet-conservancy 0.7.10+
+- ipython-based repl via --repl for debug/interactive development (@caryoscelus)
 
 ### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
 prepared by @caryoscelus

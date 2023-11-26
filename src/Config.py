@@ -307,6 +307,7 @@ class Config(object):
         self.parser.add_argument('--postgrest_api', help='PostgREST API point', metavar='ip:port', default='127.0.0.1:3000')
         self.parser.add_argument('--postgrest_db', help='PostgRES(T) DB name', default='test')
 
+        self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
         self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 
@@ -586,7 +587,7 @@ class Config(object):
             format = '%(name)s %(message)s'
 
         if self.console_log_level == "default":
-            if self.silent:
+            if self.silent or self.repl:
                 level = logging.ERROR
             elif self.debug:
                 level = logging.DEBUG
