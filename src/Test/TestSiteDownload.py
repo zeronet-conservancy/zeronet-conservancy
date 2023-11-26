@@ -361,7 +361,7 @@ class TestSiteDownload:
         assert len(site_temp.bad_files) == 1
 
         # Update file
-        data_original = site.storage.open("data/data.json").read()
+        data_original = site.storage.read("data/data.json")
         data_new = data_original.replace(b'"ZeroBlog"', b'"UpdatedZeroBlog"')
         assert data_original != data_new
 
