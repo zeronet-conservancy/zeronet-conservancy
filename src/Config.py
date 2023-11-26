@@ -15,7 +15,7 @@ class Config(object):
         self.version = "0.7.10+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5121
+        self.rev = 5130
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
@@ -304,6 +304,7 @@ class Config(object):
         self.parser.add_argument('--tor_hs_limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
         self.parser.add_argument('--tor_hs_port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
+        self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
         self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 
@@ -583,7 +584,7 @@ class Config(object):
             format = '%(name)s %(message)s'
 
         if self.console_log_level == "default":
-            if self.silent:
+            if self.silent or self.repl:
                 level = logging.ERROR
             elif self.debug:
                 level = logging.DEBUG
