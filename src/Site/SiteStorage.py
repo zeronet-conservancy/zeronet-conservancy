@@ -5,6 +5,7 @@ import json
 import time
 import errno
 from collections import defaultdict
+from collections.abc import Iterable
 
 import sqlite3
 import gevent.event
@@ -26,7 +27,9 @@ thread_pool_fs_batch = ThreadPool.ThreadPool(1, name="FS batch")
 
 
 @PluginManager.acceptPlugins
-class SiteStorage(object):
+class SiteStorage:
+    """Handles storage for a site, including DBifying of .json data
+    """
     def __init__(self, site, allow_create=True):
         self.site = site
         self.directory = f'{config.data_dir}/{self.site.address}'  # Site data diretory
@@ -41,9 +44,10 @@ class SiteStorage(object):
             if allow_create:
                 os.mkdir(self.directory)  # Create directory if not found
             else:
-                raise Exception("Directory not exists: %s" % self.directory)
+                raise Exception(f'Directory does not exist: {self.directory}')
 
     def getDbFile(self):
+        """Returns file path to this site's db if present"""
         if self.db:
             return self.db.schema["db_file"]
         else:
@@ -53,8 +57,11 @@ class SiteStorage(object):
             else:
                 return False
 
-    # Create new databaseobject  with the site's schema
     def openDb(self, close_idle=False):
+        """Create new databaseobject  with the site's schema
+
+        Internally used only
+        """
         schema = self.getDbSchema()
         db_path = self.getPath(schema["db_file"])
         return Db(schema, db_path, close_idle=close_idle)
@@ -66,6 +73,7 @@ class SiteStorage(object):
         self.db = None
 
     def getDbSchema(self):
+        """Internal use only"""
         try:
             self.site.needFile("dbschema.json")
             schema = self.loadJson("dbschema.json")
@@ -74,6 +82,7 @@ class SiteStorage(object):
         return schema
 
     def loadDb(self):
+        """Internal use only"""
         self.log.debug("No database, waiting for dbschema.json...")
         self.site.needFile("dbschema.json", priority=3)
         self.log.debug("Got dbschema.json")
@@ -101,6 +110,7 @@ class SiteStorage(object):
     # Return db class
     @util.Noparallel()
     def getDb(self):
+        """Internal use only"""
         if self.event_db_busy:  # Db not ready for queries
             self.log.debug("Wating for db...")
             self.event_db_busy.get()  # Wait for event
@@ -109,6 +119,7 @@ class SiteStorage(object):
         return self.db
 
     def updateDbFile(self, inner_path, file=None, cur=None):
+        """Internal use only"""
         path = self.getPath(inner_path)
         if cur:
             db = cur.db
@@ -119,6 +130,7 @@ class SiteStorage(object):
     # Return possible db files for the site
     @thread_pool_fs_read.wrap
     def getDbFiles(self):
+        """Internal use only"""
         found = 0
         for content_inner_path, content in self.site.content_manager.contents.items():
             # content.json file itself
@@ -141,10 +153,10 @@ class SiteStorage(object):
                 if found % 100 == 0:
                     time.sleep(0.001)  # Context switch to avoid UI block
 
-    # Rebuild sql cache
     @util.Noparallel()
     @thread_pool_fs_batch.wrap
     def rebuildDb(self, delete_db=True, reason="Unknown"):
+        """Rebuild sql cache"""
         self.log.info("Rebuilding db (reason: %s)..." % reason)
         self.has_db = self.isFile("dbschema.json")
         if not self.has_db:
@@ -220,8 +232,8 @@ class SiteStorage(object):
 
         return True
 
-    # Execute sql query or rebuild on dberror
     def query(self, query, params=None):
+        """Execute sql query or rebuild on dberror"""
         if not query.strip().upper().startswith("SELECT"):
             raise Exception("Only SELECT query supported")
 
@@ -240,6 +252,7 @@ class SiteStorage(object):
         return res
 
     def ensureDir(self, inner_path):
+        """Internal use only"""
         try:
             os.makedirs(self.getPath(inner_path))
         except OSError as err:
@@ -249,21 +262,22 @@ class SiteStorage(object):
                 raise err
         return True
 
-    # Open file object
     def open(self, inner_path, mode="rb", create_dirs=False, **kwargs):
+        """Open file object"""
         file_path = self.getPath(inner_path)
         if create_dirs:
             file_inner_dir = os.path.dirname(inner_path)
             self.ensureDir(file_inner_dir)
         return open(file_path, mode, **kwargs)
 
-    # Open file object
     @thread_pool_fs_read.wrap
     def read(self, inner_path, mode="rb"):
+        """Open & read the whole file"""
         return open(self.getPath(inner_path), mode).read()
 
     @thread_pool_fs_write.wrap
     def writeThread(self, inner_path, content):
+        """Internal use only"""
         file_path = self.getPath(inner_path)
         # Create dir if not exist
         self.ensureDir(os.path.dirname(inner_path))
@@ -279,13 +293,13 @@ class SiteStorage(object):
                 with open(file_path, "wb") as file:
                     file.write(content)
 
-    # Write content to file
     def write(self, inner_path, content):
+        """Write content to file"""
         self.writeThread(inner_path, content)
         self.onUpdated(inner_path)
 
-    # Remove file from filesystem
     def delete(self, inner_path):
+        """Remove file from filesystem"""
         file_path = self.getPath(inner_path)
         os.unlink(file_path)
         self.onUpdated(inner_path, file=False)
@@ -308,9 +322,9 @@ class SiteStorage(object):
         if rename_err:
             raise rename_err
 
-    # List files from a directory
     @thread_pool_fs_read.wrap
-    def walk(self, dir_inner_path, ignore=None):
+    def walk(self, dir_inner_path: str, ignore=None) -> Iterable[str]:
+        """List files from a directory"""
         directory = self.getPath(dir_inner_path)
         for root, dirs, files in os.walk(directory):
             root = root.replace("\\", "/")
@@ -341,14 +355,14 @@ class SiteStorage(object):
                     dirs_filtered.append(dir_name)
                 dirs[:] = dirs_filtered
 
-    # list directories in a directory
     @thread_pool_fs_read.wrap
     def list(self, dir_inner_path):
+        """list directories in a directory"""
         directory = self.getPath(dir_inner_path)
         return os.listdir(directory)
 
-    # Site content updated
     def onUpdated(self, inner_path, file=None):
+        """This should be called to notify Storage that site content has been updated"""
         # Update Sql cache
         should_load_to_db = inner_path.endswith(".json") or inner_path.endswith(".json.gz")
         if inner_path == "dbschema.json":
@@ -366,39 +380,35 @@ class SiteStorage(object):
                 self.log.error("Json %s load error: %s" % (inner_path, Debug.formatException(err)))
                 self.closeDb("Json load error")
 
-    # Load and parse json file
     @thread_pool_fs_read.wrap
     def loadJson(self, inner_path):
+        """Load and parse json file"""
         with self.open(inner_path, "r", encoding="utf8") as file:
             return json.load(file)
 
-    # Write formatted json file
     def writeJson(self, inner_path, data):
-        # Write to disk
+        """Write formatted json file"""
         self.write(inner_path, helper.jsonDumps(data).encode("utf8"))
 
-    # Get file size
     def getSize(self, inner_path):
+        """Get file size"""
         path = self.getPath(inner_path)
         try:
             return os.path.getsize(path)
         except Exception:
             return 0
 
-    # File exist
     def isFile(self, inner_path):
         return os.path.isfile(self.getPath(inner_path))
 
-    # File or directory exist
-    def isExists(self, inner_path):
-        return os.path.exists(self.getPath(inner_path))
-
-    # Dir exist
     def isDir(self, inner_path):
         return os.path.isdir(self.getPath(inner_path))
 
-    # Security check and return path of site's file
     def getPath(self, inner_path):
+        """Return absolute path to site's file or directory
+
+        Performs check for ".." to avoid unathorized access
+        """
         inner_path = inner_path.replace("\\", "/")  # Windows separator fix
         if not inner_path:
             return self.directory
@@ -408,8 +418,8 @@ class SiteStorage(object):
 
         return "%s/%s" % (self.directory, inner_path)
 
-    # Get site dir relative path
     def getInnerPath(self, path):
+        """Given absolute path, return site's relative path (aka inner_path)"""
         if path == self.directory:
             inner_path = ""
         else:
@@ -419,8 +429,8 @@ class SiteStorage(object):
                 raise Exception("File not allowed: %s" % path)
         return inner_path
 
-    # Verify all files sha512sum using content.json
     def verifyFiles(self, quick_check=False, add_optional=False, add_changed=True):
+        """Verify all files sha512sum using content.json"""
         bad_files = []
         back = defaultdict(int)
         back["bad_files"] = bad_files
@@ -522,8 +532,8 @@ class SiteStorage(object):
         time.sleep(0.001)  # Context switch to avoid gevent hangs
         return back
 
-    # Check and try to fix site files integrity
     def updateBadFiles(self, quick_check=True):
+        """Check and try to fix site files integrity"""
         s = time.time()
         res = self.verifyFiles(
             quick_check,
@@ -537,9 +547,9 @@ class SiteStorage(object):
                 self.site.bad_files[bad_file] = 1
         self.log.debug("Checked files in %.2fs... Found bad files: %s, Quick:%s" % (time.time() - s, len(bad_files), quick_check))
 
-    # Delete site's all file
     @thread_pool_fs_batch.wrap
     def deleteFiles(self):
+        """Delete all site files"""
         site_title = self.site.content_manager.contents.get("content.json", {}).get("title", self.site.address)
         message_id = "delete-%s" % self.site.address
         self.log.debug("Deleting files from content.json (title: %s)..." % site_title)
