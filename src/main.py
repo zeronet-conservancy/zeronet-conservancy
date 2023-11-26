@@ -3,7 +3,6 @@ import sys
 import stat
 import time
 import logging
-from util.compat import *
 
 startup_errors = []
 def startupError(msg):
