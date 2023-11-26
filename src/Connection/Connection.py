@@ -288,8 +288,8 @@ class Connection(object):
             bytes_num = self.unpacker._fb_buf_n - self.unpacker._fb_buf_o
         return bytes_num
 
-    # Stream socket directly to a file
     def handleStream(self, message, buff):
+        """Stream incoming bytes from this socket into a file"""
         stream_bytes_left = message["stream_bytes"]
         file = self.waiting_streams[message["to"]]
 
@@ -438,8 +438,12 @@ class Connection(object):
         self.event_connected = None
         self.handshake_time = time.time()
 
-    # Handle incoming message
     def handleMessage(self, message):
+        """Handle incoming message (except stream messages)
+
+        This takes care of handshake and responses to our messages are
+        being sent to be handled at self.waiting_requests
+        """
         cmd = message["cmd"]
 
         self.last_message_time = time.time()
@@ -569,8 +573,9 @@ class Connection(object):
         self.server.stat_sent["raw_file"]["bytes"] += bytes_sent
         return True
 
-    # Create and send a request to peer
     def request(self, cmd, params={}, stream_to=None):
+        """Create and send a request to peer"""
+
         # Last command sent more than 10 sec ago, timeout
         if self.waiting_requests and self.protocol == "v2" and time.time() - max(self.last_req_time, self.last_recv_time) > 10:
             self.close("Request %s timeout: %.3fs" % (self.last_cmd_sent, time.time() - self.last_send_time))
