@@ -19,6 +19,9 @@ services:
     tty: true
     stdin_open: true
     image: postgres:16-alpine
+    # debug only
+    ports:
+      - "127.0.0.1:5432:5432"
     volumes:
       - ./postgres-data:/var/lib/postgresql/data
     environment: &postgres-environment
