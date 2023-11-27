@@ -245,7 +245,7 @@ class Actions:
         if stopped < len(launched_greenlets):
             gevent.killall(launched_greenlets, exception=KeyboardInterrupt)
 
-        logging.info("All server stopped")
+        logging.info("All servers stopped")
 
     # Site commands
 
