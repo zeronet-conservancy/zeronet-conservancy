@@ -304,8 +304,8 @@ class Config(object):
         self.parser.add_argument('--tor_hs_limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
         self.parser.add_argument('--tor_hs_port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
-        self.parser.add_argument('--postgrest_api', help='PostgREST API point', metavar='ip:port', default='127.0.0.1:3000')
-        self.parser.add_argument('--postgrest_db', help='PostgRES(T) DB name', default='test')
+        self.parser.add_argument('--postgrest_api', help='PostgREST API point', metavar='protocol://ip:port', default='http://127.0.0.1:3000')
+        self.parser.add_argument('--postgrest_db', help='PostgRES(T) DB name', default='riza0')
 
         self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
         self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
