@@ -2,6 +2,12 @@ from collections.abc import Iterable
 
 from Config import config
 
+from rich import print
+
+import json
+import requests
+from lib.canonicjson.Canonicalize import canonicalize
+
 class DbError(Exception):
     """Exceptions related to working with new style DB"""
     pass
@@ -13,7 +19,7 @@ def pathToHash(inner_path):
     if inner_path[0] == '/':
         inner_path = inner_path[1:]
     if '/' in inner_path:
-        raise FileNotFoundError("Our db <-> fs schema does not allow directories")
+        raise FileNotFoundError(f"Our db <-> fs schema does not allow directories (while processing {inner_path})")
     if not inner_path.endswith('.json'):
         raise FileNotFoundError(f"File {inner_path} isn't json file and thus not found")
     maybe_base32_signature = inner_path.removesuffix('.json')
@@ -33,11 +39,27 @@ def dbQuery(author=None, signature=None):
         filter_by['signature'] = f'eq.{signature}'
     return requests.get(f'{config.postgrest_api}/{config.postgrest_db}', params=filter_by).json()
 
+def dbInsert(author, signature, data):
+    """Add data record into db"""
+    print('>>> dbInsert')
+    params = {
+        "author": author,
+        "signature": signature,
+        "data": data
+    }
+    resp = requests.post(f'{config.postgrest_api}/riza0', data=params)
+    print(resp, resp.text)
+
 def contentJsonRead(author):
     obj = requests.get(f'{config.postgrest_api}/contentjson', params={'author': f'eq.{author}'}).json()
     if len(obj) != 1:
         raise DbError(f'Bad content.json! Expecting 1, but got {len(obj)} results')
     return obj[0]['content']
+
+def contentJsonWrite(author, data):
+    print('>>> contentJsonWrite')
+    resp = requests.post(f'{config.postgrest_api}/contentjson', data={'author': author, 'content': data})
+    print(resp, resp.text)
 
 class SiteDbStorage:
     """Alternative way of storing sites, directly in DB
@@ -49,7 +71,6 @@ class SiteDbStorage:
     subject to change later.
     """
     def __init__(self, site, allow_create=True):
-        # self.site = site
         self.log = site.log
         self.author = site.address
         self.allow_create = allow_create
@@ -66,6 +87,10 @@ class SiteDbStorage:
         if len(results) > 1:
             raise DbError(f'Too many results when looking for unique record @ {signature}. Is your DB sane?')
         return results[0]
+
+    def hasRecord(self, signature):
+        results = dbQuery(author=self.author, signature=signature)
+        return len(results) > 0
 
     #######################################
     ## SiteStorage-compat deprecated API ##
@@ -111,8 +136,8 @@ class SiteDbStorage:
                 return res.encode('utf8')
             return res
 
-        obj = self.getRecord(self.pathToHash(inner_path))['data']
-        result = json.canonicalize(obj)
+        obj = self.getRecord(pathToHash(inner_path))['data']
+        result = canonicalize(obj)
         if 'b' in mode:
             return result.encode('utf-8')
         return result
@@ -124,14 +149,25 @@ class SiteDbStorage:
             raise DbError('SiteDbStorage opened read-only, but write() attempted')
 
         if inner_path.removeprefix('/') == 'content.json':
-            raise NotImplementedError('????')
+            return contentJsonWrite(self.author, content)
 
-        raise NotImplementedError('????')
-        # if not isCanonical(content):
-            # raise DbError('Attempt to write non-canonical JSON')
+        signature = pathToHash(inner_path)
+
+        try:
+            content_body = json.load(content)
+        except AttributeError:
+            content_body = content
+        data = json.loads(content_body)
+
+        if content_body != canonicalize(data):
+            print(content_body)
+            print('=====')
+            print(canonicalize(data))
+            raise DbError('Attempt to write non-canonical JSON')
         # if exists and not same content:
             # raise DbError('Record already exists, but is different. Something is utterly broken here :(')
-        dbInsert(signature, content)
+        
+        dbInsert(self.author, signature, content_body)
 
     def delete(self, inner_path):
         """Compatibility with SiteStorage, ignored"""
@@ -165,7 +201,7 @@ class SiteDbStorage:
         if inner_path.removeprefix('/') == 'content.json':
             return json.loads(contentJsonRead(self.author))
 
-        return self.getRecord(self.pathToHash(inner_path))['data']
+        return self.getRecord(pathToHash(inner_path))['data']
 
     def writeJson(self, inner_path, data):
         """Compatibility with SiteStorage. Write JSON to path
@@ -176,8 +212,11 @@ class SiteDbStorage:
         self.deprecated('Deprecated SiteStorage compat method called: writeJson')
         if inner_path.removeprefix('/') != 'content.json':
             raise DbError('SiteDbStorage.writeJson is only implemented for writing content.json')
+        # it generally doesn't matter to old style 0net sites how content.json is formatted
+        # but we'll stick with tradition
         data = helper.jsonDumps(data).encode('utf8')
-        raise NotImplementedError('???')
+
+        contentJsonWrite(self.author, data)
 
     def getSize(self, inner_path):
         """Compatibility with SiteStorage. Returns size of a record in bytes"""
@@ -185,6 +224,9 @@ class SiteDbStorage:
         # TODO: we should probably cache size 'cause it is going to be used in
         # calculating how much space data from a particular author is occupying
         return len(self.read(inner_path))
+
+    def isFile(self, inner_path):
+        return inner_path == 'content.json' or self.hasRecord(pathToHash(inner_path))
 
     def getPath(self, inner_path):
         """Compatibility with SiteStorage. Throws exception as we don't store files"""
