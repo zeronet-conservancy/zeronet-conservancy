@@ -55,7 +55,7 @@ class Site:
         self.websockets = []  # Active site websocket connections
 
         self.connection_server = None
-        self.loadSettings(settings)  # Load settings from sites.json
+        self._loadSettings(settings)  # Load settings from sites.json
         # Save and load site files
         if use_db_storage:
             self.storage = SiteDbStorage(self, allow_create=allow_create)
@@ -89,42 +89,41 @@ class Site:
     def __repr__(self):
         return "<%s>" % self.__str__()
 
-    # Load site settings from data/sites.json
-    def loadSettings(self, settings=None):
-        if not settings:
-            try:
-                settings = json.load(open(f'{config.data_dir}/sites.json')).get(self.address)
-            except Exception as err:
-                logging.error(f'Error loading {config.data_dir}/sites.json: {err}')
-                settings = {}
-        if settings:
-            self.settings = settings
-            if "cache" not in settings:
-                settings["cache"] = {}
-            if "size_files_optional" not in settings:
-                settings["size_optional"] = 0
-            if "optional_downloaded" not in settings:
-                settings["optional_downloaded"] = 0
-            if "downloaded" not in settings:
-                settings["downloaded"] = settings.get("added")
-            self.bad_files = settings["cache"].get("bad_files", {})
-            settings["cache"]["bad_files"] = {}
-            # Give it minimum 10 tries after restart
-            for inner_path in self.bad_files:
-                self.bad_files[inner_path] = min(self.bad_files[inner_path], 20)
-        else:
-            self.settings = {
-                "own": False, "serving": True, "permissions": [], "cache": {"bad_files": {}}, "size_files_optional": 0,
-                "added": int(time.time()), "downloaded": None, "optional_downloaded": 0, "size_optional": 0
-            }  # Default
-            if config.download_optional == "auto":
-                self.settings["autodownloadoptional"] = True
+    def _loadSettings(self, extra_settings=None):
+        """Load site settings from data/sites.json and/or use default settings"""
+        extra_settings = extra_settings or {}
+        settings = None
+        try:
+            settings = json.load(open(f'{config.data_dir}/sites.json')).get(self.address)
+        except Exception as err:
+            logging.error(f'Error loading {config.data_dir}/sites.json: {err}')
+        settings = settings or {}
+        default_settings = {
+            "own": False,
+            "serving": True,
+            "permissions": [],
+            "cache": {"bad_files": {}},
+            "size_files_optional": 0,
+            "added": int(time.time()),
+            "downloaded": None,
+            "optional_downloaded": 0,
+            "size_optional": 0,
+            "size": 0,
+        }
+        self.settings = default_settings | settings | extra_settings
+        if config.download_optional == "auto":
+            self.settings["autodownloadoptional"] = True
+
+        self.bad_files = self.settings["cache"].get("bad_files", {})
+        self.settings["cache"]["bad_files"] = {}
+
+        # Give it minimum 10 tries after restart
+        for inner_path in self.bad_files:
+            self.bad_files[inner_path] = min(self.bad_files[inner_path], 20)
 
         # Add admin permissions according to user settings
         if self.address in config.admin_pages and "ADMIN" not in self.settings["permissions"]:
             self.settings["permissions"].append("ADMIN")
-
-        return
 
     # Save site settings to data/sites.json
     def saveSettings(self):
@@ -136,10 +135,7 @@ class Site:
         SiteManager.site_manager.saveDelayed()
 
     def isServing(self):
-        if config.offline:
-            return False
-        else:
-            return self.settings["serving"]
+        return not config.offline and self.settings["serving"]
 
     def getSettingsCache(self):
         back = {}
