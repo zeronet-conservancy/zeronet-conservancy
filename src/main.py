@@ -157,6 +157,7 @@ if config.msgpack_purepython:
     os.environ["MSGPACK_PUREPYTHON"] = "True"
 
 # Fix console encoding on Windows
+# TODO: check if this is still required
 if sys.platform.startswith("win"):
     import subprocess
     try:
@@ -193,7 +194,7 @@ elif config.bind:
 
 
 @PluginManager.acceptPlugins
-class Actions(object):
+class Actions:
     def call(self, function_name, kwargs):
         logging.info("Version: %s r%s, Python %s, Gevent: %s" % (config.version, config.rev, sys.version, gevent.__version__))
 
@@ -201,6 +202,11 @@ class Actions(object):
         back = func(**kwargs)
         if back:
             print(back)
+
+    def ipythonThread(self):
+        import IPython
+        IPython.embed()
+        self.gevent_quit.set()
 
     # Default action: Start serving UiServer and FileServer
     def main(self):
@@ -221,7 +227,25 @@ class Actions(object):
         CryptConnection.manager.removeCerts()
 
         logging.info("Starting servers....")
-        gevent.joinall([gevent.spawn(ui_server.start), gevent.spawn(file_server.start)])
+
+        import threading
+        self.gevent_quit = threading.Event()
+        launched_greenlets = [gevent.spawn(ui_server.start), gevent.spawn(file_server.start)]
+
+        # if --repl, start ipython thread
+        # FIXME: Unfortunately this leads to exceptions on exit so use with care
+        if config.repl:
+            threading.Thread(target=self.ipythonThread).start()
+
+        stopped = 0
+        # Process all greenlets in main thread
+        while not self.gevent_quit.is_set() and stopped < len(launched_greenlets):
+            stopped += len(gevent.joinall(launched_greenlets, timeout=1))
+
+        # Exited due to repl, so must kill greenlets
+        if stopped < len(launched_greenlets):
+            gevent.killall(launched_greenlets, exception=KeyboardInterrupt)
+
         logging.info("All server stopped")
 
     # Site commands
