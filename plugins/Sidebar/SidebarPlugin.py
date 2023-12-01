@@ -49,7 +49,7 @@ class UiRequestPlugin(object):
             if ext == "js":
                 yield _.translateData(open(plugin_media_file).read()).encode("utf8")
             else:
-                for part in self.actionFile(plugin_media_file, send_header=False):
+                for part in self.staticFile(plugin_media_file, send_header=False):
                     yield part
         elif path.startswith("/uimedia/globe/"):  # Serve WebGL globe files
             file_name = re.match(".*/(.*)", path).group(1)

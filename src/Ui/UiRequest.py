@@ -1,6 +1,7 @@
 import time
 import re
 import os
+import stat
 import mimetypes
 import json
 import html
@@ -194,7 +195,7 @@ class UiRequest:
         if path == "/":
             return self.actionIndex()
         elif path in ("/favicon.ico", "/apple-touch-icon.png"):
-            return self.actionFile("src/Ui/media/img/%s" % path)
+            return self.staticFile(f"src/Ui/media/img/{path}")
         # Internal functions
         elif "/ZeroNet-Internal/" in path:
             path = re.sub(".*?/ZeroNet-Internal/", "/", path)
@@ -739,17 +740,10 @@ class UiRequest:
 
         address = path_parts["address"]
 
-        file_path = "%s/%s/%s" % (config.data_dir, address, path_parts["inner_path"])
-
-        if (config.debug or config.merge_media) and file_path.split("/")[-1].startswith("all."):
-            # If debugging merge *.css to all.css and *.js to all.js
-            site = self.server.sites.get(address)
-            if site and site.settings["own"]:
-                from Debug import DebugMedia
-                DebugMedia.merge(file_path)
+        inner_path = path_parts["inner_path"]
 
         if not address or address == ".":
-            return self.error403(path_parts["inner_path"])
+            return self.error403(inner_path)
 
         header_allow_ajax = False
         if self.get.get("ajax_key"):
@@ -759,11 +753,16 @@ class UiRequest:
             else:
                 return self.error403("Invalid ajax_key")
 
-        file_size = helper.getFilesize(file_path)
+        site = SiteManager.site_manager.get(path_parts['request_address'])
+        if site is not None:
+            file_size = site.storage.getSize(inner_path)
+        else:
+            file_size = None
 
         if file_size is not None:
-            return self.actionFile(file_path, header_length=header_length, header_noscript=header_noscript, header_allow_ajax=header_allow_ajax, file_size=file_size, path_parts=path_parts)
+            return self.actionFile(site, inner_path, header_length=header_length, header_noscript=header_noscript, header_allow_ajax=header_allow_ajax, file_size=file_size, path_parts=path_parts)
 
+        # BROKEN for db storage
         elif os.path.isdir(file_path):  # If this is actually a folder, add "/" and redirect
             if path_parts["inner_path"]:
                 return self.actionRedirect("./%s/" % path_parts["inner_path"].split("/")[-1])
@@ -777,12 +776,13 @@ class UiRequest:
             site = SiteManager.site_manager.need(address)
 
             if path_parts["inner_path"].endswith("favicon.ico"):  # Default favicon for all sites
-                return self.actionFile("src/Ui/media/img/favicon.ico")
+                return self.staticFile("src/Ui/media/img/favicon.ico")
 
             result = site.needFile(path_parts["inner_path"], priority=15)  # Wait until file downloads
             if result:
-                file_size = helper.getFilesize(file_path)
-                return self.actionFile(file_path, header_length=header_length, header_noscript=header_noscript, header_allow_ajax=header_allow_ajax, file_size=file_size, path_parts=path_parts)
+                inner_path = path_parts['inner_path']
+                file_size = site.storage.getSize(inner_path)
+                return self.actionFile(site, inner_path, header_length=header_length, header_noscript=header_noscript, header_allow_ajax=header_allow_ajax, file_size=file_size, path_parts=path_parts)
             else:
                 self.log.debug("File not found: %s" % path_parts["inner_path"])
                 return self.error404(path)
@@ -792,16 +792,12 @@ class UiRequest:
         match = re.match("/uimedia/(?P<inner_path>.*)", path)
         if match:  # Looks like a valid path
             file_path = "src/Ui/media/%s" % match.group("inner_path")
-            allowed_dir = os.path.abspath("src/Ui/media")  # Only files within data/sitehash allowed
+            allowed_dir = os.path.abspath("src/Ui/media")  # Only files within data/sitehash allowed (???)
             if "../" in file_path or not os.path.dirname(os.path.abspath(file_path)).startswith(allowed_dir):
                 # File not in allowed path
                 return self.error403()
             else:
-                if (config.debug or config.merge_media) and match.group("inner_path").startswith("all."):
-                    # If debugging merge *.css to all.css and *.js to all.js
-                    from Debug import DebugMedia
-                    DebugMedia.merge(file_path)
-                return self.actionFile(file_path, header_length=False)  # Dont's send site to allow plugins append content
+                return self.staticFile(file_path, header_length=False)  # Dont's send site to allow plugins append content
 
         else:  # Bad url
             return self.error400()
@@ -812,7 +808,10 @@ class UiRequest:
         if post["add_nonce"] not in self.server.add_nonces:
             return self.error403("Add nonce error.")
         self.server.add_nonces.remove(post["add_nonce"])
-        SiteManager.site_manager.need(post["address"])
+        settings = {}
+        if post['use_db_storage']:
+            settings['use_db_storage'] = True
+        SiteManager.site_manager.need(post["address"], **settings)
         return self.actionRedirect(post["url"])
 
     @helper.encodeResponse
@@ -843,12 +842,29 @@ class UiRequest:
 
         return block
 
-    # Stream a file to client
-    def actionFile(self, file_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers={}, file_size=None, file_obj=None, path_parts=None):
-        file_name = os.path.basename(file_path)
+    def staticFile(self, file_path, send_header=True, header_length=True):
+        try:
+            s = os.stat(file_path)
+        except (FileNotFoundError, OSError):
+            return self.error404(file_path)
+        if stat.S_ISREG(s.st_mode):
+            file_size = s.st_size
+        else:
+            return self.error404(file_path)
+        file_obj = open(file_path, 'rb')
+        return self.actionFile(None, file_path, send_header=send_header, header_length=header_length, file_size=file_size, file_obj=file_obj)
+
+    def actionFile(self, site, inner_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers=None, file_size=None, file_obj=None, path_parts=None):
+        """Stream a file to client"""
+        file_name = os.path.basename(inner_path)
+
+        extra_headers = extra_headers or {}
+
+        print(inner_path, block_size, send_header, header_length, header_noscript, header_allow_ajax, extra_headers, file_size, file_obj, path_parts)
 
         if file_size is None:
-            file_size = helper.getFilesize(file_path)
+            file_size = site.storage.getSize(path_parts['inner_path'])
+            # file_size = helper.getFilesize(file_path)
 
         if file_size is not None:
             # Try to figure out content type by extension
@@ -884,7 +900,7 @@ class UiRequest:
                 self.sendHeader(status, content_type=content_type, noscript=header_noscript, allow_ajax=header_allow_ajax, extra_headers=extra_headers)
             if self.env["REQUEST_METHOD"] != "OPTIONS":
                 if not file_obj:
-                    file_obj = open(file_path, "rb")
+                    file_obj = site.storage.open(inner_path, "rb")
 
                 if range_start:
                     file_obj.seek(range_start)
@@ -900,7 +916,7 @@ class UiRequest:
                     except StopIteration:
                         file_obj.close()
                         break
-        else:  # File not exists
+        else:  # File doesn't exist
             for part in self.error404(str(file_path)):
                 yield part
 
