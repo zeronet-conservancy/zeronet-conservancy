@@ -333,7 +333,7 @@ class Config(object):
                     if "://" in tracker and tracker not in self.trackers:
                         self.trackers.append(tracker)
             except Exception as err:
-                print("Error loading trackers file: %s" % err)
+                print(f"Error loading trackers file: {err}")
 
     # Find arguments specified for current action
     def getActionArguments(self):
@@ -451,11 +451,11 @@ class Config(object):
                         key = section + "_" + key
 
                     if key == "open_browser":  # Prefer config file value over cli argument
-                        while "--%s" % key in argv:
+                        while f"--{key}" in argv:
                             pos = argv.index("--open_browser")
                             del argv[pos:pos + 2]
 
-                    argv_extend = ["--%s" % key]
+                    argv_extend = [f"--{key}"]
                     if val:
                         for line in val.strip().split("\n"):  # Allow multi-line values
                             argv_extend.append(line)
@@ -603,9 +603,9 @@ class Config(object):
 
     def initFileLogger(self):
         if self.action == "main":
-            log_file_path = "%s/debug.log" % self.log_dir
+            log_file_path = f"{self.log_dir}/debug.log"
         else:
-            log_file_path = "%s/cmd.log" % self.log_dir
+            log_file_path = f"{self.log_dir}/cmd.log"
 
         if self.log_rotate == "off":
             file_logger = logging.FileHandler(log_file_path, "w", "utf-8")
@@ -636,7 +636,7 @@ class Config(object):
             try:
                 os.chmod(self.log_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             except Exception as err:
-                print("Can't change permission of %s: %s" % (self.log_dir, err))
+                print(f"Can't change permission of {self.log_dir}: {err}")
 
         logging.getLogger('').name = "-"  # Remove root prefix
 
