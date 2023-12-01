@@ -1,8 +1,11 @@
-#! /usr/bin/env bash
+#!/usr/bin/env bash
 
-if [ ! -f venv/bin/activate ] ; then
+VENVPATH="venv/bin/activate"
+
+if [ ! -f "$VENVPATH" ]; then
     python3 -m venv venv
 fi
-source venv/bin/activate
+
+source "$VENVPATH"
 python3 -m pip install -r requirements.txt
-python3 zeronet.py $1 $2 $3 $4 $5 $6 $7 $8 $9
+python3 zeronet.py "$@"
