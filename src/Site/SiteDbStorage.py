@@ -41,13 +41,14 @@ def dbQuery(author=None, signature=None):
 
 def dbInsert(author, signature, data):
     """Add data record into db"""
-    print('>>> dbInsert')
+    # check for duplicates maybe
+    print(f'>>> dbInsert {data}')
     params = {
         "author": author,
         "signature": signature,
         "data": data
     }
-    resp = requests.post(f'{config.postgrest_api}/riza0', data=params)
+    resp = requests.post(f'{config.postgrest_api}/riza0', json=params)
     print(resp, resp.text)
 
 def contentJsonRead(author):
@@ -56,9 +57,11 @@ def contentJsonRead(author):
         raise DbError(f'Bad content.json! Expecting 1, but got {len(obj)} results')
     return obj[0]['content']
 
-def contentJsonWrite(author, data):
+def contentJsonWrite(author: str, content: str):
     print('>>> contentJsonWrite')
-    resp = requests.post(f'{config.postgrest_api}/contentjson', data={'author': author, 'content': data})
+    params = {'author': f'eq.{author}'}
+    data = {'author': author, 'content': content}
+    resp = requests.put(f'{config.postgrest_api}/contentjson', params=params, json=data)
     print(resp, resp.text)
 
 class SiteDbStorage:
@@ -144,17 +147,20 @@ class SiteDbStorage:
 
     def write(self, inner_path, content):
         """Overwrite 'file' content. Compatibility with SiteStorage"""
-        self.deprecated('Deprecated SiteStorage compat method called: write')
+        self.deprecated(f'Deprecated SiteStorage compat method called: write {inner_path}')
         if not self.allow_create:
             raise DbError('SiteDbStorage opened read-only, but write() attempted')
 
+        if type(content) == bytes:
+            content = content.decode('utf8')
         if inner_path.removeprefix('/') == 'content.json':
             return contentJsonWrite(self.author, content)
 
         signature = pathToHash(inner_path)
+        print(f'got {signature=}')
 
         try:
-            content_body = json.load(content)
+            content_body = content.read()
         except AttributeError:
             content_body = content
         data = json.loads(content_body)
@@ -166,8 +172,7 @@ class SiteDbStorage:
             raise DbError('Attempt to write non-canonical JSON')
         # if exists and not same content:
             # raise DbError('Record already exists, but is different. Something is utterly broken here :(')
-        
-        dbInsert(self.author, signature, content_body)
+        dbInsert(self.author, signature, data)
 
     def delete(self, inner_path):
         """Compatibility with SiteStorage, ignored"""

@@ -48,11 +48,12 @@ class SiteManager(object):
 
         for address, settings in data.items():
             if address not in self.sites:
-                if os.path.isfile(f"{config.data_dir}/{address}/content.json"):
+                use_db_storage = settings.get('use_db_storage', False)
+                if use_db_storage or os.path.isfile(f"{config.data_dir}/{address}/content.json"):
                     # Root content.json exists, try load site
                     s = time.time()
                     try:
-                        site = Site(address, settings=settings)
+                        site = Site(address, settings=settings, use_db_storage=use_db_storage)
                         site.content_manager.contents.get("content.json")
                     except Exception as err:
                         self.log.debug(f"Error loading site {address}: {err}")
@@ -169,7 +170,7 @@ class SiteManager(object):
 
         return site
 
-    def add(self, address, all_file=True, settings=None, **kwargs):
+    def add(self, address, all_file=True, settings=None):
         from .Site import Site
         self.sites_changed = int(time.time())
         # Try to find site with differect case
@@ -181,9 +182,10 @@ class SiteManager(object):
             return False  # Not address: %s % address
         self.log.debug(f"Added new site: {address}")
         config.loadTrackersFile()
-        site = Site(address, settings=settings)
+        use_db_storage = bool(settings and settings.get('use_db_storage'))
+        site = Site(address, settings=settings, use_db_storage=use_db_storage)
         self.sites[address] = site
-        if not site.settings["serving"]:  # Maybe it was deleted before
+        if not site.settings.get("serving", False):  # Maybe it was deleted before
             site.settings["serving"] = True
         site.saveSettings()
         if all_file:  # Also download user files on first sync
@@ -198,7 +200,7 @@ class SiteManager(object):
                 address = address_resolved
 
         site = self.get(address)
-        if not site:  # Site not exist yet
+        if not site:  # Site is not loaded
             site = self.add(address, *args, **kwargs)
         return site
 
