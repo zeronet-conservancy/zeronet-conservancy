@@ -19,7 +19,7 @@ if config.use_tempfiles:
 
 # Communicate remote peers
 @PluginManager.acceptPlugins
-class Peer(object):
+class Peer:
     __slots__ = (
         "ip", "port", "site", "key", "connection", "connection_server", "time_found", "time_response", "time_hashfield",
         "time_added", "has_hashfield", "is_tracker_connection", "time_my_hashfield_sent", "last_ping", "reputation",
@@ -55,8 +55,8 @@ class Peer(object):
             self.has_hashfield = True
             self.hashfield = PeerHashfield()
             return self.hashfield
-        else:
-            return getattr(self, key)
+        ## ??? can be overridden in plugins, duh
+        raise AttributeError(f'tried to access {self}, attribute {key}')
 
     def log(self, text):
         if not config.verbose:

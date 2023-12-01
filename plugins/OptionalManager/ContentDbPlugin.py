@@ -336,7 +336,7 @@ class ContentDbPlugin(object):
         # Don't delete optional files from owned sites
         my_site_ids = []
         for address, site in self.sites.items():
-            if site.settings["own"]:
+            if site.settings.get("own", False):
                 my_site_ids.append(str(self.site_ids[address]))
 
         if my_site_ids:
