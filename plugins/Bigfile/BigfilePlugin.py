@@ -13,6 +13,7 @@ import gevent
 import gevent.lock
 
 from Plugin import PluginManager
+# from Site.SiteStorage import SiteStorage
 from Debug import Debug
 from Crypt import CryptHash
 with warnings.catch_warnings():
@@ -446,7 +447,7 @@ class ContentManagerPlugin(object):
 
 
 @PluginManager.registerTo("SiteStorage")
-class SiteStoragePlugin(object):
+class SiteStoragePlugin:
     def __init__(self, *args, **kwargs):
         super(SiteStoragePlugin, self).__init__(*args, **kwargs)
         self.piecefields = collections.defaultdict(BigfilePiecefield)
@@ -789,13 +790,20 @@ class SitePlugin(object):
         return super(SitePlugin, self).isFileDownloadAllowed(inner_path, file_info)
 
     def getSettingsCache(self):
+        from Site.SiteStorage import SiteStorage
         back = super(SitePlugin, self).getSettingsCache()
+        if not isinstance(self.storage, SiteStorage):
+            self.log.warning('Bigfile getSettingsCache called on db-based site')
+            return back
+
         if self.storage.piecefields:
             back["piecefields"] = {sha512: base64.b64encode(piecefield.pack()).decode("utf8") for sha512, piecefield in self.storage.piecefields.items()}
         return back
 
     def needFile(self, inner_path, *args, **kwargs):
-        if inner_path.endswith("|all"):
+        from Site.SiteStorage import SiteStorage
+        bigfile_supported = isinstance(self.storage, SiteStorage)
+        if bigfile_supported and inner_path.endswith("|all"):
             @util.Pooled(20)
             def pooledNeedBigfile(inner_path, *args, **kwargs):
                 if inner_path not in self.bad_files:
