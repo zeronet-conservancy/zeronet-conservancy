@@ -7,6 +7,7 @@ import json
 import html
 import urllib
 import socket
+import base64
 
 import gevent
 
@@ -217,6 +218,8 @@ class UiRequest:
         # Debug
         elif path == "/Debug" and config.debug:
             return self.actionDebug()
+        elif path == "/Sign":
+            return self.actionSign()
         # Wrapper-less static files
         elif path.startswith("/raw/"):
             return self.actionSiteMedia(path.replace("/raw", "/media", 1), header_noscript=True, raw=True)
@@ -281,6 +284,19 @@ class UiRequest:
             return dict(urllib.parse.parse_qsl(
                 self.env['wsgi.input'].read(content_length).decode()
             ))
+        else:
+            return {}
+
+    def getPostedJson(self):
+        """Get JSON body if this is a POST request"""
+        if self.env['REQUEST_METHOD'] == "POST":
+            try:
+                content_length = int(self.env.get('CONTENT_LENGTH', 0))
+            except ValueError:
+                content_length = 0
+            return json.loads(
+                self.env['wsgi.input'].read(content_length)
+            )
         else:
             return {}
 
@@ -966,6 +982,45 @@ class UiRequest:
         else:
             self.start_response("400 Bad Request", [])
             return [b"Not a websocket request!"]
+
+    def actionSign(self):
+        """Sign a message with a known private key
+
+        NOTE: there's no security considerations at this point so until this is fixed this should
+        be disabled on any "production" servers
+        """
+        if not config.debug_sign:
+            raise NotImplementedError('Signing authorization is not yet implemented')
+
+        from Crypt import CryptBitcoin
+        params = self.getPostedJson()
+        pubkey = params['pubkey']
+        data = params['data']
+        # private key is either in users.json or can be derivied from master seed
+        privkey = None
+        user = UserManager.user_manager.get()
+        if not user:
+            self.sendHeader(status=404, content_type='application/json')
+            return json.dumps({'error': 'Private key not found (no user)'})
+        site_data = user.getSiteData(pubkey)
+        privkey = site_data.get("privatekey")
+        if privkey is None:
+            site = site_manager.sites.get(pubkey)
+            if site is None:
+                self.sendHeader(status=404, content_type='application/json')
+                return json.dumps({'error': 'Private key not found (not owned by user and site not found)'})
+            site_id = site.content_manager.contents.get('address_index')
+            if site_id is None:
+                self.sendHeader(status=404, content_type='application/json')
+                return json.dumps({'error': 'Private key not found (no address id)'})
+            seed = user.master_seed
+            privkey = CryptBitcoin.hdPrivatekey(seed, site_id)
+        signature = CryptBitcoin.sign(data, privkey)
+        # TODO: modify CryptBitcoin to return appropriate data
+        signature_hex = base64.b64decode(signature).hex()
+        resp = json.dumps({'signature': signature_hex})
+        self.sendHeader(status=200, content_type="application/json")
+        return [resp.encode('utf8')]
 
     # Debug last error
     def actionDebug(self):

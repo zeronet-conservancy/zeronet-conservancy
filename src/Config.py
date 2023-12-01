@@ -212,6 +212,7 @@ class Config(object):
         self.parser.add_argument('--debug', help='Debug mode', action='store_true')
         self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
         self.parser.add_argument('--debug_socket', help='Debug socket connections', action='store_true')
+        self.parser.add_argument('--debug_sign', help='Debug signing and related actions: allow to perform them w/o authorization checks', action='store_true')
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
