@@ -217,8 +217,6 @@ class UiRequest:
         # Debug
         elif path == "/Debug" and config.debug:
             return self.actionDebug()
-        elif path == "/Console" and config.debug:
-            return self.actionConsole()
         # Wrapper-less static files
         elif path.startswith("/raw/"):
             return self.actionSiteMedia(path.replace("/raw", "/media", 1), header_noscript=True, raw=True)
@@ -979,11 +977,6 @@ class UiRequest:
         else:
             self.sendHeader()
             return [b"No error! :)"]
-
-    # Just raise an error to get console
-    # Is this even useful anymore?
-    def actionConsole(self):
-        raise Exception("Here is your console")
 
     # - Tests -
 
