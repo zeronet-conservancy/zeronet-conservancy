@@ -122,7 +122,13 @@ class UiRequest:
             return True
 
         # Deny requests from non-0net origins
-        if origin and not self.isSameHost(origin, url):
+        same_host = self.isSameHost(origin, url)
+        if config.debug_sign and (origin and origin.startswith('http://localhost')) or (referer and referer.startswith('http://localhost')):
+            # temporary debug rule; TODO: make something sensible
+            # same_host = True
+            return False
+
+        if origin and not same_host:
             return True
 
         # Allow non-site specific requests
@@ -145,7 +151,8 @@ class UiRequest:
         """
 
         if self.isCrossOriginRequest():
-            return self.error404()
+            # we are still exposed by answering on port
+            return []
 
         # Restict Ui access by ip
         if config.ui_restrict and self.env['REMOTE_ADDR'] not in config.ui_restrict:
@@ -183,12 +190,16 @@ class UiRequest:
             return self.error403("Invalid path: %s" % path)
 
         if self.env["REQUEST_METHOD"] == "OPTIONS":
+            print('OPTIONS duh')
             if "/" not in path.strip("/"):
                 content_type = self.getContentType("index.html")
             else:
                 content_type = self.getContentType(path)
 
-            extra_headers = {"Access-Control-Allow-Origin": "null"}
+            if config.debug_sign:
+                extra_headers = {"Access-Control-Allow-Origin": "*"}
+            else:
+                extra_headers = {"Access-Control-Allow-Origin": "null"}
 
             self.sendHeader(content_type=content_type, extra_headers=extra_headers, noscript=True)
             return ""
@@ -358,6 +369,9 @@ class UiRequest:
         headers["Keep-Alive"] = "max=25, timeout=30"
         headers["X-Frame-Options"] = "SAMEORIGIN"
         headers["Referrer-Policy"] = "same-origin"
+
+        if config.debug_sign:
+            headers["Access-Control-Allow-Origin"] = "*"
 
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
