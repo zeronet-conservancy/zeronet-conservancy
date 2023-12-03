@@ -156,7 +156,7 @@ class UiRequestPlugin(object):
             raise Exception("No multipart header found")
         return i
 
-    def actionFile(self, file_path, *args, **kwargs):
+    def actionFile(self, site, inner_path, *args, **kwargs):
         if kwargs.get("file_size", 0) > 1024 * 1024 and kwargs.get("path_parts"):  # Only check files larger than 1MB
             path_parts = kwargs["path_parts"]
             site = self.server.site_manager.get(path_parts["address"])
@@ -165,7 +165,7 @@ class UiRequestPlugin(object):
                 kwargs["file_obj"] = big_file
                 kwargs["file_size"] = big_file.size
 
-        return super(UiRequestPlugin, self).actionFile(file_path, *args, **kwargs)
+        return super().actionFile(site, inner_path, *args, **kwargs)
 
 
 @PluginManager.registerTo("UiWebsocket")
