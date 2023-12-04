@@ -78,6 +78,9 @@ class SiteDbStorage:
         self.author = site.address
         self.allow_create = allow_create
 
+        # compat
+        self.has_db = False
+
     def deprecated(self, msg):
         """Emits deprecation warning. Can be overridden to throw instead"""
         self.log.warning(msg)
