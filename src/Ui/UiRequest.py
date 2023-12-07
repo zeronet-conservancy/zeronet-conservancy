@@ -147,12 +147,11 @@ class UiRequest:
         is_iframe = self.env.get('HTTP_SEC_FETCH_DEST') == 'iframe'
 
         if is_navigate and not is_iframe and self.is_data_request:
-            # remove port from host
-            host = ':'.join(self.env['HTTP_HOST'].split(':')[:-1])
+            host = self.getHostWithoutPort()
             path_info = self.env['PATH_INFO']
             query_string = self.env['QUERY_STRING']
             protocol = self.env['wsgi.url_scheme']
-            return self.actionRedirect(f'{protocol}://{host}:43110{path_info}?{query_string}')
+            return self.actionRedirect(f'{protocol}://{host}:{config.ui_port}{path_info}?{query_string}')
 
         if self.isCrossOriginRequest():
             # we are still exposed by answering on port
@@ -360,7 +359,14 @@ class UiRequest:
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
         elif script_nonce:
-            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src 'self' blob: http://127.0.0.1:43111"
+            host = self.getHostWithoutPort()
+            port = int(self.env['SERVER_PORT'])
+            if port == config.ui_port:
+                other_port = config.ui_site_port
+            else:
+                other_port = config.ui_port
+            site_server = f'{host}:{other_port}'
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {site_server}"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
@@ -518,6 +524,9 @@ class UiRequest:
             server_url = ""
         return server_url
 
+    def getHostWithoutPort(self):
+        return ':'.join(self.env['HTTP_HOST'].split(':')[:-1])
+
     def processQueryString(self, site, query_string):
         match = re.search("zeronet_peers=(.*?)(&|$)", query_string)
         if match:
@@ -629,9 +638,12 @@ class UiRequest:
             repl.update(html_chars)
             return s.translate(repl)
 
+        scheme = self.env['wsgi.url_scheme']
+        host = self.getHostWithoutPort()
+
         return self.render(
             "src/Ui/template/wrapper.html",
-            site_file_server='http://127.0.0.1:43111',
+            site_file_server=f'{scheme}://{host}:{config.ui_site_port}',
             server_url=server_url,
             inner_path=inner_path,
             file_url=xescape(file_url),
