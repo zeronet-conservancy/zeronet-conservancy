@@ -51,11 +51,11 @@ class SecurityError(Exception):
 @PluginManager.acceptPlugins
 class UiRequest:
 
-    def __init__(self, server, get, env, start_response):
+    def __init__(self, server, env, start_response, is_data_request=False):
         if server:
             self.server = server
             self.log = server.log
-        self.get = get  # Get parameters
+        self.get = dict(urllib.parse.parse_qsl(env.get('QUERY_STRING', '')))
         self.env = env  # Enviroment settings
         # ['CONTENT_LENGTH', 'CONTENT_TYPE', 'GATEWAY_INTERFACE', 'HTTP_ACCEPT', 'HTTP_ACCEPT_ENCODING', 'HTTP_ACCEPT_LANGUAGE',
         #  'HTTP_COOKIE', 'HTTP_CACHE_CONTROL', 'HTTP_HOST', 'HTTP_HTTPS', 'HTTP_ORIGIN', 'HTTP_PROXY_CONNECTION', 'HTTP_REFERER',
@@ -66,6 +66,7 @@ class UiRequest:
         self.start_response = start_response  # Start response function
         self.user = None
         self.script_nonce = None  # Nonce for script tags in wrapper html
+        self.is_data_request = is_data_request
 
     def learnHost(self, host):
         self.server.allowed_hosts.add(host)
@@ -142,8 +143,21 @@ class UiRequest:
         we'd want something else..
         """
 
+        is_navigate = self.env.get('HTTP_SEC_FETCH_MODE') == 'navigate'
+        is_iframe = self.env.get('HTTP_SEC_FETCH_DEST') == 'iframe'
+
+        if is_navigate and not is_iframe and self.is_data_request:
+            # remove port from host
+            host = ':'.join(self.env['HTTP_HOST'].split(':')[:-1])
+            path_info = self.env['PATH_INFO']
+            query_string = self.env['QUERY_STRING']
+            protocol = self.env['wsgi.url_scheme']
+            return self.actionRedirect(f'{protocol}://{host}:43110{path_info}?{query_string}')
+
         if self.isCrossOriginRequest():
-            return self.error404()
+            # we are still exposed by answering on port
+            self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
+            return []
 
         # Restict Ui access by ip
         if config.ui_restrict and self.env['REMOTE_ADDR'] not in config.ui_restrict:
@@ -341,13 +355,12 @@ class UiRequest:
         headers["Version"] = "HTTP/1.1"
         headers["Connection"] = "Keep-Alive"
         headers["Keep-Alive"] = "max=25, timeout=30"
-        headers["X-Frame-Options"] = "SAMEORIGIN"
         headers["Referrer-Policy"] = "same-origin"
 
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
         elif script_nonce:
-            headers["Content-Security-Policy"] = "default-src 'none'; script-src 'nonce-{0}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src 'self' blob:".format(script_nonce)
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src 'self' blob: http://127.0.0.1:43111"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
@@ -618,6 +631,7 @@ class UiRequest:
 
         return self.render(
             "src/Ui/template/wrapper.html",
+            site_file_server='http://127.0.0.1:43111',
             server_url=server_url,
             inner_path=inner_path,
             file_url=xescape(file_url),

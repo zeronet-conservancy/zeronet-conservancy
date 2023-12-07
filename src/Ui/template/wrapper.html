@@ -74,11 +74,11 @@ else if (window.opener && window.opener.location.toString()) {
 
 
 <!-- Site Iframe -->
-<iframe src='about:blank' id='inner-iframe' sandbox="allow-forms allow-scripts allow-top-navigation allow-popups allow-modals allow-presentation allow-pointer-lock allow-popups-to-escape-sandbox allow-same-origin {sandbox_permissions}" allowfullscreen="true" webkitallowfullscreen="true" mozallowfullscreen="true" oallowfullscreen="true" msallowfullscreen="true" referrerpolicy="same-origin"></iframe>
+<iframe src='about:blank' id='inner-iframe' sandbox="allow-forms allow-scripts allow-top-navigation allow-popups allow-modals allow-presentation allow-pointer-lock allow-popups-to-escape-sandbox allow-same-origin {sandbox_permissions}" allowfullscreen="true"></iframe>
 
 <!-- Site info -->
 <script id="script_init" nonce="{script_nonce}">
-iframe_src = "{file_url}{query_string}"
+iframe_src = "{site_file_server}{file_url}{query_string}"
 console.log("Changing url from " + document.getElementById("inner-iframe").src + " to " + iframe_src)
 document.getElementById("inner-iframe").src = document.getElementById("inner-iframe").src  // Workaround for Firefox back button bug
 document.getElementById("inner-iframe").src = iframe_src

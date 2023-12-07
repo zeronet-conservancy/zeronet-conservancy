@@ -230,7 +230,7 @@ class Actions:
 
         import threading
         self.gevent_quit = threading.Event()
-        launched_greenlets = [gevent.spawn(ui_server.start), gevent.spawn(file_server.start)]
+        launched_greenlets = [gevent.spawn(ui_server.start), gevent.spawn(file_server.start), gevent.spawn(ui_server.startSiteServer)]
 
         # if --repl, start ipython thread
         # FIXME: Unfortunately this leads to exceptions on exit so use with care
