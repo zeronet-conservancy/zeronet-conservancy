@@ -230,6 +230,7 @@ class Config(object):
         self.parser.add_argument('--language', help='Web interface language', default=language, metavar='language')
         self.parser.add_argument('--ui_ip', help='Web interface bind address', default="127.0.0.1", metavar='ip')
         self.parser.add_argument('--ui_port', help='Web interface bind port', default=43110, type=int, metavar='port')
+        self.parser.add_argument('--ui_site_port', help='Port for serving site content, defaults to ui_port+1', default=None, metavar='port')
         self.parser.add_argument('--ui_restrict', help='Restrict web access', default=False, metavar='ip', nargs='*')
         self.parser.add_argument('--ui_host', help='Allow access using this hosts', metavar='host', nargs='*')
         self.parser.add_argument('--ui_trans_proxy', help='Allow access using a transparent proxy', action='store_true')
@@ -433,6 +434,8 @@ class Config(object):
                 self.arguments = {}
         else:
             self.arguments = self.parser.parse_args(argv[1:])
+        if self.arguments.ui_site_port is None:
+            self.arguments.ui_site_port = self.arguments.ui_port + 1
 
     # Parse config file
     def parseConfig(self, argv):

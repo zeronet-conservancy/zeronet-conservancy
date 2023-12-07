@@ -55,6 +55,7 @@ class UiServer:
     def __init__(self):
         self.ip = config.ui_ip
         self.port = config.ui_port
+        self.site_port = config.ui_site_port
         self.running = False
         if self.ip == "*":
             self.ip = "0.0.0.0"  # Bind all
@@ -164,7 +165,7 @@ class UiServer:
             return ui_request.error500('Error while trying to server site data')
 
     def startSiteServer(self):
-        self.site_server = WSGIServer((self.ip, 43111), self.handleSiteRequest, log=self.log)
+        self.site_server = WSGIServer((self.ip, self.site_port), self.handleSiteRequest, log=self.log)
         self.site_server.serve_forever()
 
     def stop(self):
