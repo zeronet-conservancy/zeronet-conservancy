@@ -29,7 +29,7 @@ class UiWSGIHandler(WebSocketHandler):
             import main
             main.DebugHook.handleError()
         else:
-            ui_request = UiRequest(self.server, {}, self.environ, self.start_response)
+            ui_request = UiRequest(self.server, self.environ, self.start_response, is_data_request=False)
             block_gen = ui_request.error500("UiWSGIHandler error: %s" % Debug.formatExceptionMessage(err))
             for block in block_gen:
                 self.write(block)
@@ -96,11 +96,7 @@ class UiServer:
     # Handle WSGI request
     def handleRequest(self, env, start_response):
         path = bytes(env["PATH_INFO"], "raw-unicode-escape").decode("utf8")
-        if env.get("QUERY_STRING"):
-            get = dict(urllib.parse.parse_qsl(env['QUERY_STRING']))
-        else:
-            get = {}
-        ui_request = UiRequest(self, get, env, start_response)
+        ui_request = UiRequest(self, env, start_response, is_data_request=False)
         if config.debug:  # Let the exception catched by werkezung
             return ui_request.route(path)
         else:  # Catch and display the error
@@ -157,6 +153,19 @@ class UiServer:
             import main
             main.file_server.stop()
         self.log.debug("Stopped.")
+
+    def handleSiteRequest(self, env, start_response):
+        path = bytes(env["PATH_INFO"], "raw-unicode-escape").decode("utf8")
+        ui_request = UiRequest(self, env, start_response, is_data_request=True)
+        try:
+            return ui_request.route(path)
+        except Exception as err:
+            logging.debug(f"UiRequest @ site error: {Debug.formatException(err)}")
+            return ui_request.error500('Error while trying to server site data')
+
+    def startSiteServer(self):
+        self.site_server = WSGIServer((self.ip, 43111), self.handleSiteRequest, log=self.log)
+        self.site_server.serve_forever()
 
     def stop(self):
         self.log.debug("Stopping...")
