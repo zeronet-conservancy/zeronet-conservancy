@@ -210,12 +210,15 @@ class Actions:
 
     # Default action: Start serving UiServer and FileServer
     def main(self):
-        global ui_server, file_server
         from File import FileServer
         from Ui import UiServer
-        logging.info("Creating FileServer....")
+        from DHT import DHTServer
+
+        global file_server, ui_server, dht_server
+
+        dht_server = DHTServer()
+
         file_server = FileServer()
-        logging.info("Creating UiServer....")
         ui_server = UiServer()
         file_server.ui_server = ui_server
 
@@ -230,7 +233,12 @@ class Actions:
 
         import threading
         self.gevent_quit = threading.Event()
-        launched_greenlets = [gevent.spawn(ui_server.start), gevent.spawn(file_server.start), gevent.spawn(ui_server.startSiteServer)]
+        launched_greenlets = [
+            gevent.spawn(ui_server.start),
+            gevent.spawn(ui_server.startSiteServer),
+            gevent.spawn(file_server.start),
+            gevent.spawn(dht_server.start),
+        ]
 
         # if --repl, start ipython thread
         # FIXME: Unfortunately this leads to exceptions on exit so use with care
