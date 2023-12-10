@@ -58,7 +58,7 @@ class UiRequestPlugin(object):
                 # If debugging merge *.css to all.css and *.js to all.js
                 from Debug import DebugMedia
                 DebugMedia.merge(plugin_media_file)
-            for part in self.actionFile(plugin_media_file):
+            for part in self.staticFile(plugin_media_file):
                 yield part
         else:
             for part in super(UiRequestPlugin, self).actionUiMedia(path):
