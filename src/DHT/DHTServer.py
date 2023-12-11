@@ -43,21 +43,10 @@ class DHTServer:
     async def _announce(self, site_hash):
         await self.dht.announce(site_hash, config.fileserver_port)
         print(f'announced {site_hash.hex()}, looking for peers')
-        if site_hash not in self.peers:
-            self.peers[site_hash] = []
-        for peer in await self.dht[site_hash]:
-            self.peers[site_hash].append({'addr': peer[0], 'port': peer[1]})
+        self.peers[site_hash] = await self.dht[site_hash]
 
     def announce(self, site_hash):
-        # return []
         # send announce to DHT
         self.loop.create_task(self._announce(site_hash))
         # return peers that we already have
-        return self.peers.get(site_hash, [])
-
-    # def get_peers(self):
-        # print("announce with port `2357`")
-        # await dht.announce(bytes.fromhex("ECB3E22E1DC0AA078B48B7323AEBBA827AD9BD80"), 2357)
-        # print("announce done")
-
-        # peers = await dht[bytes.fromhex("ECB3E22E1DC0AA078B48B7323AEBBA827AD9BD80")]
+        return [{'addr': peer[0], 'port': peer[1]} for peer in self.peers.get(site_hash, set())]
