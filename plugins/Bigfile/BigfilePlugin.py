@@ -13,6 +13,7 @@ import gevent
 import gevent.lock
 
 from Plugin import PluginManager
+# from Site.SiteStorage import SiteStorage
 from Debug import Debug
 from Crypt import CryptHash
 with warnings.catch_warnings():
@@ -155,7 +156,7 @@ class UiRequestPlugin(object):
             raise Exception("No multipart header found")
         return i
 
-    def actionFile(self, file_path, *args, **kwargs):
+    def actionFile(self, site, inner_path, *args, **kwargs):
         if kwargs.get("file_size", 0) > 1024 * 1024 and kwargs.get("path_parts"):  # Only check files larger than 1MB
             path_parts = kwargs["path_parts"]
             site = self.server.site_manager.get(path_parts["address"])
@@ -164,7 +165,7 @@ class UiRequestPlugin(object):
                 kwargs["file_obj"] = big_file
                 kwargs["file_size"] = big_file.size
 
-        return super(UiRequestPlugin, self).actionFile(file_path, *args, **kwargs)
+        return super().actionFile(site, inner_path, *args, **kwargs)
 
 
 @PluginManager.registerTo("UiWebsocket")
@@ -446,7 +447,7 @@ class ContentManagerPlugin(object):
 
 
 @PluginManager.registerTo("SiteStorage")
-class SiteStoragePlugin(object):
+class SiteStoragePlugin:
     def __init__(self, *args, **kwargs):
         super(SiteStoragePlugin, self).__init__(*args, **kwargs)
         self.piecefields = collections.defaultdict(BigfilePiecefield)
@@ -789,13 +790,20 @@ class SitePlugin(object):
         return super(SitePlugin, self).isFileDownloadAllowed(inner_path, file_info)
 
     def getSettingsCache(self):
+        from Site.SiteStorage import SiteStorage
         back = super(SitePlugin, self).getSettingsCache()
+        if not isinstance(self.storage, SiteStorage):
+            self.log.warning('Bigfile getSettingsCache called on db-based site')
+            return back
+
         if self.storage.piecefields:
             back["piecefields"] = {sha512: base64.b64encode(piecefield.pack()).decode("utf8") for sha512, piecefield in self.storage.piecefields.items()}
         return back
 
     def needFile(self, inner_path, *args, **kwargs):
-        if inner_path.endswith("|all"):
+        from Site.SiteStorage import SiteStorage
+        bigfile_supported = isinstance(self.storage, SiteStorage)
+        if bigfile_supported and inner_path.endswith("|all"):
             @util.Pooled(20)
             def pooledNeedBigfile(inner_path, *args, **kwargs):
                 if inner_path not in self.bad_files:

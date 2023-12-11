@@ -161,8 +161,8 @@ class UiServer:
         try:
             return ui_request.route(path)
         except Exception as err:
-            logging.debug(f"UiRequest @ site error: {Debug.formatException(err)}")
-            return ui_request.error500('Error while trying to server site data')
+            self.log.info(f"UiRequest @ site error: {Debug.formatException(err)}")
+            return ui_request.error500('Error while trying to serve site data')
 
     def startSiteServer(self):
         self.site_server = WSGIServer((self.ip, self.site_port), self.handleSiteRequest, log=self.log)

@@ -20,6 +20,7 @@ __pycache__/
 # Data dir
 data/*
 docker/data/
+docker/postgres-data/
 *.db
 
 # Virtualenv

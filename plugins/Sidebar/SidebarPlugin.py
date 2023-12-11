@@ -49,7 +49,7 @@ class UiRequestPlugin(object):
             if ext == "js":
                 yield _.translateData(open(plugin_media_file).read()).encode("utf8")
             else:
-                for part in self.actionFile(plugin_media_file, send_header=False):
+                for part in self.staticFile(plugin_media_file, send_header=False):
                     yield part
         elif path.startswith("/uimedia/globe/"):  # Serve WebGL globe files
             file_name = re.match(".*/(.*)", path).group(1)
@@ -58,7 +58,7 @@ class UiRequestPlugin(object):
                 # If debugging merge *.css to all.css and *.js to all.js
                 from Debug import DebugMedia
                 DebugMedia.merge(plugin_media_file)
-            for part in self.actionFile(plugin_media_file):
+            for part in self.staticFile(plugin_media_file):
                 yield part
         else:
             for part in super(UiRequestPlugin, self).actionUiMedia(path):

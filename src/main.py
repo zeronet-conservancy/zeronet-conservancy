@@ -3,12 +3,11 @@ import sys
 import stat
 import time
 import logging
-from util.compat import *
 
 startup_errors = []
 def startupError(msg):
     startup_errors.append(msg)
-    print("Startup error: %s" % msg)
+    print(f"Startup error: {msg}")
 
 # Third party modules
 import gevent
@@ -17,7 +16,7 @@ if gevent.version_info.major <= 1:  # Workaround for random crash when libuv use
         if "libev" not in str(gevent.config.loop):
             gevent.config.loop = "libev-cext"
     except Exception as err:
-        startupError("Unable to switch gevent loop to libev: %s" % err)
+        startupError(f"Unable to switch gevent loop to libev: {err}")
 
 import gevent.monkey
 gevent.monkey.patch_all(thread=False, subprocess=False)
@@ -55,12 +54,12 @@ def importBundle(bundle):
         else:
             prefix = ''
         top_2 = list(set(filter(lambda f: len(f)>0,
-                                map(lambda f: removeprefix(f, prefix).split('/')[0], all_files))))
+                                map(lambda f: f.removeprefix(prefix).split('/')[0], all_files))))
         for d in top_2:
             if isValidAddress(d):
                 logging.info(f'unpack {d} into {config.data_dir}')
                 for fname in filter(lambda f: f.startswith(prefix+d) and not f.endswith('/'), all_files):
-                    tgt = config.data_dir + '/' + removeprefix(fname, prefix)
+                    tgt = config.data_dir + '/' + fname.removeprefix(prefix)
                     logging.info(f'-- {fname} --> {tgt}')
                     info = zf.getinfo(fname)
                     info.filename = tgt
@@ -145,7 +144,7 @@ def load_plugins():
 load_plugins()
 
 # Log current config
-logging.debug("Config: %s" % config)
+logging.debug(f"Config: {config}")
 
 # Modify stack size on special hardwares
 if config.stack_size:
@@ -162,15 +161,15 @@ if sys.platform.startswith("win"):
     import subprocess
     try:
         chcp_res = subprocess.check_output("chcp 65001", shell=True).decode(errors="ignore").strip()
-        logging.debug("Changed console encoding to utf8: %s" % chcp_res)
+        logging.debug(f"Changed console encoding to utf8: {chcp_res}")
     except Exception as err:
-        logging.error("Error changing console encoding to utf8: %s" % err)
+        logging.error(f"Error changing console encoding to utf8: {err}")
 
 # Socket monkey patch
 if config.proxy:
     from util import SocksProxy
     import urllib.request
-    logging.info("Patching sockets to socks proxy: %s" % config.proxy)
+    logging.info(f"Patching sockets to socks proxy: {config.proxy}")
     if config.fileserver_ip == "*":
         config.fileserver_ip = '127.0.0.1'  # Do not accept connections anywhere but localhost
     config.disable_udp = True  # UDP not supported currently with proxy
@@ -178,7 +177,7 @@ if config.proxy:
 elif config.tor == "always":
     from util import SocksProxy
     import urllib.request
-    logging.info("Patching sockets to tor socks proxy: %s" % config.tor_proxy)
+    logging.info(f"Patching sockets to tor socks proxy: {config.tor_proxy}")
     if config.fileserver_ip == "*":
         config.fileserver_ip = '127.0.0.1'  # Do not accept connections anywhere but localhost
     SocksProxy.monkeyPatch(*config.tor_proxy_split())
@@ -196,7 +195,7 @@ elif config.bind:
 @PluginManager.acceptPlugins
 class Actions:
     def call(self, function_name, kwargs):
-        logging.info("Version: %s r%s, Python %s, Gevent: %s" % (config.version, config.rev, sys.version, gevent.__version__))
+        logging.info(f"Version: {config.version} r{config.rev}, Python {sys.version}, Gevent: {gevent.__version__}")
 
         func = getattr(self, function_name, None)
         back = func(**kwargs)
@@ -220,7 +219,7 @@ class Actions:
         file_server.ui_server = ui_server
 
         for startup_error in startup_errors:
-            logging.error("Startup error: %s" % startup_error)
+            logging.error(f"Startup error: {startup_error}")
 
         logging.info("Removing old SSL certs...")
         from Crypt import CryptConnection
@@ -246,12 +245,12 @@ class Actions:
         if stopped < len(launched_greenlets):
             gevent.killall(launched_greenlets, exception=KeyboardInterrupt)
 
-        logging.info("All server stopped")
+        logging.info("All servers stopped")
 
     # Site commands
 
     def siteCreate(self, use_master_seed=True):
-        logging.info("Generating new privatekey (use_master_seed: %s)..." % config.use_master_seed)
+        logging.info(f"Generating new privatekey (use_master_seed: {config.use_master_seed})...")
         from Crypt import CryptBitcoin
         if use_master_seed:
             from User import UserManager
@@ -260,14 +259,14 @@ class Actions:
                 user = UserManager.user_manager.create()
             address, address_index, site_data = user.getNewSiteData()
             privatekey = site_data["privatekey"]
-            logging.info("Generated using master seed from users.json, site index: %s" % address_index)
+            logging.info(f"Generated using master seed from users.json, site index: {address_index}")
         else:
             privatekey = CryptBitcoin.newPrivatekey()
             address = CryptBitcoin.privatekeyToAddress(privatekey)
         logging.info("----------------------------------------------------------------------")
-        logging.info("Site private key: %s" % privatekey)
+        logging.info(f"Site private key: {privatekey}")
         logging.info("                  !!! ^ Save it now, required to modify the site ^ !!!")
-        logging.info("Site address:     %s" % address)
+        logging.info(f"Site address:     {address}")
         logging.info("----------------------------------------------------------------------")
 
         while True and not config.batch and not use_master_seed:
@@ -281,8 +280,8 @@ class Actions:
         from Site import SiteManager
         SiteManager.site_manager.load()
 
-        os.mkdir("%s/%s" % (config.data_dir, address))
-        open("%s/%s/index.html" % (config.data_dir, address), "w").write("Hello %s!" % address)
+        os.mkdir(f"{config.data_dir}/{address}")
+        open(f"{config.data_dir}/{address}/index.html", "w").write(f"Hello {address}!")
 
         logging.info("Creating content.json...")
         site = Site(address)
@@ -301,7 +300,7 @@ class Actions:
         from Site import SiteManager
         from Debug import Debug
         SiteManager.site_manager.load()
-        logging.info("Signing site: %s..." % address)
+        logging.info(f"Signing site: {address}...")
         site = Site(address, allow_create=False)
 
         if not privatekey:  # If no privatekey defined
@@ -335,7 +334,7 @@ class Actions:
                 update_changed_files=True, remove_missing_optional=remove_missing_optional
             )
         except Exception as err:
-            logging.error("Sign error: %s" % Debug.formatException(err))
+            logging.error(f"Sign error: {Debug.formatException(err)}")
             succ = False
         if succ and publish:
             self.sitePublish(address, inner_path=inner_path)
@@ -347,13 +346,13 @@ class Actions:
         SiteManager.site_manager.load()
 
         s = time.time()
-        logging.info("Verifing site: %s..." % address)
+        logging.info(f"Verifing site: {address}...")
         site = Site(address)
         bad_files = []
 
         for content_inner_path in site.content_manager.contents:
             s = time.time()
-            logging.info("Verifing %s signature..." % content_inner_path)
+            logging.info(f"Verifing {content_inner_path} signature...")
             error = None
             try:
                 file_correct = site.content_manager.verifyFile(
@@ -364,16 +363,16 @@ class Actions:
                 error = err
 
             if file_correct is True:
-                logging.info("[OK] %s (Done in %.3fs)" % (content_inner_path, time.time() - s))
+                logging.info(f"[OK] {content_inner_path} (Done in {time.time() - s:.3f}s)")
             else:
-                logging.error("[ERROR] %s: invalid file: %s!" % (content_inner_path, error))
+                logging.error(f"[ERROR] {content_inner_path}: invalid file: {error}!")
                 input("Continue?")
                 bad_files += content_inner_path
 
         logging.info("Verifying site files...")
         bad_files += site.storage.verifyFiles()["bad_files"]
         if not bad_files:
-            logging.info("[OK] All file sha512sum matches! (%.3fs)" % (time.time() - s))
+            logging.info(f"[OK] All file sha512sum matches! ({time.time() - s:.3f}s)")
         else:
             logging.error("[ERROR] Error during verifying site files!")
 
@@ -382,12 +381,12 @@ class Actions:
         from Site import SiteManager
         SiteManager.site_manager.load()
 
-        logging.info("Rebuilding site sql cache: %s..." % address)
+        logging.info(f"Rebuilding site sql cache: {address}...")
         site = SiteManager.site_manager.get(address)
         s = time.time()
         try:
             site.storage.rebuildDb()
-            logging.info("Done in %.3fs" % (time.time() - s))
+            logging.info(f"Done in {time.time() - s:.3f}s")
         except Exception as err:
             logging.error(err)
 
@@ -414,12 +413,12 @@ class Actions:
         file_server = FileServer("127.0.0.1", 1234)
         file_server.start()
 
-        logging.info("Announcing site %s to tracker..." % address)
+        logging.info(f"Announcing site {address} to tracker...")
         site = Site(address)
 
         s = time.time()
         site.announce()
-        print("Response time: %.3fs" % (time.time() - s))
+        print(f"Response time: {time.time() - s:.3f}s")
         print(site.peers)
 
     def siteDownload(self, address):
@@ -448,7 +447,7 @@ class Actions:
         print("Downloading...")
         site.downloadContent("content.json", check_modifications=True)
 
-        print("Downloaded in %.3fs" % (time.time()-s))
+        print(f"Downloaded in {time.time() - s:.3f}s")
 
     def siteNeedFile(self, address, inner_path):
         from Site.Site import Site
@@ -479,7 +478,7 @@ class Actions:
         site = SiteManager.site_manager.get(address)
 
         if not site:
-            logging.error("Site not found: %s" % address)
+            logging.error(f"Site not found: {address}")
             return None
 
         ws = self.getWebsocket(site)
@@ -490,7 +489,7 @@ class Actions:
         try:
             res = json.loads(res_raw)
         except Exception as err:
-            return {"error": "Invalid result: %s" % err, "res_raw": res_raw}
+            return {"error": f"Invalid result: {err}", "res_raw": res_raw}
 
         if "result" in res:
             return res["result"]
@@ -503,8 +502,8 @@ class Actions:
     def getWebsocket(self, site):
         import websocket
 
-        ws_address = "ws://%s:%s/Websocket?wrapper_key=%s" % (config.ui_ip, config.ui_port, site.settings["wrapper_key"])
-        logging.info("Connecting to %s" % ws_address)
+        ws_address = f"ws://{config.ui_ip}:{config.ui_port}/Websocket?wrapper_key={site.settings['wrapper_key']}"
+        logging.info(f"Connecting to {ws_address}")
         ws = websocket.create_connection(ws_address)
         return ws
 
@@ -584,10 +583,10 @@ class Actions:
     def cryptGetPrivatekey(self, master_seed, site_address_index=None):
         from Crypt import CryptBitcoin
         if len(master_seed) != 64:
-            logging.error("Error: Invalid master seed length: %s (required: 64)" % len(master_seed))
+            logging.error(f"Error: Invalid master seed length: {len(master_seed)} (required: 64)")
             return False
         privatekey = CryptBitcoin.hdPrivatekey(master_seed, site_address_index)
-        print("Requested private key: %s" % privatekey)
+        print(f"Requested private key: {privatekey}")
 
     # Peer
     def peerPing(self, peer_ip, peer_port=None):
@@ -602,13 +601,13 @@ class Actions:
         CryptConnection.manager.loadCerts()
 
         from Peer import Peer
-        logging.info("Pinging 5 times peer: %s:%s..." % (peer_ip, int(peer_port)))
+        logging.info(f"Pinging 5 times peer: {peer_ip}:{int(peer_port)}...")
         s = time.time()
         peer = Peer(peer_ip, peer_port)
         peer.connect()
 
         if not peer.connection:
-            print("Error: Can't connect to peer (connection error: %s)" % peer.connection_error)
+            print(f"Error: Can't connect to peer (connection error: {peer.connection_error})")
             return False
         if "shared_ciphers" in dir(peer.connection.sock):
             print("Shared ciphers:", peer.connection.sock.shared_ciphers())
@@ -616,18 +615,18 @@ class Actions:
             print("Cipher:", peer.connection.sock.cipher()[0])
         if "version" in dir(peer.connection.sock):
             print("TLS version:", peer.connection.sock.version())
-        print("Connection time: %.3fs  (connection error: %s)" % (time.time() - s, peer.connection_error))
+        print(f"Connection time: {time.time() - s:.3f}s  (connection error: {peer.connection_error})")
 
         for i in range(5):
             ping_delay = peer.ping()
-            print("Response time: %.3fs" % ping_delay)
+            print(f"Response time: {ping_delay:.3f}s")
             time.sleep(1)
         peer.remove()
         print("Reconnect test...")
         peer = Peer(peer_ip, peer_port)
         for i in range(5):
             ping_delay = peer.ping()
-            print("Response time: %.3fs" % ping_delay)
+            print(f"Response time: {ping_delay:.3f}s")
             time.sleep(1)
 
     def peerGetFile(self, peer_ip, peer_port, site, filename, benchmark=False):
@@ -640,13 +639,13 @@ class Actions:
         CryptConnection.manager.loadCerts()
 
         from Peer import Peer
-        logging.info("Getting %s/%s from peer: %s:%s..." % (site, filename, peer_ip, peer_port))
+        logging.info(f"Getting {site}/{filename} from peer: {peer_ip}:{peer_port}...")
         peer = Peer(peer_ip, peer_port)
         s = time.time()
         if benchmark:
             for i in range(10):
                 peer.getFile(site, filename),
-            print("Response time: %.3fs" % (time.time() - s))
+            print(f"Response time: {time.time() - s:.3f}s")
             input("Check memory")
         else:
             print(peer.getFile(site, filename).read())
@@ -672,7 +671,7 @@ class Actions:
             res = peer.request(cmd, parameters)
             print(json.dumps(res, indent=2, ensure_ascii=False))
         except Exception as err:
-            print("Unknown response (%s): %s" % (err, res))
+            print(f"Unknown response ({err}): {res}")
 
     def getConfig(self):
         import json
@@ -692,27 +691,25 @@ class Actions:
                 func_name = "test" + test_name[0].upper() + test_name[1:]
                 func = getattr(self, func_name)
                 if func.__doc__:
-                    print("- %s: %s" % (test_name, func.__doc__.strip()))
+                    print(f"- {test_name}: {func.__doc__.strip()}")
                 else:
-                    print("- %s" % test_name)
+                    print(f"- {test_name}")
             return None
 
         # Run tests
         func_name = "test" + test_name[0].upper() + test_name[1:]
         if hasattr(self, func_name):
             func = getattr(self, func_name)
-            print("- Running test: %s" % test_name, end="")
+            print(f"- Running test: {test_name}", end="")
             s = time.time()
             ret = func(*args, **kwargs)
             if type(ret) is types.GeneratorType:
                 for progress in ret:
                     print(progress, end="")
                     sys.stdout.flush()
-            print("\n* Test %s done in %.3fs" % (test_name, time.time() - s))
+            print(f"\n* Test {test_name} done in {time.time() - s:.3f}s")
         else:
-            print("Unknown test: %r (choose from: %s)" % (
-                test_name, test_names
-            ))
+            print(f"Unknown test: {test_name!r} (choose from: {test_names})")
 
 
 actions = Actions()

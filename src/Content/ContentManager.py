@@ -8,6 +8,8 @@ import sys
 
 import gevent
 
+from typing import IO
+
 from Debug import Debug
 from Crypt import CryptHash
 from Crypt import CryptBitcoin
@@ -68,34 +70,31 @@ class ContentManager(object):
                 del(deleted[relative_path_old])
         return list(deleted), renamed
 
-    # Load content.json to self.content
-    # Return: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
     def loadContent(self, content_inner_path="content.json", add_bad_files=True, delete_removed_files=True, load_includes=True, force=False):
+        """Load content.json to self.content
+
+        returns tuple of two lists: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
+        """
         content_inner_path = content_inner_path.strip("/")  # Remove / from beginning
         old_content = self.contents.get(content_inner_path)
-        content_path = self.site.storage.getPath(content_inner_path)
-        content_dir = helper.getDirname(self.site.storage.getPath(content_inner_path))
+
         content_inner_dir = helper.getDirname(content_inner_path)
 
-        if os.path.isfile(content_path):
-            try:
-                new_content = self.site.storage.loadJson(content_inner_path)
-                # Check if file is newer than what we have
-                if not force and old_content and not self.site.settings.get("own"):
-                    new_ts = int(float(new_content.get('modified', 0)))
-                    old_ts = int(float(old_content.get('modified', 0)))
-                    if new_ts < old_ts:
-                        self.log.debug(f'got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
-                        return [], []
-                    elif new_ts == old_ts:
-                        self.log.debug(f'got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
-                        return [], []
-            except Exception as err:
-                self.log.warning(f'{content_path} load error: {Debug.formatException(err)}')
-                return [], []
-        else:
-            self.log.debug(f'Content.json not exist: {content_path}')
-            return [], []  # Content.json not exist
+        try:
+            new_content = self.site.storage.loadJson(content_inner_path)
+            # Check if file is newer than what we have
+            if not force and old_content and not self.site.settings.get("own"):
+                new_ts = int(float(new_content.get('modified', 0)))
+                old_ts = int(float(old_content.get('modified', 0)))
+                if new_ts < old_ts:
+                    self.log.debug(f'got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
+                    return [], []
+                elif new_ts == old_ts:
+                    self.log.debug(f'got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
+                    return [], []
+        except Exception as err:
+            self.log.warning(f'{content_inner_path} load error: {Debug.formatException(err)}')
+            return [], []
 
         try:
             # Get the files where the sha512 changed
@@ -262,7 +261,7 @@ class ContentManager(object):
 
             # Load blind user includes (all subdir)
             if load_includes and "user_contents" in new_content:
-                for relative_dir in os.listdir(content_dir):
+                for relative_dir in self.site.storage.list(content_inner_dir):
                     include_inner_path = content_inner_dir + relative_dir + "/content.json"
                     if not self.site.storage.isFile(include_inner_path):
                         continue  # Content.json not exist
@@ -919,9 +918,13 @@ class ContentManager(object):
 
         return True  # All good
 
-    # Verify file validity
-    # Return: None = Same as before, False = Invalid, True = Valid
-    def verifyFile(self, inner_path, file, ignore_same=True):
+    def verifyFile(self, inner_path, file: IO | dict, ignore_same=True) -> bool | None:
+        """Verify file validity
+
+        Return: None = Same as before, False = Invalid, True = Valid
+
+        NOTE that this is not very optimal for new db style!
+        """
         if inner_path.endswith("content.json"):  # content.json: Check using sign
             try:
                 if type(file) is dict:

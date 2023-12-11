@@ -12,10 +12,10 @@ import time
 class Config(object):
 
     def __init__(self, argv):
-        self.version = "0.7.10+"
+        self.version = "0.8-alpha0"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5130
+        self.rev = 5400
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
@@ -212,7 +212,7 @@ class Config(object):
         self.parser.add_argument('--debug', help='Debug mode', action='store_true')
         self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
         self.parser.add_argument('--debug_socket', help='Debug socket connections', action='store_true')
-        self.parser.add_argument('--merge_media', help='Merge all.js and all.css', action='store_true')
+        self.parser.add_argument('--debug_sign', help='Debug signing and related actions: allow to perform them w/o authorization checks', action='store_true')
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
@@ -305,6 +305,9 @@ class Config(object):
         self.parser.add_argument('--tor_hs_limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
         self.parser.add_argument('--tor_hs_port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
+        self.parser.add_argument('--postgrest_api', help='PostgREST API point', metavar='protocol://ip:port', default='http://127.0.0.1:3000')
+        self.parser.add_argument('--postgrest_db', help='PostgRES(T) DB name', default='riza0')
+
         self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
         self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
@@ -331,7 +334,7 @@ class Config(object):
                     if "://" in tracker and tracker not in self.trackers:
                         self.trackers.append(tracker)
             except Exception as err:
-                print("Error loading trackers file: %s" % err)
+                print(f"Error loading trackers file: {err}")
 
     # Find arguments specified for current action
     def getActionArguments(self):
@@ -451,11 +454,11 @@ class Config(object):
                         key = section + "_" + key
 
                     if key == "open_browser":  # Prefer config file value over cli argument
-                        while "--%s" % key in argv:
+                        while f"--{key}" in argv:
                             pos = argv.index("--open_browser")
                             del argv[pos:pos + 2]
 
-                    argv_extend = ["--%s" % key]
+                    argv_extend = [f"--{key}"]
                     if val:
                         for line in val.strip().split("\n"):  # Allow multi-line values
                             argv_extend.append(line)
@@ -603,9 +606,9 @@ class Config(object):
 
     def initFileLogger(self):
         if self.action == "main":
-            log_file_path = "%s/debug.log" % self.log_dir
+            log_file_path = f"{self.log_dir}/debug.log"
         else:
-            log_file_path = "%s/cmd.log" % self.log_dir
+            log_file_path = f"{self.log_dir}/cmd.log"
 
         if self.log_rotate == "off":
             file_logger = logging.FileHandler(log_file_path, "w", "utf-8")
@@ -636,7 +639,7 @@ class Config(object):
             try:
                 os.chmod(self.log_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
             except Exception as err:
-                print("Can't change permission of %s: %s" % (self.log_dir, err))
+                print(f"Can't change permission of {self.log_dir}: {err}")
 
         logging.getLogger('').name = "-"  # Remove root prefix
 

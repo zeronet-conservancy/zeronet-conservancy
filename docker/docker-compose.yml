@@ -9,11 +9,44 @@ services:
       dockerfile: docker/tor.Dockerfile
     networks:
       - 0net-network
-    environment: &tor-environments
+    environment: &tor-environment
       # since we are using tor internally, password doesn't really matter
       TOR_CONTROL_PASSWD: some_password
       TOR_SOCKS_PORT: 9050
       TOR_CONTROL_PORT: 9051
+
+  postgres:
+    tty: true
+    stdin_open: true
+    image: postgres:16-alpine
+    # debug only
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - ./postgres-data:/var/lib/postgresql/data
+    environment: &postgres-environment
+      POSTGRES_PASSWORD: postgres_pwd
+
+  postgrest:
+    image: postgrest/postgrest
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      PGRST_DB_URI: postgres://postgres:postgres_pwd@postgres:5432/test
+      PGRST_DB_ANON_ROLE: local_web_anon
+      PGRST_OPENAPI_SERVER_PROXY_URI: http://127.0.0.1:3000
+
+  pgadmin:
+    tty: true
+    stdin_open: true
+    image: dpage/pgadmin4:8
+    ports:
+      - "127.0.0.1:8085:80"
+    depends_on:
+      - postgres
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@admin.admin
+      PGADMIN_DEFAULT_PASSWORD: password
 
   0net-conservancy:
     tty: true
@@ -31,9 +64,12 @@ services:
       - "127.0.0.1:43110:43110"
     depends_on:
       - tor
+      - postgres
+      - postgrest
+      - pgadmin
     environment:
       TOR_ENABLED: enable
-      <<: *tor-environments
+      <<: [*tor-environment, *postgres-environment]
 
   # integrated container with tor
   0net-tor:

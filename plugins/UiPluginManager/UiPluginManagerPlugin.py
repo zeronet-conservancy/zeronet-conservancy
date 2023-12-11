@@ -47,10 +47,6 @@ class UiRequestPlugin(object):
     def actionUiMedia(self, path, *args, **kwargs):
         if path.startswith("/uimedia/plugins/plugin_manager/"):
             file_path = path.replace("/uimedia/plugins/plugin_manager/", plugin_dir + "/media/")
-            if config.debug and (file_path.endswith("all.js") or file_path.endswith("all.css")):
-                # If debugging merge *.css to all.css and *.js to all.js
-                from Debug import DebugMedia
-                DebugMedia.merge(file_path)
 
             if file_path.endswith("js"):
                 data = _.translateData(open(file_path).read(), mode="js").encode("utf8")
@@ -59,7 +55,7 @@ class UiRequestPlugin(object):
             else:
                 data = open(file_path, "rb").read()
 
-            return self.actionFile(file_path, file_obj=io.BytesIO(data), file_size=len(data))
+            return self.actionFile(None, file_path, file_obj=io.BytesIO(data), file_size=len(data))
         else:
             return super(UiRequestPlugin, self).actionUiMedia(path)
 

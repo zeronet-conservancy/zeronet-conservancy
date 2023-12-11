@@ -359,7 +359,7 @@ class SiteManagerPlugin(object):
                 merged_db_new[site.address] = merged_type
 
             # Update merger sites
-            for permission in site.settings["permissions"]:
+            for permission in site.settings.get("permissions", []):
                 if not permission.startswith("Merger:"):
                     continue
                 if merged_type:
@@ -378,7 +378,7 @@ class SiteManagerPlugin(object):
             # Update merged to merger
             if merged_type:
                 for merger_site in self.sites.values():
-                    if "Merger:" + merged_type in merger_site.settings["permissions"]:
+                    if "Merger:" + merged_type in merger_site.settings.get("permissions", []):
                         if site.address not in merged_to_merger_new:
                             merged_to_merger_new[site.address] = []
                         merged_to_merger_new[site.address].append(merger_site)
