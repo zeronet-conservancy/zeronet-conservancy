@@ -155,11 +155,17 @@ class Worker(object):
 
             write_lock = self.getTaskLock(task)
             write_lock.acquire()
-            if task["site"].content_manager.verifyFile(task["inner_path"], buff) is None:
+            verifyResult = task["site"].content_manager.verifyFile(task["inner_path"], buff)
+            if verifyResult is None:
                 is_same = True
+                is_valid = True
+            elif verifyResult is False:
+                self.peer.connection.badAction(5)
+                is_valid = False
+                is_same = False
             else:
                 is_same = False
-            is_valid = True
+                is_valid = True
         except (WorkerDownloadError, VerifyError) as err:
             download_err = err
             is_valid = False
