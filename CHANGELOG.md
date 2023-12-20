@@ -1,5 +1,16 @@
 ### zeronet-conservancy 0.7.10+
+- disable site-plugins installed for security reasons (@caryoscelus)
+- fix downloading geoip db (@caryoscelus)
+- python <3.6 is officially unsupported
+- SafeRe improvements by @geekless
+- remove and don't update muted files (@caryoscelus)
+- option to disable port checking (@caryoscelus)
+- new install startup improvements (@caryoscelus)
+- fix blank site with UiPassword under certain conditions (reported & sponsored by @bitcoren) (@caryoscelus)
+- fix chromium compatibility (@caryoscelus)
+- better fix of local sites leak (@caryoscelus)
 - ipython-based repl via --repl for debug/interactive development (@caryoscelus)
+- various improvements
 
 ### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
 prepared by @caryoscelus
