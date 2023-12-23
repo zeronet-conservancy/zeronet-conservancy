@@ -128,8 +128,11 @@ class Worker(object):
                 "%s: Verify failed: %s, error: %s, failed peers: %s, workers: %s" %
                 (self.key, task["inner_path"], error, len(task["failed"]), task["workers_num"])
             )
-            # traceback.format_
-            self.manager.log.debug(''.join(traceback.format_exception(error)))
+            if sys.version_info.major == 3 and sys.version_info.minor < 10:
+                tbk = traceback.format_exc() # ugh, this could in theory be a different error
+            else:
+                tbk = traceback.format_exception(error)
+            self.manager.log.debug(''.join(tbk))
         task["failed"].append(self.peer)
         self.peer.hash_failed += 1
         if self.peer.hash_failed >= max(len(self.manager.tasks), 3) or self.peer.connection_error > 10:
