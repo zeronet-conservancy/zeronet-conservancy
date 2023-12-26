@@ -178,8 +178,10 @@ class SiteAnnouncer:
         return back
 
     def announceDHT(self):
+        if self.dht_server is None:
+            return
         peers = self.dht_server.announce(self.site.address_sha1)
-        print(f'{self.site.address}: DHT {self.site.address_sha1.hex()} got {peers=}')
+        self.site.log.info(f'DHT {self.site.address_sha1.hex()} got {peers=}')
         for peer in peers:
             self.site.addPeer(peer['addr'], peer['port'], 'dht')
 

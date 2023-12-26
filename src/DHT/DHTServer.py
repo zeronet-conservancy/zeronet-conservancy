@@ -1,6 +1,7 @@
-from rich import print
-
 import random
+import logging
+
+from rich import print
 
 import asyncio
 
@@ -32,10 +33,10 @@ class DHTServer:
     def start(self):
         self.loop = asyncio_gevent.EventLoop()
         asyncio.set_event_loop(self.loop)
-        print('Starting asyncio loop')
+        logging.info('Starting asyncio loop')
         self.loop.run_until_complete(self.run(self.loop))
         self.loop.run_forever()
-        print('DHTServer finished..')
+        logging.info('DHTServer finished..')
 
     async def run(self, loop):
         udp = UDPServer()
@@ -46,13 +47,13 @@ class DHTServer:
 
         self.dht = DHT(int(node_id, 16), server=udp, loop=self.loop)
 
-        print('Bootstrapping DHT')
+        logging.info('Bootstrapping DHT')
         await self.dht.bootstrap(initial_nodes)
-        print('Bootstrap complete')
+        logging.info('DHT bootstrap complete')
 
     async def _announce(self, site_hash):
         await self.dht.announce(site_hash, config.fileserver_port)
-        print(f'announced {site_hash.hex()}, looking for peers')
+        logging.info(f'DHT: announced {site_hash.hex()}, looking for peers')
         self.peers[site_hash] = await self.dht[site_hash]
 
     def announce(self, site_hash):

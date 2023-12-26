@@ -212,11 +212,14 @@ class Actions:
     def main(self):
         from File import FileServer
         from Ui import UiServer
-        from DHT import DHTServer
 
         global file_server, ui_server, dht_server
 
-        dht_server = DHTServer()
+        if config.dht:
+            from DHT import DHTServer
+            dht_server = DHTServer()
+        else:
+            dht_server = None
 
         file_server = FileServer()
         ui_server = UiServer()
@@ -237,8 +240,9 @@ class Actions:
             gevent.spawn(ui_server.start),
             gevent.spawn(ui_server.startSiteServer),
             gevent.spawn(file_server.start),
-            gevent.spawn(dht_server.start),
         ]
+        if dht_server is not None:
+            launched_greenlets.append(gevent.spawn(dht_server.start))
 
         # if --repl, start ipython thread
         # FIXME: Unfortunately this leads to exceptions on exit so use with care

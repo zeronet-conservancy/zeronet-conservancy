@@ -1,5 +1,5 @@
 ### zeronet-conservancy 0.7.10+
-- disable site-plugins installed for security reasons (@caryoscelus)
+- disable site-installed plugins for security reasons (@caryoscelus)
 - fix downloading geoip db (@caryoscelus)
 - python <3.6 is officially unsupported
 - SafeRe improvements by @geekless
@@ -10,6 +10,7 @@
 - fix chromium compatibility (@caryoscelus)
 - better fix of local sites leak (@caryoscelus)
 - ipython-based repl via --repl for debug/interactive development (@caryoscelus)
+- experimental DHT support (@caryoscelus)
 - various improvements
 
 ### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
