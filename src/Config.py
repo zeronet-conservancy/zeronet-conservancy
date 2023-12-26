@@ -15,7 +15,7 @@ class Config(object):
         self.version = "0.7.10+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
-        self.rev = 5140
+        self.rev = 5141
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
