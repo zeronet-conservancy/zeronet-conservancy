@@ -1,5 +1,7 @@
 from rich import print
 
+import random
+
 import asyncio
 
 import asyncio_gevent
@@ -15,6 +17,13 @@ initial_nodes = [
     ("82.221.103.244", 6881)  # router.utorrent.com
 ]
 
+def randomNodeId():
+    r = ''
+    for _ in range(20):
+        byte = int(random.random()*256)
+        r += f'{byte:02X}'
+    return f'0x{r}'
+
 class DHTServer:
     """Process DHT requests"""
     def __init__(self):
@@ -29,10 +38,11 @@ class DHTServer:
         print('DHTServer finished..')
 
     async def run(self, loop):
-        # return None
         udp = UDPServer()
         udp.run("0.0.0.0", 12346, loop=loop)
-        node_id = "0x54A10C9B159FC0FBBF6A39029BCEF406904019E0" # TODO
+
+        # TODO: preserve DHT id among sessions
+        node_id = randomNodeId()
 
         self.dht = DHT(int(node_id, 16), server=udp, loop=self.loop)
 
