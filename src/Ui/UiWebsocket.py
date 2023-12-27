@@ -328,8 +328,8 @@ class UiWebsocket(object):
                 'ui_ip' : config.ui_ip,
                 'ui_port' : config.ui_port,
                 'version' : config.version,
-                # The only place this is used is in dashboard so we shorten it for now
-                'rev' : config.commit[:8],
+                # Some legacy code relies on this being an integer, so lets return dummy one
+                'rev' : config.user_agent_rev,
                 'timecorrection' : file_server.timecorrection,
                 'language' : config.language,
                 'debug' : config.debug,
