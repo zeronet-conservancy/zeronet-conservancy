@@ -660,7 +660,7 @@ class UiRequest:
             permissions=json.dumps(site.settings["permissions"]),
             show_loadingscreen=json.dumps(show_loadingscreen),
             sandbox_permissions=sandbox_permissions,
-            rev=config.rev,
+            rev=config.commit,
             lang=config.language,
             homepage=homepage,
             themeclass=themeclass,
@@ -1038,7 +1038,7 @@ class UiRequest:
 
         if details and config.debug:
             details = {key: val for key, val in list(self.env.items()) if hasattr(val, "endswith") and "COOKIE" not in key}
-            details["version_zeronet"] = "%s r%s" % (config.version, config.rev)
+            details["version_zeronet"] = config.version_full
             details["version_python"] = sys.version
             details["version_gevent"] = gevent.__version__
             details["plugins"] = PluginManager.plugin_manager.plugin_names

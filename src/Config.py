@@ -26,9 +26,9 @@ class Config:
             self.branch = Build.branch
             self.commit = Build.commit
         self.version = "0.7.10+"
+        self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"
-        # DEPRECATED ; replace with git-generated commit
-        self.rev = 5140
+        # for compatibility
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
@@ -319,8 +319,7 @@ class Config:
         self.parser.add_argument('--tor-hs-port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
         self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
-        self.parser.add_argument('--version', action='version',
-                                 version=f'zeronet-conservancy {self.version} ({self.build_type} from {self.branch}-{self.commit})')
+        self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version_full}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 
         return self.parser

@@ -328,13 +328,15 @@ class UiWebsocket(object):
                 'ui_ip' : config.ui_ip,
                 'ui_port' : config.ui_port,
                 'version' : config.version,
-                'rev' : config.rev,
+                # The only place this is used is in dashboard so we shorten it for now
+                'rev' : config.commit[:8],
                 'timecorrection' : file_server.timecorrection,
                 'language' : config.language,
                 'debug' : config.debug,
                 'offline' : config.offline,
                 'plugins' : PluginManager.plugin_manager.plugin_names,
-                'plugins_rev' : PluginManager.plugin_manager.plugins_rev,
+                # For compat only
+                'plugins_rev' : {},
                 'user_settings' : self.user.settings,
                 'lib_verify_best' : CryptBitcoin.lib_verify_best
             }
