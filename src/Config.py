@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import platform
 import locale
 import re
 import configparser
@@ -9,9 +10,21 @@ import logging.handlers
 import stat
 import time
 
-class Config(object):
+class Config:
 
     def __init__(self, argv):
+        try:
+            from . import Build
+        except ImportError:
+            print('cannot find build')
+            from .util import Git
+            self.build_type = 'source'
+            self.branch = Git.branch() or 'unknown'
+            self.commit = Git.commit() or 'unknown'
+        else:
+            self.build_type = Build.build_type
+            self.branch = Build.branch
+            self.commit = Build.commit
         self.version = "0.7.10+"
         self.user_agent = "conservancy"
         # DEPRECATED ; replace with git-generated commit
@@ -306,7 +319,8 @@ class Config(object):
         self.parser.add_argument('--tor-hs-port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
         self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
-        self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
+        self.parser.add_argument('--version', action='version',
+                                 version=f'zeronet-conservancy {self.version} ({self.build_type} from {self.branch}-{self.commit})')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 
         return self.parser
