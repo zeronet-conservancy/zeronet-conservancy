@@ -44,8 +44,8 @@ class Config:
             "tor", "fileserver_port", "fileserver_ip_type", "threads_fs_read", "threads_fs_write", "threads_crypt", "threads_db"
         ])
         self.start_dir = self.getStartDir()
-
         self.config_file = self.start_dir + "/zeronet.conf"
+        self.private_dir = self.start_dir + '/private'
         self.data_dir = self.start_dir + "/data"
         self.log_dir = self.start_dir + "/log"
         self.openssl_lib_file = None
@@ -69,19 +69,45 @@ class Config:
         return v.lower() in ("yes", "true", "t", "1")
 
     def getStartDir(self):
-        this_file = os.path.abspath(__file__).replace("\\", "/").rstrip("cd")
-
+        """Return directory with config & data"""
         if "--start-dir" in self.argv:
-            start_dir = self.argv[self.argv.index("--start-dir") + 1]
-        elif this_file.endswith("/Contents/Resources/core/src/Config.py"):
-            # Running as ZeroNet.app
-            if this_file.startswith("/Application") or this_file.startswith("/private") or this_file.startswith(os.path.expanduser("~/Library")):
-                # Runnig from non-writeable directory, put data to Application Support
-                start_dir = os.path.expanduser("~/Library/Application Support/ZeroNet")
-            else:
-                # Running from writeable directory put data next to .app
-                start_dir = re.sub("/[^/]+/Contents/Resources/core/src/Config.py", "", this_file)
-        elif this_file.endswith("/core/src/Config.py"):
+            return self.argv[self.argv.index("--start-dir") + 1]
+
+        if '--portable' in self.argv or self.build_type == 'portable':
+            return '.'
+
+        here = os.path.dirname(os.path.abspath(__file__).replace("\\", "/"))
+        if os.path.isdir(f'{here}/data') and not '--no-portable' in self.argv:
+            print('WARNING: found data in current directory')
+            print('  It used to be default behaviour to store data alongside project directory,')
+            print('  but now we default to place data and config in user home directory.')
+            print('  If you want to keep previous behaviour, please use --portable')
+            print('Assuming implicit --portable (use --no-portable to override)')
+            print(self.argv)
+            self.argv.insert(1, '--portable')
+            print(self.argv)
+            return '.'
+
+        home_zn = os.path.expanduser(f'~/ZeroNet')
+        if os.path.isdir(home_zn):
+            print(f'WARNING: found data in {home_zn}')
+            print( '  It is possible that this is from previous version or another installation')
+            print( '  altogether. If you want to use that data directory with zeronet-conservancy')
+            print(f'  you have to run it with --start-dir "{home_zn}" option')
+
+        if platform.system() == 'Linux':
+            # XDG!
+            return os.path.expanduser('~/.local/zeronet-conservancy')
+
+        if platform.system() == 'Darwin':
+            return os.path.expanduser("~/Library/Application Support/zeronet-conservancy")
+
+        if platform.system() == 'Windows':
+            return os.path.expanduser('~/AppData/zeronet-conservancy')
+            
+        elif here.endswith("/Contents/Resources/core/src"):
+            start_dir = os.path.expanduser("~/Library/Application Support/ZeroNet")
+        elif this_file.endswith("/core/src"):
             # Running as exe or source is at Application Support directory, put var files to outside of core dir
             start_dir = this_file.replace("/core/src/Config.py", "")
         elif not os.access(this_file.replace('/src/Config.py', ''), os.R_OK | os.W_OK):
@@ -89,8 +115,6 @@ class Config:
             start_dir = os.path.expanduser("~/ZeroNet")
         else:
             start_dir = "."
-
-        return start_dir
 
     # Create command line arguments
     def createArguments(self):
@@ -409,11 +433,14 @@ class Config:
 
         self.parseCommandline(argv, silent)  # Parse argv
         self.setAttributes()
+        print('Parsed command line once')
+        print(self.arguments)
         if parse_config:
             argv = self.parseConfig(argv)  # Add arguments from config file
 
         self.parseCommandline(argv, silent)  # Parse argv
         self.setAttributes()
+        print('Parsed command line twice')
 
         if not silent:
             if self.fileserver_ip != "*" and self.fileserver_ip not in self.ip_local:
@@ -426,6 +453,7 @@ class Config:
             current_parser.exit = original_exit
 
         self.loadTrackersFile()
+        print('Parse done')
 
     def fixArgs(self, args):
         "Fix old-style flags and issue a warning"
@@ -450,13 +478,20 @@ class Config:
             action = "main"
         argv = self.moveUnknownToEnd(argv, action)
         if silent:
+            # print(argv[1:])
             res = self.parser.parse_known_args(argv[1:])
+            # print(res) # ????
+            # parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+            # parser.add_subparsers(title='Action', dest='action')
+            # parser.parse_args(argv[1:])
             if res:
                 self.arguments = res[0]
             else:
                 self.arguments = {}
         else:
+            print('Parsing again')
             self.arguments = self.parser.parse_args(argv[1:])
+            print('Parsed thrice')
         if self.arguments.ui_site_port is None:
             self.arguments.ui_site_port = self.arguments.ui_port + 1
 
