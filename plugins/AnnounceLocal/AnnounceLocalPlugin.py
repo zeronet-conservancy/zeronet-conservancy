@@ -31,7 +31,7 @@ class LocalAnnouncer(BroadcastServer.BroadcastServer):
         self.sender_info["peer_id"] = self.server.peer_id
         self.sender_info["port"] = self.server.port
         self.sender_info["broadcast_port"] = listen_port
-        self.sender_info["rev"] = config.rev
+        self.sender_info["rev"] = config.user_agent_rev
 
         self.known_peers = {}
         self.last_discover = 0

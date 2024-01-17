@@ -22,7 +22,6 @@ class PluginManager:
         self.pluggable = {}
         self.plugin_names = []  # Loaded plugin names
         self.plugins_updated = {}  # List of updated plugins since restart
-        self.plugins_rev = {}  # Installed plugins revision numbers
         self.after_load = []   # Execute functions after loaded plugins
         self.function_flags = {}  # Flag function for permissions
         self.reloading = False
@@ -88,7 +87,6 @@ class PluginManager:
             plugin["dir_path"] = dir_path
             plugin["inner_path"] = plugin_name
             plugin["enabled"] = is_enabled
-            plugin["rev"] = config.rev
             plugin["loaded"] = plugin_name in self.plugin_names
             plugins.append(plugin)
 
@@ -101,7 +99,6 @@ class PluginManager:
         for plugin in self.listPlugins():
             self.log.debug("Loading plugin: %s (%s)" % (plugin["name"], plugin["source"]))
             if plugin["source"] != "builtin":
-                self.plugins_rev[plugin["name"]] = plugin["rev"]
                 site_plugin_dir = os.path.dirname(plugin["dir_path"])
                 if site_plugin_dir not in sys.path:
                     sys.path.append(site_plugin_dir)
