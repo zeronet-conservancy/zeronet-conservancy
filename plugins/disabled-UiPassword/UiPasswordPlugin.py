@@ -159,7 +159,7 @@ class UiRequestPlugin(object):
 class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("UiPassword plugin")
-        group.add_argument('--ui_password', help='Password to access UiServer', default=None, metavar="password")
+        group.add_argument('--ui-password', help='Password to access UiServer', default=None, metavar="password")
 
         return super(ConfigPlugin, self).createArguments()
 
