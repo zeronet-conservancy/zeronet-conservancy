@@ -272,7 +272,7 @@ class UiWebsocketPlugin(object):
 class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("Multiuser plugin")
-        group.add_argument('--multiuser_local', help="Enable unsafe Ui functions and write users to disk", action='store_true')
-        group.add_argument('--multiuser_no_new_sites', help="Denies adding new sites by normal users", action='store_true')
+        group.add_argument('--multiuser-local', help="Enable unsafe Ui functions and write users to disk", action='store_true')
+        group.add_argument('--multiuser-no-new-sites', help="Denies adding new sites by normal users", action='store_true')
 
         return super(ConfigPlugin, self).createArguments()
