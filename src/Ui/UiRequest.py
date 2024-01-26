@@ -156,7 +156,7 @@ class UiRequest:
         if self.isCrossOriginRequest():
             # we are still exposed by answering on port
             self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
-            return []
+            return self.error403()
 
         # Restict Ui access by ip
         if config.ui_restrict and self.env['REMOTE_ADDR'] not in config.ui_restrict:
