@@ -100,6 +100,25 @@ class UiRequest:
     def resolveDomain(self, domain):
         return self.server.site_manager.resolveDomainCached(domain)
 
+    def hasCorsPermission(self, referer):
+        """Check if site from referer has CORS permission to read site in current request
+
+        NOTE: this allows embedding WITHOUT prepending "cors-" (as it has already been used
+        for a long time e.g. on ZeroBlog++ based sites) as long as read permission has been
+        granted.
+        """
+        target_path = self.env['PATH_INFO']
+        if referer is None or target_path is None:
+            return False
+        s_parts = self.parsePath(referer)
+        t_parts = self.parsePath(target_path)
+        s_address = s_parts['address']
+        t_address = t_parts['address']
+        if not s_address or not t_address:
+            return False
+        s_site = self.server.sites[s_address]
+        return f'Cors:{t_address}' in s_site.settings['permissions']
+
     def isCrossOriginRequest(self):
         """Prevent detecting sites on this 0net instance
 
@@ -129,7 +148,7 @@ class UiRequest:
             return False
 
         # Deny cross site requests
-        if not self.isSameOrigin(referer, url):
+        if not self.isSameOrigin(referer, url) and not self.hasCorsPermission(referer):
             return True
 
         return False
@@ -731,7 +750,7 @@ class UiRequest:
         if "../" in path or "./" in path:
             raise SecurityError("Invalid path")
 
-        match = re.match(r"/(media/)?(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
+        match = re.match(r"(?P<server>(http[s]{0,1}://(.*?))?)/(media/)?(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if match:
             path_parts = match.groupdict()
             addr = path_parts["address"]
