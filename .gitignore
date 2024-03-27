@@ -37,3 +37,11 @@ zeronet.conf
 
 # ZeroNet log files
 log/*
+
+# Enabled plugins that disabled by default
+plugins/Bootstrapper
+plugins/DonationMessage
+plugins/Multiuser
+plugins/NoNewSites
+plugins/StemPort
+plugins/UiPassword
