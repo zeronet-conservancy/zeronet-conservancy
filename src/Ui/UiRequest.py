@@ -82,7 +82,7 @@ class UiRequest:
             self.learnHost(host)
             return True
 
-        if ":" in host and helper.isIp(host.rsplit(":", 1)[0]):  # Test without port
+        if ":" in host and helper.isIp(host.rsplit(":", 1)[0].lstrip("[").rstrip("]")):  # Test without port
             self.learnHost(host)
             return True
 
