@@ -582,6 +582,7 @@ class Config:
             "fileserver_port": self.fileserver_port,
             "ui_ip": self.ui_ip,
             "ui_port": self.ui_port,
+            "ipv6_testip": self.ipv6_testip,
             "version": self.version,
             "rev": self.rev,
             "language": self.language,
