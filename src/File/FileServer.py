@@ -98,7 +98,7 @@ class FileServer(ConnectionServer):
         if config.tor == "always":
             return True
         # Test if we can connect to ipv6 address
-        if config.ipv6_testip:
+        if hasattr(myObject, "ipv6_testip"):
             ipv6_testip = config.ipv6_testip
         else:
             ipv6_testip = "fcec:ae97:8902:d810:6c92:ec67:efb2:3ec5"
