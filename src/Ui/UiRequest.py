@@ -544,7 +544,7 @@ class UiRequest:
         return server_url
 
     def getHostWithoutPort(self):
-        return ':'.join(self.env['HTTP_HOST'].split(':')[:-1])
+        return ':'.join(self.env['HTTP_HOST'].split(':')[:-1]).lstrip("[").rstrip("]")
 
     def processQueryString(self, site, query_string):
         match = re.search("zeronet_peers=(.*?)(&|$)", query_string)
