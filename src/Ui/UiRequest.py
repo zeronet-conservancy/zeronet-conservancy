@@ -382,10 +382,12 @@ class UiRequest:
             port = int(self.env['SERVER_PORT'])
             if port == config.ui_port:
                 other_port = config.ui_site_port
+                frame_src = '*'
             else:
                 other_port = config.ui_port
-            site_server = f'{host}:{other_port}'
-            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {site_server}"
+                frame_src = 'self'
+
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
@@ -544,7 +546,7 @@ class UiRequest:
         return server_url
 
     def getHostWithoutPort(self):
-        return ':'.join(self.env['HTTP_HOST'].split(':')[:-1]).lstrip("[").rstrip("]")
+        return ':'.join(self.env['HTTP_HOST'].split(':')[:-1])
 
     def processQueryString(self, site, query_string):
         match = re.search("zeronet_peers=(.*?)(&|$)", query_string)
