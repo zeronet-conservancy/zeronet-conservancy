@@ -148,7 +148,7 @@ class UiRequest:
             return False
 
         # Deny cross site requests
-        if not self.isSameOrigin(referer, url) and not self.hasCorsPermission(referer):
+        if not self.isSameOrigin(referer, url) or not self.hasCorsPermission(referer):
             return True
 
         return False
@@ -172,7 +172,7 @@ class UiRequest:
             protocol = self.env['wsgi.url_scheme']
             return self.actionRedirect(f'{protocol}://{host}:{config.ui_port}{path_info}?{query_string}')
 
-        if self.isCrossOriginRequest():
+        if config.ui_check_cors and self.isCrossOriginRequest():
             # we are still exposed by answering on port
             self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
             return []
