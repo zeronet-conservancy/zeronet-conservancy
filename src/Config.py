@@ -76,7 +76,7 @@ class Config:
         if '--portable' in self.argv or self.build_type == 'portable':
             return '.'
 
-        here = os.path.dirname(os.path.abspath(__file__).replace("\\", "/"))
+        here = os.path.dirname(os.path.abspath(__file__).replace("\\", "/")).rstrip('/src')
         if os.path.isdir(f'{here}/data') and not '--no-portable' in self.argv:
             print('WARNING: found data in current directory')
             print('  It used to be default behaviour to store data alongside project directory,')
@@ -253,6 +253,7 @@ class Config:
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
+        self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
         self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, .conf)', default=self.start_dir, metavar="path")
         self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
         self.parser.add_argument('--data-dir', help='Path of data directory', default=data_dir, metavar="path")
@@ -300,7 +301,7 @@ class Config:
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
         self.parser.add_argument('--bootstrap-url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
-        self.parser.add_argument('--disable-bootstrap', help='Disable downloading bootstrap information from clearnet', action='store_true')
+        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=argparse.BooleanOptionalAction, default=True)
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers-file', help='Load torrent trackers dynamically from a file (using Syncronite by default)', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers-proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")

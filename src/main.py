@@ -4,6 +4,7 @@ import stat
 import time
 import logging
 from util.compat import *
+from pathlib import Path
 
 startup_errors = []
 def startupError(msg):
@@ -51,31 +52,28 @@ def importBundle(bundle):
                                 map(lambda f: removeprefix(f, prefix).split('/')[0], all_files))))
         for d in top_2:
             if isValidAddress(d):
-                logging.info(f'unpack {d} into {config.data_dir}')
+                print(f'Unpacking {d} into {config.data_dir}')
                 for fname in filter(lambda f: f.startswith(prefix+d) and not f.endswith('/'), all_files):
-                    tgt = config.data_dir + '/' + removeprefix(fname, prefix)
-                    logging.info(f'-- {fname} --> {tgt}')
+                    tgt = removeprefix(fname, prefix)
+                    print(f'-- {fname} --> {tgt}')
                     info = zf.getinfo(fname)
                     info.filename = tgt
-                    zf.extract(info)
+                    zf.extract(info, path=config.data_dir)
                 logging.info(f'add site {d}')
                 sites[d] = {}
             else:
-                logging.info(f'Warning: unknown file in a bundle: {prefix+d}')
+                print(f'Warning: unknown file in a bundle: {prefix+d}')
     with open(sites_json_path, 'w') as f:
         json.dump(sites, f)
 
 def init_dirs():
-    data_dir = config.data_dir
-    has_data_dir = os.path.isdir(data_dir)
-    need_bootstrap = not config.disable_bootstrap and (not has_data_dir or not os.path.isfile(f'{data_dir}/sites.json')) and not config.offline
+    data_dir = Path(config.data_dir)
+    need_bootstrap = (config.bootstrap
+                      and not config.offline
+                      and (not data_dir.is_dir() or not (data_dir / 'sites.json').is_file()))
 
-    if not has_data_dir:
-        os.mkdir(data_dir)
-        try:
-            os.chmod(data_dir, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
-        except Exception as err:
-            startupError(f"Can't change permission of {data_dir}: {err}")
+    if not data_dir.is_dir():
+        data_dir.mkdir(parents=True, exist_ok=True)
 
     if need_bootstrap:
         import requests
