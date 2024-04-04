@@ -45,3 +45,6 @@ plugins/Multiuser
 plugins/NoNewSites
 plugins/StemPort
 plugins/UiPassword
+
+# Build files
+src/Build.py

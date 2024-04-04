@@ -10,22 +10,24 @@ import logging.handlers
 import stat
 import time
 
+VERSION = "0.7.10+"
+
 class Config:
 
     def __init__(self, argv):
         try:
             from . import Build
         except ImportError:
-            print('cannot find build')
             from .util import Git
             self.build_type = 'source'
             self.branch = Git.branch() or 'unknown'
             self.commit = Git.commit() or 'unknown'
+            self.version = VERSION
         else:
             self.build_type = Build.build_type
             self.branch = Build.branch
             self.commit = Build.commit
-        self.version = "0.7.10+"
+            self.version = Build.version or VERSION
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"
         # for compatibility
