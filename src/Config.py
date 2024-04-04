@@ -96,7 +96,7 @@ class Config:
             print(f'  you have to run it with --start-dir "{home_zn}" option')
 
         if platform.system() == 'Linux':
-            # XDG!
+            # TODO: XDG!
             return os.path.expanduser('~/.local/zeronet-conservancy')
 
         if platform.system() == 'Darwin':
@@ -434,14 +434,11 @@ class Config:
 
         self.parseCommandline(argv, silent)  # Parse argv
         self.setAttributes()
-        print('Parsed command line once')
-        print(self.arguments)
         if parse_config:
             argv = self.parseConfig(argv)  # Add arguments from config file
 
         self.parseCommandline(argv, silent)  # Parse argv
         self.setAttributes()
-        print('Parsed command line twice')
 
         if not silent:
             if self.fileserver_ip != "*" and self.fileserver_ip not in self.ip_local:
@@ -454,7 +451,6 @@ class Config:
             current_parser.exit = original_exit
 
         self.loadTrackersFile()
-        print('Parse done')
 
     def fixArgs(self, args):
         "Fix old-style flags and issue a warning"
@@ -490,9 +486,7 @@ class Config:
             else:
                 self.arguments = {}
         else:
-            print('Parsing again')
             self.arguments = self.parser.parse_args(argv[1:])
-            print('Parsed thrice')
         if self.arguments.ui_site_port is None:
             self.arguments.ui_site_port = self.arguments.ui_port + 1
 
