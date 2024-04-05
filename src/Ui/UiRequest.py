@@ -148,7 +148,7 @@ class UiRequest:
             return False
 
         # Deny cross site requests
-        if not self.isSameOrigin(referer, url) or not self.hasCorsPermission(referer):
+        if not self.isSameOrigin(referer, url) and not self.hasCorsPermission(referer):
             return True
 
         return False
@@ -165,7 +165,7 @@ class UiRequest:
         is_navigate = self.env.get('HTTP_SEC_FETCH_MODE') == 'navigate'
         is_iframe = self.env.get('HTTP_SEC_FETCH_DEST') == 'iframe'
 
-        if is_navigate and not is_iframe and self.is_data_request:
+        if ((is_navigate and not is_iframe) or not config.ui_check_cors) and self.is_data_request:
             host = self.getHostWithoutPort()
             path_info = self.env['PATH_INFO']
             query_string = self.env['QUERY_STRING']
