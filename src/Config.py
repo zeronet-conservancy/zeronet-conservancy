@@ -241,6 +241,7 @@ class Config:
         self.parser.add_argument('--log-rotate-backup-count', help='Log rotate backup count', default=5, type=int)
 
         self.parser.add_argument('--language', help='Web interface language', default=language, metavar='language')
+        self.parser.add_argument('--ui-ip-protect', help="Protect UI server from being accessed through third-party pages and on unauthorized cross-origin pages (enabled by default when serving on localhost IPs; doesn't work with non-local IPs, need testing with host names)", choices=['always', 'local', 'off'], default='local')
         self.parser.add_argument('--ui-ip', help='Web interface bind address', default="127.0.0.1", metavar='ip')
         self.parser.add_argument('--ui-port', help='Web interface bind port', default=43110, type=int, metavar='port')
         self.parser.add_argument('--ui-site-port', help='Port for serving site content, defaults to ui_port+1', default=None, metavar='port')
@@ -459,6 +460,14 @@ class Config:
             self.arguments = self.parser.parse_args(argv[1:])
         if self.arguments.ui_site_port is None:
             self.arguments.ui_site_port = self.arguments.ui_port + 1
+        if self.arguments.ui_ip_protect == 'always':
+            self.arguments.ui_check_cors = True
+        elif self.arguments.ui_ip_protect == 'off':
+            self.arguments.ui_check_cors = False
+        elif self.arguments.ui_ip_protect == 'local':
+            self.arguments.ui_check_cors = self.arguments.ui_ip == '127.0.0.1' or self.arguments.ui_ip == '::1'
+        else:
+            raise Exception("Wrong argparse result")
 
     def parseConfig(self, argv):
         argv = self.fixArgs(argv)

@@ -82,7 +82,7 @@ class UiRequest:
             self.learnHost(host)
             return True
 
-        if ":" in host and helper.isIp(host.rsplit(":", 1)[0]):  # Test without port
+        if ":" in host and helper.isIp(host.rsplit(":", 1)[0].lstrip("[").rstrip("]")):  # Test without port
             self.learnHost(host)
             return True
 
@@ -165,14 +165,14 @@ class UiRequest:
         is_navigate = self.env.get('HTTP_SEC_FETCH_MODE') == 'navigate'
         is_iframe = self.env.get('HTTP_SEC_FETCH_DEST') == 'iframe'
 
-        if is_navigate and not is_iframe and self.is_data_request:
+        if ((is_navigate and not is_iframe) or not config.ui_check_cors) and self.is_data_request:
             host = self.getHostWithoutPort()
             path_info = self.env['PATH_INFO']
             query_string = self.env['QUERY_STRING']
             protocol = self.env['wsgi.url_scheme']
             return self.actionRedirect(f'{protocol}://{host}:{config.ui_port}{path_info}?{query_string}')
 
-        if self.isCrossOriginRequest():
+        if config.ui_check_cors and self.isCrossOriginRequest():
             # we are still exposed by answering on port
             self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
             return []
@@ -382,10 +382,12 @@ class UiRequest:
             port = int(self.env['SERVER_PORT'])
             if port == config.ui_port:
                 other_port = config.ui_site_port
+                frame_src = '*'
             else:
                 other_port = config.ui_port
-            site_server = f'{host}:{other_port}'
-            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {site_server}"
+                frame_src = 'self'
+
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
