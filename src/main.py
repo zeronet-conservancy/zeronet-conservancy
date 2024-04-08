@@ -72,6 +72,13 @@ def init_dirs():
                       and not config.offline
                       and (not data_dir.is_dir() or not (data_dir / 'sites.json').is_file()))
 
+    old_users_json = data_dir / 'users.json'
+    if old_users_json.is_file():
+        print('Migrating existing users.json file to private/')
+    old_sites_json = data_dir / 'sites.json'
+    if old_sites_json.is_file():
+        print('Migrating existing sites.json file to private/')
+
     if not data_dir.is_dir():
         data_dir.mkdir(parents=True, exist_ok=True)
 
@@ -94,7 +101,7 @@ def init_dirs():
     if not os.path.isfile(sites_json):
         with open(sites_json, "w") as f:
             f.write("{}")
-    users_json = f"{data_dir}/users.json"
+    users_json = f"{private_dir_dir}/users.json"
     if not os.path.isfile(users_json):
         with open(users_json, "w") as f:
             f.write("{}")
