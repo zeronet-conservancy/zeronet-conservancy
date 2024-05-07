@@ -129,7 +129,7 @@ def init():
     if config.action == "main":
         from util import helper
         try:
-            lock = helper.openLocked(config.data_dir / 'lock.pid', "w")
+            lock = helper.openLocked(config.start_dir / 'lock.pid', "w")
             lock.write(f"{os.getpid()}")
         except BlockingIOError as err:
             startupError(f"Can't open lock file, your 0net client is probably already running, exiting... ({err})")
