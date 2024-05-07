@@ -44,7 +44,7 @@ class UiRequestPlugin(object):
         if ".zip/" in path or ".tar.gz/" in path:
             file_obj = None
             path_parts = self.parsePath(path)
-            file_path = "%s/%s/%s" % (config.data_dir, path_parts["address"], path_parts["inner_path"])
+            file_path = config.data_dir / path_parts["address"] / path_parts["inner_path"]
             match = re.match(r"^(.*\.(?:tar.gz|zip))/(.*)", file_path)
             archive_path, path_within = match.groups()
             if archive_path not in archive_cache:

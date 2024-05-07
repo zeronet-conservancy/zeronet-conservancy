@@ -32,6 +32,7 @@ def write_to(args, target):
         f"branch = {branch!r}",
         f"commit = {commit!r}",
         f"version = {args.version!r}",
+        f"platform = {args.platform!r}",
     ]))
 
 def main():
@@ -40,6 +41,7 @@ def main():
     parser.add_argument('--version')
     parser.add_argument('--branch')
     parser.add_argument('--commit')
+    parser.add_argument('--platform', default='source')
     parser.add_argument('--stdout', action=argparse.BooleanOptionalAction, default=False)
     args = parser.parse_args()
     if args.stdout:

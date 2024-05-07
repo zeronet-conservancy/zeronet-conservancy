@@ -92,8 +92,8 @@ class Actions:
         from Site import SiteManager
         SiteManager.site_manager.load()
 
-        os.mkdir("%s/%s" % (config.data_dir, address))
-        open("%s/%s/index.html" % (config.data_dir, address), "w").write("Hello %s!" % address)
+        (config.data_dir / address).mkdir()
+        (config.data_dir / address / 'index.html').open('w').write(f"Hello {address}!")
 
         logging.info("Creating content.json...")
         site = Site(address)

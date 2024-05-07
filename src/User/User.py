@@ -35,7 +35,7 @@ class User(object):
     # Save to data/users.json
     @util.Noparallel(queue=True, ignore_class=True)
     def save(self):
-        users_json = f'{config.private_dir}/users.json'
+        users_json = config.private_dir / 'users.json'
         s = time.time()
         users = json.load(open(users_json))
         if self.master_address not in users:

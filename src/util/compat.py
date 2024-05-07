@@ -14,3 +14,9 @@ else:
         return s.removeprefix(prefix)
     def removesuffix(s, suffix, /):
         return s.removesuffix(suffix)
+
+import argparse
+
+if not hasattr(argparse, 'BooleanOptionalAction'):
+    from .argparseCompat import BooleanOptionalAction
+    argparse.BooleanOptionalAction = BooleanOptionalAction

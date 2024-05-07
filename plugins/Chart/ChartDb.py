@@ -6,7 +6,7 @@ import time
 class ChartDb(Db):
     def __init__(self):
         self.version = 2
-        super(ChartDb, self).__init__(self.getSchema(), "%s/chart.db" % config.data_dir)
+        super(ChartDb, self).__init__(self.getSchema(), config.start_dir / 'chart.db')
         self.foreign_keys = True
         self.checkTables()
         self.sites = self.loadSites()

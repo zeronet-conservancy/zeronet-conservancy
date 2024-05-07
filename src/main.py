@@ -34,7 +34,7 @@ def importBundle(bundle):
     from Crypt.CryptBitcoin import isValidAddress
     import json
 
-    sites_json_path = f"{config.data_dir}/sites.json"
+    sites_json_path = config.private_dir / 'sites.json'
     try:
         with open(sites_json_path) as f:
             sites = json.load(f)
@@ -68,16 +68,17 @@ def importBundle(bundle):
 
 def init_dirs():
     data_dir = Path(config.data_dir)
+    private_dir = Path(config.private_dir)
     need_bootstrap = (config.bootstrap
                       and not config.offline
-                      and (not data_dir.is_dir() or not (data_dir / 'sites.json').is_file()))
+                      and (not data_dir.is_dir() or not (private_dir / 'sites.json').is_file()))
 
-    old_users_json = data_dir / 'users.json'
-    if old_users_json.is_file():
-        print('Migrating existing users.json file to private/')
-    old_sites_json = data_dir / 'sites.json'
-    if old_sites_json.is_file():
-        print('Migrating existing sites.json file to private/')
+    # old_users_json = data_dir / 'users.json'
+    # if old_users_json.is_file():
+        # print('Migrating existing users.json file to private/')
+    # old_sites_json = data_dir / 'sites.json'
+    # if old_sites_json.is_file():
+        # print('Migrating existing sites.json file to private/')
 
     if not data_dir.is_dir():
         data_dir.mkdir(parents=True, exist_ok=True)
@@ -97,11 +98,11 @@ def init_dirs():
             startupError(f"Cannot load boostrap bundle (response status: {response.status_code})")
         importBundle(BytesIO(response.content))
 
-    sites_json = f"{data_dir}/sites.json"
+    sites_json = private_dir / 'sites.json'
     if not os.path.isfile(sites_json):
         with open(sites_json, "w") as f:
             f.write("{}")
-    users_json = f"{private_dir_dir}/users.json"
+    users_json = private_dir / 'users.json'
     if not os.path.isfile(users_json):
         with open(users_json, "w") as f:
             f.write("{}")
@@ -117,7 +118,6 @@ def init():
     config.initConsoleLogger()
 
     try:
-        print(config.start_dir)
         init_dirs()
     except:
         import traceback as tb
@@ -129,7 +129,7 @@ def init():
     if config.action == "main":
         from util import helper
         try:
-            lock = helper.openLocked(f"{config.data_dir}/lock.pid", "w")
+            lock = helper.openLocked(config.data_dir / 'lock.pid', "w")
             lock.write(f"{os.getpid()}")
         except BlockingIOError as err:
             startupError(f"Can't open lock file, your 0net client is probably already running, exiting... ({err})")

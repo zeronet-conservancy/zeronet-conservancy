@@ -24,20 +24,20 @@ class CryptConnectionManager:
         self.context_server = None
 
         self.openssl_conf_template = "src/lib/openssl/openssl.cnf"
-        self.openssl_conf = config.data_dir + "/openssl.cnf"
+        self.openssl_conf = config.private_dir / "openssl.cnf"
 
         self.openssl_env = {
             "OPENSSL_CONF": self.openssl_conf,
-            "RANDFILE": config.data_dir + "/openssl-rand.tmp"
+            "RANDFILE": config.private_dir / "openssl-rand.tmp"
         }
 
         self.crypt_supported = []  # Supported cryptos
 
-        self.cacert_pem = config.data_dir + "/cacert-rsa.pem"
-        self.cakey_pem = config.data_dir + "/cakey-rsa.pem"
-        self.cert_pem = config.data_dir + "/cert-rsa.pem"
-        self.cert_csr = config.data_dir + "/cert-rsa.csr"
-        self.key_pem = config.data_dir + "/key-rsa.pem"
+        self.cacert_pem = config.private_dir / "cacert-rsa.pem"
+        self.cakey_pem = config.private_dir / "cakey-rsa.pem"
+        self.cert_pem = config.private_dir / "cert-rsa.pem"
+        self.cert_csr = config.private_dir / "cert-rsa.csr"
+        self.key_pem = config.private_dir / "key-rsa.pem"
 
         self.log = logging.getLogger("CryptConnectionManager")
         self.log.debug("Version: %s" % ssl.OPENSSL_VERSION)
@@ -105,8 +105,8 @@ class CryptConnectionManager:
         if config.keep_ssl_cert:
             return False
         for file_name in ["cert-rsa.pem", "key-rsa.pem", "cacert-rsa.pem", "cakey-rsa.pem", "cacert-rsa.srl", "cert-rsa.csr", "openssl-rand.tmp"]:
-            file_path = "%s/%s" % (config.data_dir, file_name)
-            if os.path.isfile(file_path):
+            file_path = config.data_dir / file_name
+            if file_path.is_file():
                 os.unlink(file_path)
 
     # Load and create cert files is necessary
