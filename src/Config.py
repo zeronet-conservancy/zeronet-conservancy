@@ -206,24 +206,6 @@ class Config:
         if '--portable' in self.argv or self.build_type == 'portable':
             return here
 
-        # if os.path.isdir(f'{here}/data') and not '--no-portable' in self.argv:
-            # print('WARNING: found data in current directory')
-            # print('  It used to be default behaviour to store data alongside project directory,')
-            # print('  but now we default to place data and config in user home directory.')
-            # print('  If you want to keep previous behaviour, please use --portable')
-            # print('Assuming implicit --portable (use --no-portable to override)')
-            # print(self.argv)
-            # self.argv.insert(1, '--portable')
-            # print(self.argv)
-            # return here
-
-        # home_zn = os.path.expanduser(f'~/ZeroNet')
-        # if os.path.isdir(home_zn):
-            # print(f'WARNING: found data in {home_zn}')
-            # print( '  It is possible that this is from previous version or another installation')
-            # print( '  altogether. If you want to use that data directory with zeronet-conservancy')
-            # print(f'  you have to run it with --start-dir "{home_zn}" option')
-
         MACOSX_DIR = '~/Library/Application Support/zeronet-conservancy'
         WINDOWS_DIR = '~/AppData/zeronet-conservancy'
         LIBREDESKTOP_DIR = '~/.local/share/zeronet-conservancy'
@@ -499,8 +481,6 @@ class Config:
                     if "://" in tracker and tracker not in self.trackers:
                         self.trackers.append(tracker)
             except Exception as err:
-                print(self.trackers_file)
-                print(trackers_file)
                 print(f'Error loading trackers file: {err}')
 
     # Find arguments specified for current action
@@ -609,12 +589,7 @@ class Config:
             action = "main"
         argv = self.moveUnknownToEnd(argv, action)
         if silent:
-            # print(argv[1:])
             res = self.parser.parse_known_args(argv[1:])
-            # print(res) # ????
-            # parser = argparse.ArgumentParser(formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-            # parser.add_subparsers(title='Action', dest='action')
-            # parser.parse_args(argv[1:])
             if res:
                 self.arguments = res[0]
             else:
