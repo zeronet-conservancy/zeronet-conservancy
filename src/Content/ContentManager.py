@@ -29,7 +29,17 @@ class SignError(Exception):
 
 
 @PluginManager.acceptPlugins
-class ContentManager(object):
+class ContentManager:
+    """Manage site content verifying and other related stuff"""
+
+    def loadBadCerts():
+        try:
+            with open(f'{config.data_dir}/badcerts.json') as f:
+                return set(json.load(f))
+        except FileNotFoundError:
+            return set()
+
+    bad_certs = loadBadCerts()
 
     def __init__(self, site):
         self.site = site
@@ -37,6 +47,13 @@ class ContentManager(object):
         self.contents = ContentDbDict(site)
         self.hashfield = PeerHashfield()
         self.has_optional_files = False
+
+    def addBadCert(self, sign):
+        addr = CryptBitcoin.get_sign_address_64('compromised', sign)
+        if addr:
+            self.bad_certs.add(addr)
+            with open(f'{config.data_dir}/badcerts.json', 'w') as f:
+                json.dump(list(self.bad_certs), f)
 
     # Load all content.json files
     def loadContents(self):
@@ -478,6 +495,9 @@ class ContentManager(object):
                 return self.getUserContentRules(parent_content, inner_path, content)
         return False
 
+    def isGoodCert(self, cert):
+        return cert not in self.bad_certs
+
     # Get rules for a user file
     # Return: The rules of the file or False if not allowed
     def getUserContentRules(self, parent_content, inner_path, content):
@@ -511,7 +531,20 @@ class ContentManager(object):
             banned = False
         if "signers" in rules:
             rules["signers"] = rules["signers"][:]  # Make copy of the signers
-        for permission_pattern, permission_rules in list(user_contents["permission_rules"].items()):  # Regexp rules
+
+        if content is not None:
+            name, domain = content['cert_user_id'].rsplit('@', 1)
+            cert_addresses = parent_content['user_contents']['cert_signers'].get(domain)
+        else:
+            cert_addresses = None
+        # to prevent spam, if cert is compromised, only allow personal rules
+        if config.lax_cert_check or cert_addresses is None or self.isGoodCert(cert_addresses[0]):
+            permission_rules = user_contents.get('permission_rules', {}).items()
+            if not self.isGoodCert(cert_addresses[0]):
+                self.log.warning('Accepting compromised certificate! This may lead to spam attack. Turn off with --no_lax_cert_check. Default behaviour may change in the future.')
+        else:
+            permission_rules = {}
+        for permission_pattern, permission_rules in permission_rules:  # Regexp rules
             if not SafeRe.match(permission_pattern, user_urn):
                 continue  # Rule is not valid for user
             if permission_rules is None:
@@ -892,9 +925,9 @@ class ContentManager(object):
             raise VerifyError("No rules")
 
         # Check include size limit
-        if rules.get("max_size") is not None:  # Include size limit
-            if content_size > rules["max_size"]:
-                raise VerifyError("Include too large %sB > %sB" % (content_size, rules["max_size"]))
+        max_size = rules.get("max_size", 0)
+        if content_size > max_size:
+            raise VerifyError(f'Include too large {content_size}B > {max_size}B')
 
         if rules.get("max_size_optional") is not None:  # Include optional files limit
             if content_size_optional > rules["max_size_optional"]:

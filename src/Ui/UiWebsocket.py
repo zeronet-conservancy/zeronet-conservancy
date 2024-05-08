@@ -407,6 +407,9 @@ class UiWebsocket(object):
     def actionSiteBadFiles(self, to):
         return list(self.site.bad_files.keys())
 
+    def actionBadCert(self, to, sign):
+        self.site.content_manager.addBadCert(sign)
+
     # Join to an event channel
     def actionChannelJoin(self, to, channels):
         if type(channels) != list:
