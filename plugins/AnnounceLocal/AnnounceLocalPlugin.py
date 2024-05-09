@@ -31,7 +31,7 @@ class LocalAnnouncer(BroadcastServer.BroadcastServer):
         self.sender_info["peer_id"] = self.server.peer_id
         self.sender_info["port"] = self.server.port
         self.sender_info["broadcast_port"] = listen_port
-        self.sender_info["rev"] = config.rev
+        self.sender_info["rev"] = config.user_agent_rev
 
         self.known_peers = {}
         self.last_discover = 0
@@ -142,6 +142,6 @@ class FileServerPlugin(object):
 class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("AnnounceLocal plugin")
-        group.add_argument('--broadcast_port', help='UDP broadcasting port for local peer discovery', default=1544, type=int, metavar='port')
+        group.add_argument('--broadcast-port', help='UDP broadcasting port for local peer discovery', default=1544, type=int, metavar='port')
 
         return super(ConfigPlugin, self).createArguments()

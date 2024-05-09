@@ -196,7 +196,7 @@ elif config.bind:
 @PluginManager.acceptPlugins
 class Actions:
     def call(self, function_name, kwargs):
-        logging.info("Version: %s r%s, Python %s, Gevent: %s" % (config.version, config.rev, sys.version, gevent.__version__))
+        logging.info(f'zeronet-conservancy {config.version_full} on Python {sys.version} Gevent {gevent.__version__}')
 
         func = getattr(self, function_name, None)
         back = func(**kwargs)

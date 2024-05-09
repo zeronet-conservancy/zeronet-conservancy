@@ -82,7 +82,7 @@ class UiRequest:
             self.learnHost(host)
             return True
 
-        if ":" in host and helper.isIp(host.rsplit(":", 1)[0]):  # Test without port
+        if ":" in host and helper.isIp(host.rsplit(":", 1)[0].lstrip("[").rstrip("]")):  # Test without port
             self.learnHost(host)
             return True
 
@@ -99,6 +99,25 @@ class UiRequest:
 
     def resolveDomain(self, domain):
         return self.server.site_manager.resolveDomainCached(domain)
+
+    def hasCorsPermission(self, referer):
+        """Check if site from referer has CORS permission to read site in current request
+
+        NOTE: this allows embedding WITHOUT prepending "cors-" (as it has already been used
+        for a long time e.g. on ZeroBlog++ based sites) as long as read permission has been
+        granted.
+        """
+        target_path = self.env['PATH_INFO']
+        if referer is None or target_path is None:
+            return False
+        s_parts = self.parsePath(referer)
+        t_parts = self.parsePath(target_path)
+        s_address = s_parts['address']
+        t_address = t_parts['address']
+        if not s_address or not t_address:
+            return False
+        s_site = self.server.sites[s_address]
+        return f'Cors:{t_address}' in s_site.settings['permissions']
 
     def isCrossOriginRequest(self):
         """Prevent detecting sites on this 0net instance
@@ -129,7 +148,7 @@ class UiRequest:
             return False
 
         # Deny cross site requests
-        if not self.isSameOrigin(referer, url):
+        if not self.isSameOrigin(referer, url) and not self.hasCorsPermission(referer):
             return True
 
         return False
@@ -146,14 +165,14 @@ class UiRequest:
         is_navigate = self.env.get('HTTP_SEC_FETCH_MODE') == 'navigate'
         is_iframe = self.env.get('HTTP_SEC_FETCH_DEST') == 'iframe'
 
-        if is_navigate and not is_iframe and self.is_data_request:
+        if ((is_navigate and not is_iframe) or not config.ui_check_cors) and self.is_data_request:
             host = self.getHostWithoutPort()
             path_info = self.env['PATH_INFO']
             query_string = self.env['QUERY_STRING']
             protocol = self.env['wsgi.url_scheme']
             return self.actionRedirect(f'{protocol}://{host}:{config.ui_port}{path_info}?{query_string}')
 
-        if self.isCrossOriginRequest():
+        if config.ui_check_cors and self.isCrossOriginRequest():
             # we are still exposed by answering on port
             self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
             return []
@@ -363,10 +382,12 @@ class UiRequest:
             port = int(self.env['SERVER_PORT'])
             if port == config.ui_port:
                 other_port = config.ui_site_port
+                frame_src = '*'
             else:
                 other_port = config.ui_port
-            site_server = f'{host}:{other_port}'
-            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {site_server}"
+                frame_src = 'self'
+
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
@@ -660,7 +681,7 @@ class UiRequest:
             permissions=json.dumps(site.settings["permissions"]),
             show_loadingscreen=json.dumps(show_loadingscreen),
             sandbox_permissions=sandbox_permissions,
-            rev=config.rev,
+            rev=config.commit,
             lang=config.language,
             homepage=homepage,
             themeclass=themeclass,
@@ -731,7 +752,7 @@ class UiRequest:
         if "../" in path or "./" in path:
             raise SecurityError("Invalid path")
 
-        match = re.match(r"/(media/)?(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
+        match = re.match(r"(?P<server>(http[s]{0,1}://(.*?))?)/(media/)?(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if match:
             path_parts = match.groupdict()
             addr = path_parts["address"]
@@ -1038,7 +1059,7 @@ class UiRequest:
 
         if details and config.debug:
             details = {key: val for key, val in list(self.env.items()) if hasattr(val, "endswith") and "COOKIE" not in key}
-            details["version_zeronet"] = "%s r%s" % (config.version, config.rev)
+            details["version_zeronet"] = config.version_full
             details["version_python"] = sys.version
             details["version_gevent"] = gevent.__version__
             details["plugins"] = PluginManager.plugin_manager.plugin_names

@@ -328,13 +328,15 @@ class UiWebsocket(object):
                 'ui_ip' : config.ui_ip,
                 'ui_port' : config.ui_port,
                 'version' : config.version,
-                'rev' : config.rev,
+                # Some legacy code relies on this being an integer, so lets return dummy one
+                'rev' : config.user_agent_rev,
                 'timecorrection' : file_server.timecorrection,
                 'language' : config.language,
                 'debug' : config.debug,
                 'offline' : config.offline,
                 'plugins' : PluginManager.plugin_manager.plugin_names,
-                'plugins_rev' : PluginManager.plugin_manager.plugins_rev,
+                # For compat only
+                'plugins_rev' : {},
                 'user_settings' : self.user.settings,
                 'lib_verify_best' : CryptBitcoin.lib_verify_best
             }
@@ -404,6 +406,9 @@ class UiWebsocket(object):
 
     def actionSiteBadFiles(self, to):
         return list(self.site.bad_files.keys())
+
+    def actionBadCert(self, to, sign):
+        self.site.content_manager.addBadCert(sign)
 
     # Join to an event channel
     def actionChannelJoin(self, to, channels):

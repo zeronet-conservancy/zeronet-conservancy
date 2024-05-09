@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import platform
 import locale
 import re
 import configparser
@@ -9,13 +10,25 @@ import logging.handlers
 import stat
 import time
 
-class Config(object):
+class Config:
 
     def __init__(self, argv):
+        try:
+            from . import Build
+        except ImportError:
+            print('cannot find build')
+            from .util import Git
+            self.build_type = 'source'
+            self.branch = Git.branch() or 'unknown'
+            self.commit = Git.commit() or 'unknown'
+        else:
+            self.build_type = Build.build_type
+            self.branch = Build.branch
+            self.commit = Build.commit
         self.version = "0.7.10+"
+        self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"
-        # DEPRECATED ; replace with git-generated commit
-        self.rev = 5140
+        # for compatibility
         self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
@@ -228,6 +241,7 @@ class Config(object):
         self.parser.add_argument('--log-rotate-backup-count', help='Log rotate backup count', default=5, type=int)
 
         self.parser.add_argument('--language', help='Web interface language', default=language, metavar='language')
+        self.parser.add_argument('--ui-ip-protect', help="Protect UI server from being accessed through third-party pages and on unauthorized cross-origin pages (enabled by default when serving on localhost IPs; doesn't work with non-local IPs, need testing with host names)", choices=['always', 'local', 'off'], default='local')
         self.parser.add_argument('--ui-ip', help='Web interface bind address', default="127.0.0.1", metavar='ip')
         self.parser.add_argument('--ui-port', help='Web interface bind port', default=43110, type=int, metavar='port')
         self.parser.add_argument('--ui-site-port', help='Port for serving site content, defaults to ui_port+1', default=None, metavar='port')
@@ -298,6 +312,8 @@ class Config(object):
 
         self.parser.add_argument('--download-optional', choices=["manual", "auto"], default="manual")
 
+        self.parser.add_argument('--lax-cert-check', action=argparse.BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
+
         self.parser.add_argument('--tor', help='enable: Use only for Tor peers, always: Use Tor for every connection', choices=["disable", "enable", "always"], default='enable')
         self.parser.add_argument('--tor-controller', help='Tor controller address', metavar='ip:port', default='127.0.0.1:9051')
         self.parser.add_argument('--tor-proxy', help='Tor proxy address', metavar='ip:port', default='127.0.0.1:9050')
@@ -307,7 +323,7 @@ class Config(object):
         self.parser.add_argument('--tor-hs-port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
         self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
-        self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version} r{self.rev}')
+        self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version_full}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 
         return self.parser
@@ -447,6 +463,14 @@ class Config(object):
             self.arguments = self.parser.parse_args(argv[1:])
         if self.arguments.ui_site_port is None:
             self.arguments.ui_site_port = self.arguments.ui_port + 1
+        if self.arguments.ui_ip_protect == 'always':
+            self.arguments.ui_check_cors = True
+        elif self.arguments.ui_ip_protect == 'off':
+            self.arguments.ui_check_cors = False
+        elif self.arguments.ui_ip_protect == 'local':
+            self.arguments.ui_check_cors = self.arguments.ui_ip == '127.0.0.1' or self.arguments.ui_ip == '::1'
+        else:
+            raise Exception("Wrong argparse result")
 
     def parseConfig(self, argv):
         argv = self.fixArgs(argv)
