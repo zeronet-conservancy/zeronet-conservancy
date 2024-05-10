@@ -38,7 +38,7 @@ class SiteManager(object):
         load_s = time.time()
         # Load new adresses
         try:
-            json_path = f"{config.data_dir}/sites.json"
+            json_path = config.private_dir / 'sites.json'
             data = json.load(open(json_path))
         except Exception as err:
             self.log.error(f"Unable to load {json_path}: {err}")
@@ -48,7 +48,7 @@ class SiteManager(object):
 
         for address, settings in data.items():
             if address not in self.sites:
-                if os.path.isfile("%s/%s/content.json" % (config.data_dir, address)):
+                if (config.data_dir / address / 'content.json').is_file():
                     # Root content.json exists, try load site
                     s = time.time()
                     try:
@@ -121,7 +121,7 @@ class SiteManager(object):
 
         s = time.time()
         if data:
-            helper.atomicWrite("%s/sites.json" % config.data_dir, helper.jsonDumps(data).encode("utf8"))
+            helper.atomicWrite(config.private_dir / 'sites.json', helper.jsonDumps(data).encode("utf8"))
         else:
             self.log.debug("Save error: No data")
         time_write = time.time() - s

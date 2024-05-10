@@ -88,9 +88,10 @@ class Site(object):
     def loadSettings(self, settings=None):
         if not settings:
             try:
-                settings = json.load(open(f'{config.data_dir}/sites.json')).get(self.address)
+                with (config.private_dir / 'sites.json').open() as f:
+                    settings = json.load(f).get(self.address)
             except Exception as err:
-                logging.error(f'Error loading {config.data_dir}/sites.json: {err}')
+                logging.error(f'Error loading {config.private_dir}/sites.json: {err}')
                 settings = {}
         if settings:
             self.settings = settings

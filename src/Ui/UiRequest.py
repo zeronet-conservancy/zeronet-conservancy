@@ -786,7 +786,7 @@ class UiRequest:
 
         address = path_parts["address"]
 
-        file_path = "%s/%s/%s" % (config.data_dir, address, path_parts["inner_path"])
+        file_path = config.data_dir / address / path_parts['inner_path']
 
         if (config.debug or config.merge_media) and file_path.split("/")[-1].startswith("all."):
             # If debugging merge *.css to all.css and *.js to all.js

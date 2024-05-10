@@ -1,7 +1,7 @@
 ### zeronet-conservancy 0.7.10+
 - disable site-installed plugins for security reasons (@caryoscelus)
 - fix downloading geoip db (@caryoscelus)
-- python <3.6 is officially unsupported
+- python <3.8 is officially unsupported
 - SafeRe improvements by @geekless
 - remove and don't update muted files (@caryoscelus)
 - option to disable port checking (@caryoscelus)
@@ -12,6 +12,9 @@
 - ipython-based repl via --repl for debug/interactive development (@caryoscelus)
 - experimental DHT support (@caryoscelus)
 - optional blocking of compromised id certificates for spam protection (@caryoscelus)
+- changes in directory structure (split data and config, use user directories by default)
+- use version information from git if available
+- different build types (portable vs package)
 - various improvements
 
 ### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)

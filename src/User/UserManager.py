@@ -15,7 +15,7 @@ class UserManager(object):
         self.users = {}
         self.log = logging.getLogger("UserManager")
 
-    # Load all user from data/users.json
+    # Load all user from users.json
     def load(self):
         if not self.users:
             self.users = {}
@@ -25,7 +25,7 @@ class UserManager(object):
         s = time.time()
         # Load new users
         try:
-            json_path = "%s/users.json" % config.data_dir
+            json_path = config.private_dir / 'users.json'
             data = json.load(open(json_path))
         except Exception as err:
             raise Exception("Unable to load %s: %s" % (json_path, err))
@@ -57,7 +57,7 @@ class UserManager(object):
             user.saveDelayed()
         return user
 
-    # List all users from data/users.json
+    # List all users
     # Return: {"usermasteraddr": User}
     def list(self):
         if self.users == {}:  # Not loaded yet

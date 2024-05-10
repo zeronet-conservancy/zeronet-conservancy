@@ -6,11 +6,18 @@ from src.Config import config
 # fix further imports from src dir
 sys.modules['Config'] = sys.modules['src.Config']
 
+def pyReq():
+    major = sys.version_info.major
+    minor = sys.version_info.minor
+    if major < 3 or (major == 3 and minor < 8):
+        print("Error: Python 3.8+ is required")
+        sys.exit(0)
+    if major == 3 and minor < 11:
+        print(f"Python 3.11+ is recommended (you're running {sys.version})")
+
 def launch():
     '''renamed from main to avoid clashes with main module'''
-    if sys.version_info.major < 3:
-        print("Error: Python 3.x is required")
-        sys.exit(0)
+    pyReq()
 
     if '--silent' not in sys.argv:
         from greet import fancy_greet
@@ -27,7 +34,7 @@ def launch():
         except Exception as log_err:
             print("Failed to log error:", log_err)
             traceback.print_exc()
-        error_log_path = config.log_dir + "/error.log"
+        error_log_path = config.log_dir / "error.log"
         traceback.print_exc(file=open(error_log_path, "w"))
         print("---")
         print("Please report it: https://github.com/zeronet-conservancy/zeronet-conservancy/issues/new?template=bug-report.md")

@@ -48,7 +48,7 @@ def _gitted(f):
         return lambda *args, **kwargs: None
 
 @_gitted
-def commit() -> str:
+def commit() -> Optional[str]:
     """Returns git revision, possibly suffixed with -dirty"""
     dirty = '-dirty' if _repo.is_dirty() else ''
     return f'{_repo.head.commit}{dirty}'
