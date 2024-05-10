@@ -1,7 +1,7 @@
 ### zeronet-conservancy 0.7.10+
 - disable site-plugins installed for security reasons (@caryoscelus)
 - fix downloading geoip db (@caryoscelus)
-- python <3.6 is officially unsupported (3.8 is more likely minimum requirement)
+- python <3.8 is officially unsupported
 - SafeRe improvements by @geekless
 - remove and don't update muted files (@caryoscelus)
 - option to disable port checking (@caryoscelus)
