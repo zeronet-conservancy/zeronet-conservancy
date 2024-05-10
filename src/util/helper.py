@@ -16,17 +16,17 @@ from Config import config
 
 def atomicWrite(dest, content, mode="wb"):
     try:
-        with open(dest + "-tmpnew", mode) as f:
+        with open(f'{dest}-tmpnew', mode) as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
-        if os.path.isfile(dest + "-tmpold"):  # Previous incomplete write
-            os.rename(dest + "-tmpold", dest + "-tmpold-%s" % time.time())
+        if os.path.isfile(f'{dest}-tmpold'):  # Previous incomplete write
+            os.rename(f'{dest}-tmpold', f'{dest}-tmpold-{time.time()}')
         if os.path.isfile(dest):  # Rename old file to -tmpold
-            os.rename(dest, dest + "-tmpold")
-        os.rename(dest + "-tmpnew", dest)
-        if os.path.isfile(dest + "-tmpold"):
-            os.unlink(dest + "-tmpold")  # Remove old file
+            os.rename(dest, f'{dest}-tmpold')
+        os.rename(f'{dest}-tmpnew', dest)
+        if os.path.isfile(f'{dest}-tmpold'):
+            os.unlink(f'{dest}-tmpold')  # Remove old file
         return True
     except Exception as err:
         from Debug import Debug
@@ -34,8 +34,8 @@ def atomicWrite(dest, content, mode="wb"):
             "File %s write failed: %s, (%s) reverting..." %
             (dest, Debug.formatException(err), Debug.formatStack())
         )
-        if os.path.isfile(dest + "-tmpold") and not os.path.isfile(dest):
-            os.rename(dest + "-tmpold", dest)
+        if os.path.isfile(f'{dest}-tmpold') and not os.path.isfile(dest):
+            os.rename(f'{dest}-tmpold', dest)
         return False
 
 
@@ -85,7 +85,7 @@ def openLocked(path, mode="wb"):
 def getFreeSpace():
     free_space = -1
     if "statvfs" in dir(os):  # Unix
-        statvfs = os.statvfs(config.data_dir.encode("utf8"))
+        statvfs = os.statvfs(str(config.data_dir).encode("utf8"))
         free_space = statvfs.f_frsize * statvfs.f_bavail
     else:  # Windows
         try:
@@ -111,7 +111,7 @@ def shellquote(*args):
     if len(args) == 1:
         return '"%s"' % args[0].replace('"', "")
     else:
-        return tuple(['"%s"' % arg.replace('"', "") for arg in args])
+        return tuple(['"%s"' % str(arg).replace('"', "") for arg in args])
 
 
 def packPeers(peers):

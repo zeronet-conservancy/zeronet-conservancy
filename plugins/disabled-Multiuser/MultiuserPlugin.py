@@ -16,7 +16,7 @@ def importPluginnedClasses():
     from User import UserManager
 
 try:
-    local_master_addresses = set(json.load(open("%s/users.json" % config.data_dir)).keys())  # Users in users.json
+    local_master_addresses = set(json.load((config.private_dir / 'users.json').open()).keys())  # Users in users.json
 except Exception as err:
     local_master_addresses = set()
 

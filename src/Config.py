@@ -9,23 +9,35 @@ import logging
 import logging.handlers
 import stat
 import time
+from pathlib import Path
+
+VERSION = "0.7.10+"
+
+class StartupError(RuntimeError):
+    pass
 
 class Config:
+    """Class responsible for storing and loading config.
+
+    Used as singleton `config`
+    """
 
     def __init__(self, argv):
         try:
             from . import Build
         except ImportError:
-            print('cannot find build')
             from .util import Git
             self.build_type = 'source'
             self.branch = Git.branch() or 'unknown'
             self.commit = Git.commit() or 'unknown'
+            self.version = VERSION
+            self.platform = 'source'
         else:
             self.build_type = Build.build_type
             self.branch = Build.branch
             self.commit = Build.commit
-        self.version = "0.7.10+"
+            self.version = Build.version or VERSION
+            self.platform = Build.platform
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"
         # for compatibility
@@ -43,15 +55,18 @@ class Config:
         self.keys_restart_need = set([
             "tor", "fileserver_port", "fileserver_ip_type", "threads_fs_read", "threads_fs_write", "threads_crypt", "threads_db"
         ])
-        self.start_dir = self.getStartDir()
 
-        self.config_file = self.start_dir + "/zeronet.conf"
-        self.data_dir = self.start_dir + "/data"
-        self.log_dir = self.start_dir + "/log"
+        self.config_file = None
+        self.config_dir = None
+        self.data_dir = None
+        self.private_dir = None
+        self.log_dir = None
+        self.configurePaths(argv)
+
         self.openssl_lib_file = None
         self.openssl_bin_file = None
 
-        self.trackers_file = False
+        self.trackers_file = None
         self.createParser()
         self.createArguments()
 
@@ -68,7 +83,8 @@ class Config:
     def strToBool(self, v):
         return v.lower() in ("yes", "true", "t", "1")
 
-    def getStartDir(self):
+    def getStartDirOld(self):
+        """Get directory that would have been used by older versions (pre v0.7.11)"""
         this_file = os.path.abspath(__file__).replace("\\", "/").rstrip("cd")
 
         if "--start-dir" in self.argv:
@@ -89,8 +105,126 @@ class Config:
             start_dir = os.path.expanduser("~/ZeroNet")
         else:
             start_dir = "."
-
         return start_dir
+
+    def migrateOld(self, source):
+        print(f'[bold red]WARNING: found data {source}[/bold red]')
+        print( '  It used to be default behaviour to store data there,')
+        print( '  but now we default to place data and config in user home directory.')
+        print( '')
+
+    def configurePaths(self, argv):
+        if '--config-file' in argv:
+            self.config_file = argv[argv.index('--config-file') + 1]
+        old_dir = Path(self.getStartDirOld())
+        new_dir = Path(self.getStartDir())
+        no_migrate = '--no-migrate' in argv
+        silent_migrate = '--portable' in argv or '--migrate' in argv
+        try:
+            self.start_dir = self.maybeMigrate(old_dir, new_dir, no_migrate, silent_migrate)
+        except Exception as ex:
+            raise ex
+
+        self.updatePaths()
+
+    def updatePaths(self):
+        if self.config_file is None:
+            self.config_file = self.start_dir / 'znc.conf'
+        if self.config_dir is None:
+            self.config_dir = self.start_dir
+        if self.private_dir is None:
+            self.private_dir = self.start_dir / 'private'
+        if self.data_dir is None:
+            self.data_dir = self.start_dir / 'data'
+        if self.log_dir is None:
+            self.log_dir = self.start_dir / 'log'
+
+    def createPaths(self):
+        self.start_dir.mkdir(parents=True, exist_ok=True)
+        self.private_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def checkDir(self, root):
+        return (root / 'znc.conf').is_file()
+
+    def doMigrate(self, old_dir, new_dir):
+        raise RuntimeError('Migration not implemented yet')
+
+    def askMigrate(self, old_dir, new_dir, silent):
+        if not sys.stdin.isatty():
+            raise StartupError('Migration refused: non-interactive shell')
+        while True:
+            r = input(f'You have old data in `{old_dir}`. Migrate to new format to `{new_dir}`? [Y/n]')
+            if r.lower().startswith('n'):
+                raise StartupError('Migration refused')
+            if r.lower().startswith('y'):
+                return self.doMigrate(old_dir, new_dir)
+
+    def createNewConfig(self, new_dir):
+        new_dir.mkdir(parents=True, exist_ok=True)
+        with (new_dir / 'znc.conf').open('w') as f:
+            f.write('# zeronet-conervancy config file')
+
+    def maybeMigrate(self, old_dir, new_dir, no_migrate, silent_migrate):
+        if old_dir.exists() and new_dir.exists():
+            if old_dir == new_dir:
+                if self.checkDir(new_dir):
+                    return new_dir
+                elif no_migrate:
+                    return StartError('Migration refused, but new directory should be migrated')
+                else:
+                    return askMigrate(old_dir, new_dir, silent_migrate)
+            else:
+                if self.checkDir(new_dir):
+                    if not no_migrate:
+                        print("There's an old starting directory")
+                    return new_dir
+                else:
+                    raise StartupError('Bad startup directory')
+        elif old_dir.exists():
+            if no_migrate:
+                self.createNewConfig(new_dir)
+                return new_dir
+            else:
+                return self.askMigrate(old_dir, new_dir, silent_migrate)
+        elif new_dir.exists():
+            if self.checkDir(new_dir):
+                return new_dir
+            else:
+                return StartupError('Bad startup directory')
+        else:
+            self.createNewConfig(new_dir)
+            return new_dir
+
+    def getStartDir(self):
+        """Return directory with config & data"""
+        if "--start-dir" in self.argv:
+            return self.argv[self.argv.index("--start-dir") + 1]
+
+        here = os.path.dirname(os.path.abspath(__file__).replace("\\", "/")).rstrip('/src')
+        if '--portable' in self.argv or self.build_type == 'portable':
+            return here
+
+        MACOSX_DIR = '~/Library/Application Support/zeronet-conservancy'
+        WINDOWS_DIR = '~/AppData/zeronet-conservancy'
+        LIBREDESKTOP_DIR = '~/.local/share/zeronet-conservancy'
+        if self.platform == 'source':
+            if platform.system() == 'Darwin':
+                path = MACOSX_DIR
+            elif platform.system() == 'Windows':
+                path = WINDOWS_DIR
+            else:
+                path = LIBREDESKTOP_DIR
+        elif self.platform == 'macosx':
+            path = MACOSX_DIR
+        elif self.platform == 'windows':
+            path = WINDOWS_DIR
+        elif self.platform == 'libredesktop':
+            path = LIBREDESKTOP_DIR
+        else:
+            raise RuntimeError(f'UNKNOWN PLATFORM: {self.platform}. Something must have went terribly wrong!')
+        return os.path.expanduser(path)
 
     # Create command line arguments
     def createArguments(self):
@@ -109,9 +243,9 @@ class Config:
         else:
             fix_float_decimals = False
 
-        config_file = self.start_dir + "/zeronet.conf"
-        data_dir = self.start_dir + "/data"
-        log_dir = self.start_dir + "/log"
+        config_file = self.config_file
+        data_dir = self.data_dir
+        log_dir = self.log_dir
 
         ip_local = ["127.0.0.1", "::1"]
 
@@ -229,9 +363,11 @@ class Config:
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
-        self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, .conf)', default=self.start_dir, metavar="path")
+        self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
+        self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, config)', default=self.start_dir, metavar="path")
         self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
         self.parser.add_argument('--data-dir', help='Path of data directory', default=data_dir, metavar="path")
+        self.parser.add_argument('--no-migrate', help='Ignore data directories from old 0net versions', action=argparse.BooleanOptionalAction, default=False)
 
         self.parser.add_argument('--console-log-level', help='Level of logging to console', default="default", choices=["default", "DEBUG", "INFO", "ERROR", "off"])
 
@@ -277,7 +413,7 @@ class Config:
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
         self.parser.add_argument('--bootstrap-url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
-        self.parser.add_argument('--disable-bootstrap', help='Disable downloading bootstrap information from clearnet', action='store_true')
+        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=argparse.BooleanOptionalAction, default=True)
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers-file', help='Load torrent trackers dynamically from a file (using Syncronite by default)', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers-proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
@@ -328,7 +464,7 @@ class Config:
         return self.parser
 
     def loadTrackersFile(self):
-        if not self.trackers_file:
+        if self.trackers_file is None:
             return None
 
         self.trackers = self.arguments.trackers[:]
@@ -338,16 +474,17 @@ class Config:
                 if trackers_file.startswith("/"):  # Absolute
                     trackers_file_path = trackers_file
                 elif trackers_file.startswith("{data_dir}"):  # Relative to data_dir
-                    trackers_file_path = trackers_file.replace("{data_dir}", self.data_dir)
-                else:  # Relative to zeronet.py
-                    trackers_file_path = self.start_dir + "/" + trackers_file
+                    trackers_file_path = trackers_file.replace('{data_dir}', str(self.data_dir))
+                else:
+                    # Relative to zeronet.py or something else, unsupported
+                    raise RuntimeError(f'trackers_file should be relative to {{data_dir}} or absolute path (not {trackers_file})')
 
                 for line in open(trackers_file_path):
                     tracker = line.strip()
                     if "://" in tracker and tracker not in self.trackers:
                         self.trackers.append(tracker)
             except Exception as err:
-                print("Error loading trackers file: %s" % err)
+                print(f'Error loading trackers file: {err}')
 
     # Find arguments specified for current action
     def getActionArguments(self):
@@ -412,6 +549,8 @@ class Config:
 
         self.parseCommandline(argv, silent)  # Parse argv
         self.setAttributes()
+        self.updatePaths()
+        self.createPaths()
         if parse_config:
             argv = self.parseConfig(argv)  # Add arguments from config file
 
@@ -436,7 +575,7 @@ class Config:
         for arg in args:
             if arg.startswith('--') and '_' in arg:
                 farg = arg.replace('_', '-')
-                print(f'WARNING: using deprecated flag in command line: {arg} should be {farg}')
+                print(f'[bold red]WARNING: using deprecated flag in command line: {arg} should be {farg}[/bold red]')
                 print('Support for deprecated flags might be removed in the future')
             else:
                 farg = arg
@@ -473,9 +612,6 @@ class Config:
 
     def parseConfig(self, argv):
         argv = self.fixArgs(argv)
-        # Find config file path from parameters
-        if "--config-file" in argv:
-            self.config_file = argv[argv.index("--config-file") + 1]
         # Load config file
         if os.path.isfile(self.config_file):
             config = configparser.RawConfigParser(allow_no_value=True, strict=False)
@@ -518,7 +654,7 @@ class Config:
                     val = val[:]
                 if key in ("data_dir", "log_dir", "start_dir", "openssl_bin_file", "openssl_lib_file"):
                     if val:
-                        val = val.replace("\\", "/")
+                        val = Path(val)
                 setattr(self, key, val)
 
     def loadPlugins(self):

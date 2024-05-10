@@ -153,7 +153,7 @@ content_dbs = {}
 
 def getContentDb(path=None):
     if not path:
-        path = "%s/content.db" % config.data_dir
+        path = config.start_dir / 'content.db'
     if path not in content_dbs:
         content_dbs[path] = ContentDb(path)
         content_dbs[path].init()

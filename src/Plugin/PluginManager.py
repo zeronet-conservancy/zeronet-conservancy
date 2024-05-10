@@ -25,7 +25,7 @@ class PluginManager:
         self.after_load = []   # Execute functions after loaded plugins
         self.function_flags = {}  # Flag function for permissions
         self.reloading = False
-        self.config_path = config.data_dir + "/plugins.json"
+        self.config_path = config.config_dir / 'plugins.json'
         self.loadConfig()
 
         self.config.setdefault("builtin", {})

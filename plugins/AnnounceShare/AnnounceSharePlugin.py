@@ -14,7 +14,7 @@ from util import helper
 class TrackerStorage(object):
     def __init__(self):
         self.log = logging.getLogger("TrackerStorage")
-        self.file_path = "%s/trackers.json" % config.data_dir
+        self.file_path = config.start_dir / 'trackers.json'
         self.load()
         self.time_discover = 0.0
         atexit.register(self.save)

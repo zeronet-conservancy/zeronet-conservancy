@@ -686,7 +686,7 @@ class UiWebsocketPlugin(object):
         if sys.platform == "linux":
             sys_db_paths += ['/usr/share/GeoIP/' + db_name]
 
-        data_dir_db_path = os.path.join(config.data_dir, db_name)
+        data_dir_db_path = config.start_dir / db_name
 
         db_paths = sys_db_paths + [data_dir_db_path]
 
