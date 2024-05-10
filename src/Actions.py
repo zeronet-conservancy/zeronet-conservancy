@@ -25,13 +25,13 @@ class Actions:
         from File import FileServer
         from Ui import UiServer
 
-        global file_server, ui_server, dht_server
+        global file_server, ui_server
 
         if config.dht:
             from DHT import DHTServer
-            dht_server = DHTServer()
+            main.dht_server = DHTServer()
         else:
-            dht_server = None
+            main.dht_server = None
 
         main.file_server = FileServer()
         logging.info("Creating UiServer....")
@@ -54,8 +54,8 @@ class Actions:
             gevent.spawn(main.ui_server.startSiteServer),
             gevent.spawn(main.file_server.start),
         ]
-        if dht_server is not None:
-            launched_greenlets.append(gevent.spawn(dht_server.start))
+        if main.dht_server is not None:
+            launched_greenlets.append(gevent.spawn(main.dht_server.start))
 
         # if --repl, start ipython thread
         # FIXME: Unfortunately this leads to exceptions on exit so use with care
