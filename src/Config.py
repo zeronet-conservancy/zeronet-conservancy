@@ -182,7 +182,7 @@ class Config:
                     return new_dir
                 else:
                     raise StartupError('Bad startup directory')
-        elif old_dir.exists():
+        elif (old_dir / 'zeronet.conf').exists():
             if no_migrate:
                 self.createNewConfig(new_dir)
                 return new_dir
