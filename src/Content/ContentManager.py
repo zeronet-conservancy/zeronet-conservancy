@@ -925,8 +925,8 @@ class ContentManager:
             raise VerifyError("No rules")
 
         # Check include size limit
-        max_size = rules.get("max_size", 0)
-        if content_size > max_size:
+        max_size = rules.get('max_size')
+        if max_size is not None and content_size > max_size:
             raise VerifyError(f'Include too large {content_size}B > {max_size}B')
 
         if rules.get("max_size_optional") is not None:  # Include optional files limit
