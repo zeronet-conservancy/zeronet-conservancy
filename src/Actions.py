@@ -217,6 +217,7 @@ class Actions:
         print(json.dumps(result, indent=4))
 
     def siteAnnounce(self, address):
+        import main
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -235,6 +236,7 @@ class Actions:
         print(site.peers)
 
     def siteDownload(self, address):
+        import main
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -262,6 +264,7 @@ class Actions:
         print("Downloaded in %.3fs" % (time.time()-s))
 
     def siteNeedFile(self, address, inner_path):
+        import main
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -348,7 +351,6 @@ class Actions:
 
     def sitePublishFallback(self, site, peer_ip, peer_port, inner_paths, err):
         import main
-        import time
         if err is not None:
             logging.info(f"Can't connect to local websocket client: {err}")
         logging.info("Publish using fallback mechanism. "
@@ -404,6 +406,7 @@ class Actions:
 
     # Peer
     def peerPing(self, peer_ip, peer_port=None):
+        import main
         if not peer_port:
             peer_port = 15441
         logging.info("Opening a simple connection server")
@@ -443,6 +446,7 @@ class Actions:
             time.sleep(1)
 
     def peerGetFile(self, peer_ip, peer_port, site, filename, benchmark=False):
+        import main
         logging.info("Opening a simple connection server")
         from Connection import ConnectionServer
         main.file_server = ConnectionServer("127.0.0.1", 1234)
@@ -463,6 +467,7 @@ class Actions:
             print(peer.getFile(site, filename).read())
 
     def peerCmd(self, peer_ip, peer_port, cmd, parameters):
+        import main
         logging.info("Opening a simple connection server")
         from Connection import ConnectionServer
         main.file_server = ConnectionServer()
