@@ -19,6 +19,14 @@ class Actions:
         IPython.embed()
         self.gevent_quit.set()
 
+    def initDHT(self):
+        import main
+        if config.dht:
+            from DHT import DHTServer
+            main.dht_server = DHTServer()
+        else:
+            main.dht_server = None
+
     # Default action: Start serving UiServer and FileServer
     def main(self):
         import main
@@ -27,11 +35,7 @@ class Actions:
 
         global file_server, ui_server
 
-        if config.dht:
-            from DHT import DHTServer
-            main.dht_server = DHTServer()
-        else:
-            main.dht_server = None
+        self.initDHT()
 
         main.file_server = FileServer()
         logging.info("Creating UiServer....")
@@ -229,6 +233,8 @@ class Actions:
         print(json.dumps(result, indent=4))
 
     def siteAnnounce(self, address):
+        self.initDHT()
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -247,6 +253,8 @@ class Actions:
         print(site.peers)
 
     def siteDownload(self, address):
+        self.initDHT()
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -274,6 +282,8 @@ class Actions:
         print("Downloaded in %.3fs" % (time.time()-s))
 
     def siteNeedFile(self, address, inner_path):
+        self.initDHT()
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
