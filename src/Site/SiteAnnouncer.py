@@ -80,7 +80,10 @@ class SiteAnnouncer:
         self.fileserver_port = config.fileserver_port
         self.time_last_announce = time.time()
 
-        trackers = self.getAnnouncingTrackers(mode)
+        if config.use_trackers:
+            trackers = self.getAnnouncingTrackers(mode)
+        else:
+            trackers = []
 
         if config.verbose:
             self.site.log.debug("Tracker announcing, trackers: %s" % trackers)
