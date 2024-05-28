@@ -265,7 +265,12 @@ class Actions:
         logging.info("Opening a simple connection server")
         from File import FileServer
         main.file_server = FileServer("127.0.0.1", 1234)
-        file_server_thread = gevent.spawn(main.file_server.start, check_sites=False)
+
+        launched_greenlets = [
+            gevent.spawn(main.file_server.start, check_sites=False),
+        ]
+        if main.dht_server is not None:
+            launched_greenlets.append(gevent.spawn(main.dht_server.start))
 
         site = Site(address)
 
