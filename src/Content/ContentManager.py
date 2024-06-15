@@ -540,8 +540,10 @@ class ContentManager:
         # to prevent spam, if cert is compromised, only allow personal rules
         if config.lax_cert_check or cert_addresses is None or self.isGoodCert(cert_addresses[0]):
             permission_rules = user_contents.get('permission_rules', {}).items()
-            if not self.isGoodCert(cert_addresses[0]):
-                self.log.warning('Accepting compromised certificate! This may lead to spam attack. Turn off with --no_lax_cert_check. Default behaviour may change in the future.')
+            if cert_addresses is None:
+                self.log.warning('Accepting no certificate because you have --lax-cert-check on.')
+            elif not self.isGoodCert(cert_addresses[0]):
+                self.log.warning('Accepting compromised certificate! This may lead to spam attack. Turn off with --no-lax-cert-check. Default behaviour may change in the future.')
         else:
             permission_rules = {}
         for permission_pattern, permission_rules in permission_rules:  # Regexp rules
