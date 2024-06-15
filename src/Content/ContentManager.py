@@ -91,7 +91,7 @@ class ContentManager:
         content_inner_path = content_inner_path.strip("/")  # Remove / from beginning
         old_content = self.contents.get(content_inner_path)
         content_path = self.site.storage.getPath(content_inner_path)
-        content_dir = helper.getDirname(self.site.storage.getPath(content_inner_path))
+        content_dir = os.path.dirname(content_path)
         content_inner_dir = helper.getDirname(content_inner_path)
 
         if os.path.isfile(content_path):
