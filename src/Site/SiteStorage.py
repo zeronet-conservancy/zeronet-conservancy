@@ -413,8 +413,8 @@ class SiteStorage(object):
         if path == self.directory:
             inner_path = ""
         else:
-            if str(path).startswith(self.directory):
-                inner_path = path[len(self.directory) + 1:]
+            if str(path).startswith(str(self.directory)):
+                inner_path = path[len(str(self.directory)) + 1:]
             else:
                 raise Exception("File not allowed: %s" % path)
         return inner_path
