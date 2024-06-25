@@ -314,7 +314,7 @@ class SiteStorage(object):
         directory = self.getPath(dir_inner_path)
         for root, dirs, files in os.walk(directory):
             root = root.replace("\\", "/")
-            root_relative_path = re.sub("^%s" % re.escape(directory), "", root).lstrip("/")
+            root_relative_path = re.sub(f'^{re.escape(str(directory))}', '', root).lstrip('/')
             for file_name in files:
                 if root_relative_path:  # Not root dir
                     file_relative_path = root_relative_path + "/" + file_name
