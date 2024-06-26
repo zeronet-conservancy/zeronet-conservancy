@@ -942,7 +942,7 @@ class UiWebsocket(object):
 
     # List all site info
     @flag.admin
-    def actionSiteList(self, to, connecting_sites=False):
+    def actionSiteList(self, to, connecting_sites=True):
         ret = []
         for site in list(self.server.sites.values()):
             if not site.content_manager.contents.get("content.json") and not connecting_sites:
