@@ -1348,3 +1348,44 @@ class UiWebsocket(object):
                 gevent.spawn(main.file_server.checkSites, check_files=False, force_port_check=True)
 
         self.response(to, "ok")
+
+    @flag.admin
+    def actionConnectionList(self, to):
+        import main
+        result = []
+        for connection in main.file_server.connections:
+            # rewritten from StatsPlugin
+            if "cipher" in dir(connection.sock):
+                cipher = connection.sock.cipher()[0]
+                tls_version = connection.sock.version()
+            else:
+                cipher = connection.crypt
+                tls_version = ""
+            if "time" in connection.handshake and connection.last_ping_delay:
+                time_correction = connection.handshake["time"] - connection.handshake_time - connection.last_ping_delay
+            else:
+                time_correction = 0.0
+            result.append({
+                'id': connection.id,
+                'direction': connection.type,
+                'address': f'{connection.ip}:{connection.port}',
+                'port_open': connection.handshake.get("port_opened"),
+#                ("<span title='%s %s'>%s</span>", (cipher, tls_version, connection.crypt)),
+                'ping': connection.last_ping_delay,
+                'buff': connection.incomplete_buff_recv,
+                'bad_actions': connection.bad_actions,
+                'idle_since': max(connection.last_send_time, connection.last_recv_time),
+                'open_since': connection.start_time,
+                'delay': max(-1, connection.last_sent_time - connection.last_send_time),
+                'cpu': connection.cpu_time,
+                'bytes_sent': connection.bytes_sent / 1024,
+                'bytes_recv': connection.bytes_recv / 1024,
+                'last_cmd_sent': connection.last_cmd_sent,
+                'last_cmd_recv': connection.last_cmd_recv,
+                'waiting_requests': list(connection.waiting_requests.keys()),
+                'version': connection.handshake.get('version'),
+                'revision': connection.handshake.get('rev', 0),
+                'time_correction': time_correction,
+                'sites': connection.sites,
+            })
+        self.response(to, result)
