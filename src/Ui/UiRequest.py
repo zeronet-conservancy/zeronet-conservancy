@@ -962,19 +962,20 @@ class UiRequest:
             # Allow only same-origin websocket requests
             if origin:
                 origin_host = origin.split("://", 1)[-1]
-                if origin_host != host and origin_host not in self.server.allowed_ws_origins:
+                if origin_host != host and origin_host not in self.server.allowed_ws_origins and not config.debug_unsafe:
                     error_message = "Invalid origin: %s (host: %s, allowed: %s)" % (origin, host, self.server.allowed_ws_origins)
                     ws.send(json.dumps({"error": error_message}))
                     return self.error403(error_message)
 
             # Find site by wrapper_key
-            wrapper_key = self.get["wrapper_key"]
+            wrapper_key = self.get.get("wrapper_key")
             site = None
-            for site_check in list(self.server.sites.values()):
-                if site_check.settings["wrapper_key"] == wrapper_key:
-                    site = site_check
+            if wrapper_key is not None:
+                for site_check in list(self.server.sites.values()):
+                    if site_check.settings["wrapper_key"] == wrapper_key:
+                        site = site_check
 
-            if site:  # Correct wrapper key
+            if site is not None:  # Correct wrapper key
                 try:
                     user = self.getCurrentUser()
                 except Exception as err:
@@ -993,6 +994,12 @@ class UiRequest:
                     if ui_websocket in site_check.websockets:
                         site_check.websockets.remove(ui_websocket)
                 return [b"Bye."]
+            elif config.debug_unsafe:
+                site = self.server.sites[config.homepage]
+                ui_websocket = UiWebsocket(ws, site, self.server, None, self)
+                self.server.websockets.append(ui_websocket)
+                ui_websocket.start()
+                self.server.websockets.remove(ui_websocket)
             else:  # No site found by wrapper key
                 ws.send(json.dumps({"error": "Wrapper key not found: %s" % wrapper_key}))
                 return self.error403("Wrapper key not found: %s" % wrapper_key)

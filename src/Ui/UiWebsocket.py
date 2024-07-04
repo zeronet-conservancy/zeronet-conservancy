@@ -31,7 +31,7 @@ class UiWebsocket(object):
         self.ws = ws
         self.site = site
         self.user = user
-        self.log = site.log
+        self.log = site and site.log or logging.getLogger('WS')
         self.request = request
         self.permissions = []
         self.server = server
@@ -272,8 +272,8 @@ class UiWebsocket(object):
             settings['cache'] = {}
 
         ret = {
-            "auth_address": self.user.getAuthAddress(site.address, create=create_user),
-            "cert_user_id": self.user.getCertUserId(site.address),
+            "auth_address": self.user and self.user.getAuthAddress(site.address, create=create_user) or '',
+            "cert_user_id": self.user and self.user.getCertUserId(site.address) or '',
             "address": site.address,
             "address_short": site.address_short,
             "address_hash": site.address_hash.hex(),
@@ -299,7 +299,7 @@ class UiWebsocket(object):
                 "tasks": 0,
                 "workers": 0,
             })
-        if site.settings["own"]:
+        if site.settings["own"] and self.user is not None:
             ret["privatekey"] = bool(self.user.getSiteData(site.address, create=create_user).get("privatekey"))
         if site.isServing() and content and "ADMIN" in self.site.settings['permissions']:
             ret["peers"] += 1  # Add myself if serving
