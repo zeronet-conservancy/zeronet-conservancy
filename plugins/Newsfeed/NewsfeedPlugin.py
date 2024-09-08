@@ -9,7 +9,7 @@ from util.Flag import flag
 
 
 @PluginManager.registerTo("UiWebsocket")
-class UiWebsocketPlugin(object):
+class UiWebsocketPlugin:
     def formatSiteInfo(self, site, create_user=True):
         site_info = super(UiWebsocketPlugin, self).formatSiteInfo(site, create_user=create_user)
         feed_following = self.user and self.user.sites.get(site.address, {}).get("follow", None) or None
@@ -178,7 +178,7 @@ class UiWebsocketPlugin(object):
 
 
 @PluginManager.registerTo("User")
-class UserPlugin(object):
+class UserPlugin:
     # Set queries that user follows
     def setFeedFollow(self, address, feeds):
         site_data = self.getSiteData(address)
