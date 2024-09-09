@@ -1,6 +1,6 @@
 # zeronet-conservancy
 
-[in English](README.md) | [по-русски](README-ru.md) | [简体中文](README-zh-cn.md)
+[in English](README.md) | [по-русски](README-ru.md) | [简体中文](README-zh-cn.md) | [日本語](README-ja.md)
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
 
