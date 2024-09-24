@@ -70,13 +70,14 @@ class ContentDb(Db):
                 ["size", "INTEGER"],
                 ["size_files", "INTEGER"],
                 ["size_files_optional", "INTEGER"],
-                ["modified", "INTEGER"]
+                ["modified", "INTEGER"],
+                ["owner_id", "INTEGER REFERENCES site (site_id)"], # should be the same as site_id if not user content
             ],
             "indexes": [
                 "CREATE UNIQUE INDEX content_key ON content (site_id, inner_path)",
                 "CREATE INDEX content_modified ON content (site_id, modified)"
             ],
-            "schema_changed": 1
+            "schema_changed": 2,
         }
 
         return schema
@@ -84,13 +85,17 @@ class ContentDb(Db):
     def initSite(self, site):
         self.sites[site.address] = site
 
-    def needSite(self, site):
-        if site.address not in self.site_ids:
-            self.execute("INSERT OR IGNORE INTO site ?", {"address": site.address})
-            self.site_ids = {}
-            for row in self.execute("SELECT * FROM site"):
+    def needSite(self, address):
+        if address not in self.site_ids:
+            params = {
+                'address': address,
+            }
+            self.execute("INSERT INTO site ? ON CONFLICT(address) DO NOTHING", params)
+            for row in self.execute('SELECT * FROM site WHERE ?', {'address': address}):
                 self.site_ids[row["address"]] = row["site_id"]
-        return self.site_ids[site.address]
+            res = self.execute('SELECT site_id FROM site WHERE ?', params)
+            self.site_ids[address] = res.fetchone()[0]
+        return self.site_ids[address]
 
     def deleteSite(self, site):
         site_id = self.site_ids.get(site.address, 0)
@@ -99,15 +104,32 @@ class ContentDb(Db):
             del self.site_ids[site.address]
             del self.sites[site.address]
 
-    def setContent(self, site, inner_path, content, size=0):
+    def setContent(self, site, inner_path, content, size):
+        """Record content.json data of a site into DB"""
+        try:
+            signs = content.get('signs').items()
+        except Exception as exc:
+            self.log.warning('Exception while setting content (see debug log for the content)')
+            self.log.debug(content)
+            raise(exc)
+        if len(signs) < 1:
+            # TODO: check what/how we should report
+            raise RuntimeError('Content not signed')
+        if len(signs) > 1:
+            raise RuntimeError("Multi-sig not supported (and probably shouldn't on this level)")
+        owner = list(signs)[0][0]
+        owner_id = self.site_ids.get(owner, None)
+        if owner_id is None:
+            owner_id = self.needSite(owner)
         self.insertOrUpdate("content", {
             "size": size,
             "size_files": sum([val["size"] for key, val in content.get("files", {}).items()]),
             "size_files_optional": sum([val["size"] for key, val in content.get("files_optional", {}).items()]),
-            "modified": int(content.get("modified", 0))
+            "modified": int(content.get("modified", 0)),
+            "owner_id": owner_id,
         }, {
             "site_id": self.site_ids.get(site.address, 0),
-            "inner_path": inner_path
+            "inner_path": inner_path,
         })
 
     def deleteContent(self, site, inner_path):
@@ -138,6 +160,32 @@ class ContentDb(Db):
             row["size_optional"] = 0
 
         return row["size"], row["size_optional"]
+
+    def getAllSigners(self):
+        """Returns all known public public and whether they have related site and user profile"""
+        query = '''SELECT
+  s.site_id,
+  s.address,
+  (c.content_count > 0) AS has_content_record,
+  (exists (SELECT 1 FROM content c1 WHERE c1.site_id = s.site_id AND c1.inner_path = 'profile/content.json')) AS has_profile_content
+FROM site s
+LEFT JOIN (
+  SELECT
+    site_id,
+    COUNT(*) AS content_count
+  FROM content
+  GROUP BY site_id
+        ) c ON s.site_id = c.site_id'''
+        res = self.execute(query)
+        return [dict(x) for x in res.fetchall()]
+
+    def getTotalSignedSize(self, address):
+        """Get total size of files signed by address"""
+        params = {
+            'owner_id': self.site_ids.get(address, 0),
+        }
+        res = self.execute('SELECT SUM(size_files) FROM content WHERE ?', params)
+        return res.fetchone()[0]
 
     def listModified(self, site, after=None, before=None):
         params = {"site_id": self.site_ids.get(site.address, 0)}

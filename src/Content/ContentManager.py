@@ -292,17 +292,13 @@ class ContentManager:
                     if include_deleted:
                         deleted += include_deleted  # Add changed files
 
-            # Save some memory
-            new_content["signs"] = None
-            if "cert_sign" in new_content:
-                new_content["cert_sign"] = None
-
             if new_content.get("files_optional"):
                 self.has_optional_files = True
             # Update the content
             self.contents[content_inner_path] = new_content
         except Exception as err:
-            self.log.warning("%s parse error: %s" % (content_inner_path, Debug.formatException(err)))
+            self.log.warning(f"{content_inner_path} parse error:")
+            self.log.warning(Debug.formatException(err))
             return [], []  # Content.json parse error
 
         # Add changed files to bad files

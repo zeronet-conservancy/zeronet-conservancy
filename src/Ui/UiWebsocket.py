@@ -23,10 +23,12 @@ from util import helper
 from util import SafeRe
 from util.Flag import flag
 from Content.ContentManager import VerifyError, SignError
+from Content import ContentDb
 
 
 @PluginManager.acceptPlugins
-class UiWebsocket(object):
+class UiWebsocket:
+    """Handle websocket communication with a specific site"""
     def __init__(self, ws, site, server, user, request):
         self.ws = ws
         self.site = site
@@ -131,8 +133,8 @@ class UiWebsocket(object):
         valid_signers = self.site.content_manager.getValidSigners(inner_path)
         return self.site.settings["own"] or self.user.getAuthAddress(self.site.address) in valid_signers
 
-    # Event in a channel
     def event(self, channel, *params):
+        """Event happened - we must notify client if applicable"""
         if channel in self.channels:  # We are joined to channel
             if channel == "siteChanged":
                 site = params[0]
@@ -152,13 +154,20 @@ class UiWebsocket(object):
                     announcer_info.update(params[1])
                 self.cmd("setAnnouncerInfo", announcer_info)
 
-    # Send response to client (to = message.id)
     def response(self, to, result):
-        self.send({"cmd": "response", "to": to, "result": result})
+        """Send response to client (`to` is `message.id` so that client can understand it)"""
+        self.send({
+            'cmd': 'response',
+            'to': to,
+            'result': result,
+        })
 
-    # Send a command
     def cmd(self, cmd, params={}, cb=None):
-        self.send({"cmd": cmd, "params": params}, cb)
+        """Send a command"""
+        self.send({
+            'cmd': cmd,
+            'params': params
+        }, cb)
 
     # Encode to json and send message
     def send(self, message, cb=None):
@@ -303,10 +312,12 @@ class UiWebsocket(object):
             ret["privatekey"] = bool(self.user.getSiteData(site.address, create=create_user).get("privatekey"))
         if site.isServing() and content and "ADMIN" in self.site.settings['permissions']:
             ret["peers"] += 1  # Add myself if serving
+
         return ret
 
     def formatServerInfo(self):
         # unprivileged sites should not get any fingerprinting information
+        user_settings = self.user and self.user.settings or None
         if "ADMIN" in self.site.settings['permissions']:
             import main
             file_server = main.file_server
@@ -337,7 +348,7 @@ class UiWebsocket(object):
                 'plugins' : PluginManager.plugin_manager.plugin_names,
                 # For compat only
                 'plugins_rev' : {},
-                'user_settings' : self.user.settings,
+                'user_settings' : user_settings,
                 'lib_verify_best' : CryptBitcoin.lib_verify_best
             }
         else:
@@ -362,7 +373,7 @@ class UiWebsocket(object):
                 'offline' : False,
                 'plugins' : [],
                 'plugins_rev' : {},
-                'user_settings' : self.user.settings #?
+                'user_settings' : user_settings #?
             }
         return back
 
@@ -396,13 +407,33 @@ class UiWebsocket(object):
     def actionPing(self, to):
         self.response(to, "pong")
 
-    # Send site details
     def actionSiteInfo(self, to, file_status=None):
+        """Basic info about current site"""
         ret = self.formatSiteInfo(self.site)
         if file_status:  # Client queries file status
             if self.site.storage.isFile(file_status):  # File exist, add event done
                 ret["event"] = ("file_done", file_status)
         self.response(to, ret)
+
+    @flag.admin
+    def actionSiteDetails(self, to, address):
+        """Details on specified site"""
+        print(f'actionSiteDetails(self, to, {address})')
+        site = self.server.sites.get(address)
+        if site is None:
+            res = {
+                'error': "Unknown site",
+            }
+        else:
+            cdb = ContentDb.getContentDb()
+            total_size, optional_size = cdb.getTotalSize(site)
+            owned_size = cdb.getTotalSignedSize(site.address)
+            res = {
+                'total_size': total_size,
+                'optional_size': optional_size,
+                'owned_size': owned_size,
+            }
+        self.response(to, res)
 
     def actionSiteBadFiles(self, to):
         return list(self.site.bad_files.keys())
@@ -950,6 +981,26 @@ class UiWebsocket(object):
             ret.append(self.formatSiteInfo(site, create_user=False))  # Dont generate the auth_address on listing
         self.response(to, ret)
 
+    @flag.admin
+    def actionSignerList(self, to):
+        """List all known public keys/addresses"""
+        cdb = ContentDb.getContentDb()
+        res = cdb.getAllSigners()
+        self.response(to, res)
+
+    @flag.admin
+    def actionRegisterNewUser(self, to):
+        """Register new user/profile (w/o broadcasting it)"""
+        address = '1JF8GgnsNhZg4zFUvgwua2Z45FcKYBghYy'
+        site = self.server.sites.get(address)
+        # TODO: check actionSiteClone for err checking
+        new_address, new_address_index, new_site_data = self.user.getNewSiteData()
+        new_site = site.clone(new_address, new_site_data["privatekey"], address_index=new_address_index)
+        new_site.settings["own"] = True
+        new_site.saveSettings()
+        gevent.spawn(new_site.announce)
+        self.response(to, {"address": new_address})
+
     # Join to an event channel on all sites
     @flag.admin
     def actionChannelJoinAllsite(self, to, channel):
@@ -1389,3 +1440,15 @@ class UiWebsocket(object):
                 'sites': connection.sites,
             })
         self.response(to, result)
+
+    @flag.admin
+    def actionMsgSubscribe(self, to):
+        self.response(to, 'ok')
+        import main
+        main.file_server.addListener(self)
+
+    def message(self, params):
+        """Triggered when message arrived from a peer (used for debug atm)"""
+        from rich import print
+        print(params)
+        self.cmd('newMessage', params)

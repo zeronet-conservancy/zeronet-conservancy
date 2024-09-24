@@ -77,7 +77,14 @@ class SiteManager(object):
 
             # Remove orpan sites from contentdb
             content_db = ContentDb.getContentDb()
-            for row in content_db.execute("SELECT * FROM site").fetchall():
+            query = """
+                SELECT site_id, address
+                  FROM site
+                WHERE
+                  site_id NOT IN (SELECT site_id FROM content)
+                  AND site_id NOT IN (SELECT owner_id FROM content)
+            """
+            for row in content_db.execute(query).fetchall():
                 address = row["address"]
                 if address not in self.sites and address not in address_found:
                     self.log.info("Deleting orphan site from content.db: %s" % address)

@@ -13,7 +13,7 @@ class ContentDbDict(dict):
         self.cached_keys = []
         self.log = self.site.log
         self.db = ContentDb.getContentDb()
-        self.db_id = self.db.needSite(site)
+        self.db_id = self.db.needSite(site.address)
         self.num_loaded = 0
         super(ContentDbDict, self).__init__(self.db.loadDbDict(site))  # Load keys from database
         self.log.debug("ContentDb init: %.3fs, found files: %s, sites: %s" % (time.time() - s, len(self), len(self.db.site_ids)))

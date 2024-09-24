@@ -70,6 +70,10 @@ class FileServer(ConnectionServer):
         self.last_request = time.time()
         self.files_parsing = {}
         self.ui_server = None
+        self.listeners = []
+
+    def addListener(self, listener):
+        self.listeners.append(listener)
 
     def getRandomPort(self, ip, port_range_from, port_range_to):
         self.log.info("Getting random port in range %s-%s..." % (port_range_from, port_range_to))
