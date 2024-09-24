@@ -174,7 +174,7 @@ class UiRequest:
 
         if config.ui_check_cors and self.isCrossOriginRequest():
             # we are still exposed by answering on port
-            self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
+            self.log.warning("Cross-origin request detected. Someone might be trying to analyze your 0net usage ((use `--debug-unsafe` and/or `--ui-ip-protect off` to ignore if you know what you're doing))")
             return []
 
         # Restict Ui access by ip
@@ -963,7 +963,7 @@ class UiRequest:
             if origin:
                 origin_host = origin.split("://", 1)[-1]
                 if origin_host != host and origin_host not in self.server.allowed_ws_origins and not config.debug_unsafe:
-                    error_message = "Invalid origin: %s (host: %s, allowed: %s)" % (origin, host, self.server.allowed_ws_origins)
+                    error_message = f"Invalid origin: {origin} (host: {host}, allowed: {self.server.allowed_ws_origins}) (use --debug-unsafe to ignore if you know what you're doing)"
                     ws.send(json.dumps({"error": error_message}))
                     return self.error403(error_message)
 
@@ -996,7 +996,8 @@ class UiRequest:
                 return [b"Bye."]
             elif config.debug_unsafe:
                 site = self.server.sites[config.homepage]
-                ui_websocket = UiWebsocket(ws, site, self.server, None, self)
+                user = self.getCurrentUser()
+                ui_websocket = UiWebsocket(ws, site, self.server, user, self)
                 self.server.websockets.append(ui_websocket)
                 ui_websocket.start()
                 self.server.websockets.remove(ui_websocket)
