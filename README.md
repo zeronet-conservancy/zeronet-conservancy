@@ -4,7 +4,7 @@
 
 (NOTE THAT TRANSLATIONS ARE USUALLY BEHIND THIS FILE)
 
-[по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md)
+[по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md) | [日本語](README-ja.md)
 
 `zeronet-conservancy` is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
 (that has been abandoned by its creator) that is dedicated to sustaining existing p2p network and developing
