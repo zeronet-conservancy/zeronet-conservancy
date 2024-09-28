@@ -30,8 +30,8 @@ from . import SiteManager
 
 
 @PluginManager.acceptPlugins
-class Site(object):
-
+class Site:
+    """Representation of a 0net site"""
     def __init__(self, address, allow_create=True, settings=None):
         self.address = str(re.sub("[^A-Za-z0-9]", "", address))  # Make sure its correct address
         self.address_hash = hashlib.sha256(self.address.encode("ascii")).digest()

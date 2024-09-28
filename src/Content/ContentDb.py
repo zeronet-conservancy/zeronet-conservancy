@@ -53,13 +53,13 @@ class ContentDb(Db):
 
         schema["tables"]["site"] = {
             "cols": [
-                ["site_id", "INTEGER  PRIMARY KEY ASC NOT NULL UNIQUE"],
-                ["address", "TEXT NOT NULL"]
+                ["site_id", "INTEGER PRIMARY KEY ASC NOT NULL UNIQUE"],
+                ["address", "TEXT NOT NULL"],
             ],
             "indexes": [
                 "CREATE UNIQUE INDEX site_address ON site (address)"
             ],
-            "schema_changed": 1
+            "schema_changed": 1,
         }
 
         schema["tables"]["content"] = {
