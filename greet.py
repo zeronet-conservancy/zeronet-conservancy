@@ -15,17 +15,24 @@ def grad(n):
             r += s
     return f'#{r:02x}{g:02x}{b:02x}'
 
-def fancy_greet(version):
-    from rich.console import Console
-    from rich.text import Text
-    zc_msg = fr'''
+zc_msg = r'''
 |||   . . _  _._|_     _. . . _ .__ _.. _.  . __.. _  __.  .
 |||  //\|/ |/_| |  == /  / \|/ |(  /_||/ |  | __||/ |/   \_|
 |||  \_/|  |\_  |.    \__\_/|  |_) \_ |   \/ |__||  |\__ _/
 |||
 |||  v{version}
 '''
-    lns = zc_msg.split('\n')
+
+def fancy_greet(version):
+    try:
+        grad_greet(version)
+    except ModuleNotFoundError:
+        print(zc_msg.format(version=version))
+
+def grad_greet(version):
+    from rich.console import Console
+    from rich.text import Text
+    lns = zc_msg.format(version=version).split('\n')
     console = Console()
     for l in lns:
         txt = Text(l)
