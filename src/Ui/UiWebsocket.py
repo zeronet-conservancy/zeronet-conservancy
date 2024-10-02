@@ -403,8 +403,8 @@ class UiWebsocket:
         else:
             self.log.error("Websocket callback not found: %s, %s" % (to, result))
 
-    # Send a simple pong answer
     def actionPing(self, to):
+        """Ping websocket connection"""
         self.response(to, "pong")
 
     def actionSiteInfo(self, to, file_status=None):
@@ -436,13 +436,15 @@ class UiWebsocket:
         self.response(to, res)
 
     def actionSiteBadFiles(self, to):
+        """List files that haven't completed downloading (on this site)"""
         return list(self.site.bad_files.keys())
 
     def actionBadCert(self, to, sign):
+        """Mark cert signer as untrusted"""
         self.site.content_manager.addBadCert(sign)
 
-    # Join to an event channel
     def actionChannelJoin(self, to, channels):
+        """Join given event channel(s)"""
         if type(channels) != list:
             channels = [channels]
 
@@ -452,14 +454,14 @@ class UiWebsocket:
 
         self.response(to, "ok")
 
-    # Server variables
     def actionServerInfo(self, to):
+        """Get server info"""
         back = self.formatServerInfo()
         self.response(to, back)
 
-    # Create a new wrapper nonce that allows to load html file
     @flag.admin
     def actionServerGetWrapperNonce(self, to):
+        """Create a new wrapper nonce that allows to load html file"""
         wrapper_nonce = self.request.getWrapperNonce()
         self.response(to, wrapper_nonce)
 
@@ -486,8 +488,8 @@ class UiWebsocket:
 
         return back
 
-    # Sign content.json
     def actionSiteSign(self, to, privatekey=None, inner_path="content.json", remove_missing_optional=False, update_changed_files=False, response_ok=True):
+        """Sign a (possibly) content.json"""
         self.log.debug("Signing: %s" % inner_path)
         site = self.site
         extend = {}  # Extended info for signing
@@ -545,8 +547,8 @@ class UiWebsocket:
         else:
             return inner_path
 
-    # Sign and publish content.json
     def actionSitePublish(self, to, privatekey=None, inner_path="content.json", sign=True, remove_missing_optional=False, update_changed_files=False):
+        """Sign and publish content.json"""
         # TODO: check certificates (https://github.com/zeronet-conservancy/zeronet-conservancy/issues/190)
         # TODO: update certificates (https://github.com/zeronet-conservancy/zeronet-conservancy/issues/194)
         if sign:
@@ -599,8 +601,8 @@ class UiWebsocket:
             cbProgress(back, back)
         return back
 
-    # Callback of site publish
     def cbSitePublish(self, to, site, thread, notification=True, callback=True):
+        """Callback of site publish"""
         published = thread.value
         if published > 0:  # Successfully published
             if notification:
@@ -636,8 +638,8 @@ class UiWebsocket:
         self.site.updateWebsocket()
         return "ok"
 
-    # Write a file to disk
     def actionFileWrite(self, to, inner_path, content_base64, ignore_bad_files=False):
+        """Write a file to disk"""
         valid_signers = self.site.content_manager.getValidSigners(inner_path)
         auth_address = self.user.getAuthAddress(self.site.address)
         if not self.hasFilePermission(inner_path):
@@ -719,12 +721,10 @@ class UiWebsocket:
             if ws != self:
                 ws.event("siteChanged", self.site, {"event": ["file_deleted", inner_path]})
 
-    # Find data in json files
     def actionFileQuery(self, to, dir_inner_path, query=None):
-        # s = time.time()
+        """Find data in json files"""
         dir_path = self.site.storage.getPath(dir_inner_path)
         rows = list(QueryJson.query(dir_path, query or ""))
-        # self.log.debug("FileQuery %s %s done in %s" % (dir_inner_path, query, time.time()-s))
         return self.response(to, rows)
 
     # List files in directory
@@ -772,9 +772,9 @@ class UiWebsocket:
             self.log.debug("Slow query: %s (%.3fs)" % (query, time.time() - s))
         return self.response(to, rows)
 
-    # Return file content
     @flag.async_run
     def actionFileGet(self, to, inner_path, required=True, format="text", timeout=300, priority=6):
+        "Returns file content"
         try:
             if required or inner_path in self.site.bad_files:
                 with gevent.Timeout(timeout):
@@ -795,6 +795,35 @@ class UiWebsocket:
             except Exception as err:
                 self.response(to, {"error": "Error decoding text: %s" % err})
         self.response(to, body)
+
+    @flag.async_run
+    @flag.admin
+    def actionFileRead(self, to, address, inner_path):
+        """Read file from any site
+
+        Note that this is currently limited to admin due to fingerprinting issues
+        (via detection of which sites are downloaded)"""
+
+        siteman = SiteManager.site_manager
+        if not siteman.isAddress(address):
+            return self.response(to, {
+                'error': "Not a site",
+            })
+        site = siteman.sites.get(address)
+        if site is None:
+            return self.response(to, {
+                'error': "Site not loaded",
+            })
+        try:
+            data = site.storage.read(inner_path)
+        except Exception as exc:
+            return self.response(to, {
+                'error': "File not found",
+                'exception': str(exc),
+            })
+        return self.response(to, {
+            'data': data.decode(),
+        })
 
     @flag.async_run
     def actionFileNeed(self, to, inner_path, timeout=300, priority=6):
