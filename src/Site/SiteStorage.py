@@ -257,10 +257,11 @@ class SiteStorage(object):
             self.ensureDir(file_inner_dir)
         return open(file_path, mode, **kwargs)
 
-    # Open file object
     @thread_pool_fs_read.wrap
     def read(self, inner_path, mode="rb"):
-        return open(self.getPath(inner_path), mode).read()
+        """Read whole file (w/o sanity checks)"""
+        with open(self.getPath(inner_path), mode) as f:
+            return f.read()
 
     @thread_pool_fs_write.wrap
     def writeThread(self, inner_path, content):

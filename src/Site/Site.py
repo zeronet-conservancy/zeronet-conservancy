@@ -782,8 +782,8 @@ class Site:
             file_info = self.content_manager.getFileInfo(inner_path)
         return file_info
 
-    # Check and download if file not exist
     def needFile(self, inner_path, update=False, blocking=True, peer=None, priority=0):
+        """Check and download if file not exist"""
         if self.worker_manager.tasks.findTask(inner_path):
             task = self.worker_manager.addTask(inner_path, peer, priority=priority)
             if blocking:
