@@ -167,6 +167,8 @@ class Config:
             f.write('# zeronet-conervancy config file')
 
     def maybeMigrate(self, old_dir, new_dir, no_migrate, silent_migrate):
+        if not os.path.isdir(new_dir):
+            os.mkdir(new_dir)
         if old_dir.exists() and new_dir.exists():
             if old_dir == new_dir:
                 if self.checkDir(new_dir):
