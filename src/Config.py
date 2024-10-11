@@ -157,6 +157,8 @@ class Config:
         while True:
             r = input(f'You have old data in `{old_dir}`. Migrate to new format to `{new_dir}`? [Y/n]')
             if r.lower().startswith('n'):
+                with (new_dir / 'znc.conf').open('w') as f:
+                    f.write('# zeronet-conervancy config file')
                 raise StartupError('Migration refused')
             if r.lower().startswith('y'):
                 return self.doMigrate(old_dir, new_dir)
@@ -167,6 +169,8 @@ class Config:
             f.write('# zeronet-conervancy config file')
 
     def maybeMigrate(self, old_dir, new_dir, no_migrate, silent_migrate):
+        if not os.path.isdir(new_dir):
+            os.mkdir(new_dir)
         if old_dir.exists() and new_dir.exists():
             if old_dir == new_dir:
                 if self.checkDir(new_dir):
