@@ -11,7 +11,7 @@ import stat
 import time
 from pathlib import Path
 
-VERSION = "0.8alpha"
+VERSION = "0.8-alpha"
 
 class StartupError(RuntimeError):
     pass
