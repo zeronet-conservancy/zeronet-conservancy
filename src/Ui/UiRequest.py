@@ -377,17 +377,22 @@ class UiRequest:
 
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
-        elif script_nonce:
+        else:
             host = self.getHostWithoutPort()
             port = int(self.env['SERVER_PORT'])
             if port == config.ui_port:
                 other_port = config.ui_site_port
-                frame_src = '*'
+                frame_src = f"'self' {host}:{other_port}"
             else:
                 other_port = config.ui_port
-                frame_src = 'self'
+                frame_src = "'self'"
+            if script_nonce:
+                script_src = f"'nonce-{script_nonce}' 'self'"
+            else:
+                script_src = "'self'"
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src {script_src}; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src {frame_src} {host}:{other_port} ws://{host}:{other_port}; frame-src {frame_src}"
 
-            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
+        print(headers.get('Content-Security-Policy'))
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
@@ -928,7 +933,8 @@ class UiRequest:
                     status = 206
                 else:
                     status = 200
-                self.sendHeader(status, content_type=content_type, noscript=header_noscript, allow_ajax=header_allow_ajax, extra_headers=extra_headers)
+                script_nonce = self.getScriptNonce()
+                self.sendHeader(status, content_type=content_type, noscript=header_noscript, allow_ajax=header_allow_ajax, extra_headers=extra_headers, script_nonce=script_nonce)
             if self.env["REQUEST_METHOD"] != "OPTIONS":
                 if not file_obj:
                     file_obj = open(file_path, "rb")
