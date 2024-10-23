@@ -352,6 +352,10 @@ class UiWebsocket:
                 'lib_verify_best' : CryptBitcoin.lib_verify_best
             }
         else:
+            if 'VERSION' in self.site.settings['permissions']:
+                version = config.version
+            else:
+                version = config.user_agent
             back = {
                 'ip_external' : None,
                 'port_opened' : False,
@@ -365,7 +369,7 @@ class UiWebsocket:
                 'tor_use_bridges' : True,
                 'ui_ip' : '127.0.0.1',
                 'ui_port' : 43110,
-                'version' : config.user_agent,
+                'version' : version,
                 'rev' : config.user_agent_rev,
                 'timecorrection' : 0.0,
                 'language' : config.language, #?
