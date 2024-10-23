@@ -4,7 +4,7 @@
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
 
-[in English](README.md) | [em português](README-ptbr.md) | [по-русски](README-ru.md)
+[in English](README.md) | [em português](README-ptbr.md) | [по-русски](README-ru.md) | [日本語](README-ja.md)
 
 ## 为什么？
 
