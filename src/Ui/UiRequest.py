@@ -51,7 +51,7 @@ class SecurityError(Exception):
 @PluginManager.acceptPlugins
 class UiRequest:
 
-    def __init__(self, server, env, start_response, is_data_request=False):
+    def __init__(self, server, env, start_response, is_data_request=False, script_nonce=None):
         if server:
             self.server = server
             self.log = server.log
@@ -65,7 +65,12 @@ class UiRequest:
 
         self.start_response = start_response  # Start response function
         self.user = None
-        self.script_nonce = None  # Nonce for script tags in wrapper html
+        if is_data_request:
+            self.script_nonce = script_nonce
+            self.other_nonce = None
+        else:
+            self.other_nonce = script_nonce
+            self.script_nonce = None
         self.is_data_request = is_data_request
 
     def learnHost(self, host):
@@ -187,10 +192,10 @@ class UiRequest:
 
             http_get = self.env["PATH_INFO"]
             if self.env["QUERY_STRING"]:
-                http_get += "?{0}".format(self.env["QUERY_STRING"])
+                http_get += "?{self.env['QUERY_STRING']}"
             self_host = self.env["HTTP_HOST"].split(":")[0]
             self_ip = self.env["HTTP_HOST"].replace(self_host, socket.gethostbyname(self_host))
-            link = "http://{0}{1}".format(self_ip, http_get)
+            link = "http://{self_ip}{http_get}"
             ret_body = """
                 <h4>Start the client with <code>--ui_host "{host}"</code> argument</h4>
                 <h4>or access via ip: <a href="{link}">{link}</a></h4>
@@ -386,10 +391,11 @@ class UiRequest:
             else:
                 other_port = config.ui_port
                 frame_src = "'self'"
+            script_src = "'self'"
             if script_nonce:
-                script_src = f"'nonce-{script_nonce}' 'self'"
-            else:
-                script_src = "'self'"
+                script_src += f" 'nonce-{script_nonce}'"
+            if self.other_nonce:
+                script_src += f" 'nonce-{self.other_nonce}'"
             headers["Content-Security-Policy"] = f"default-src 'none'; script-src {script_src}; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src {frame_src} {host}:{other_port} ws://{host}:{other_port}; frame-src {frame_src}"
 
         print(headers.get('Content-Security-Policy'))
@@ -481,6 +487,8 @@ class UiRequest:
         if not extra_headers:
             extra_headers = {}
         script_nonce = self.getScriptNonce()
+
+        # currently 43110 nonce is allowed, but not 43111 one. should add 43111 nonce to 43110 serving iframe
 
         match = re.match(r"/(?P<address>[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         just_added = False
@@ -699,11 +707,22 @@ class UiRequest:
         self.server.wrapper_nonces.append(wrapper_nonce)
         return wrapper_nonce
 
+    @staticmethod
+    def generateNonce():
+        return CryptHash.random(encoding="base64")
+
     def getScriptNonce(self):
         if not self.script_nonce:
-            self.script_nonce = CryptHash.random(encoding="base64")
+            self.script_nonce = UiRequest.generateNonce()
 
         return self.script_nonce
+
+    def maybeDataNonce(self):
+        """Returns addr and nonce for iframe if this is site request"""
+        site = self.getRequestSite()
+        if site and site != '/':
+            return site, self.generateNonce()
+        return None, None
 
     # Create a new wrapper nonce that allows to get one site
     def getAddNonce(self):
