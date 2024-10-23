@@ -50,6 +50,7 @@ class ContentDb(Db):
                 self.checkTables()
                 self.execute("INSERT INTO keyvalue ?", {"json_id": 0, "key": "table.site.version", "value": 1})
                 self.execute("INSERT INTO keyvalue ?", {"json_id": 0, "key": "table.content.version", "value": 1})
+                self.execute('INSERT INTO keyvalue ?', {'json_id': 0, 'key': 'table.size_limit.version', 'value': 1})
 
         schema["tables"]["site"] = {
             "cols": [
@@ -78,6 +79,20 @@ class ContentDb(Db):
                 "CREATE INDEX content_modified ON content (site_id, modified)"
             ],
             "schema_changed": 2,
+        }
+
+        schema['tables']['size_limit'] = {
+            'cols': [
+                ['limit_id', 'INTEGER PRIMARY KEY UNIQUE NOT NULL'],
+                ['site_id', 'INTEGER REFERENCES site (site_id) ON DELETE CASCADE'],
+                ['source', 'INTEGER REFERENCES site (site_id) ON DELETE CASCADE'],
+                ['is_private', 'INTEGER'],
+                ['rule', 'TEXT NOT NULL'],
+                ['value', 'INTEGER'],
+                ['priority', 'INTEGER'],
+            ],
+            'indexes': [],
+            'schema_changed': 2,
         }
 
         return schema
