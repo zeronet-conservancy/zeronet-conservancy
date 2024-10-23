@@ -123,7 +123,7 @@ autoconfおよびその他の基本的な開発ツール、python3およびpip�
  - `source venv/bin/activate`（環境をアクティブ化）
  - `python3 -m pip install -r requirements.txt`（依存関係をインストール）
  - `python3 zeronet.py`（**zeronet-conservancyを実行！**）
- - ブラウザでランディングページを開き、http://127.0.0.1:43110/に移動します
+ - ブラウザでランディングページを開き、http://127.0.0.1:43110/ に移動します
  - 新しいターミナルから再起動するには、リポジトリディレクトリに移動して次のコマンドを実行する必要があります：
  - `source venv/bin/activate`
  - `python3 zeronet.py`
@@ -166,10 +166,10 @@ Githubリポジトリをクローンし、必要なPythonモジュールをイ�
 
 （これらの手順は進行中の作業です。テストして改善するのに役立ててください！）
 
-- https://www.python.org/downloads/からpythonをインストールします
-- pythonに適したWindowsコンパイラをインストールします。これが私にとって最も難しい部分でした（https://wiki.python.org/moin/WindowsCompilersを参照し、後でさらに参考資料をリンクします）
-- [最新の開発バージョンを取得するためにオプション] https://git-scm.com/downloadsからgitをインストールします
-- [より良い接続性と匿名性のためにtorを使用するためにオプション] https://www.torproject.org/download/からtorブラウザをインストールします
+- https://www.python.org/downloads/ からpythonをインストールします
+- pythonに適したWindowsコンパイラをインストールします。これが私にとって最も難しい部分でした（https://wiki.python.org/moin/WindowsCompilers を参照し、後でさらに参考資料をリンクします）
+- [最新の開発バージョンを取得するためにオプション] https://git-scm.com/downloads からgitをインストールします
+- [より良い接続性と匿名性のためにtorを使用するためにオプション] https://www.torproject.org/download/ からtorブラウザをインストールします
 - git bashコンソールを開きます
 - コマンドラインに`git clone https://github.com/zeronet-conservancy/zeronet-conservancy.git`を入力/コピーします
 - gitが最新の開発バージョンをダウンロードするのを待ち、コンソールで続行します
@@ -182,7 +182,7 @@ Githubリポジトリをクローンし、必要なPythonモジュールをイ�
 - （注：Windowsは「セキュリティ上の理由から」インターネットへのアクセスをブロックしたというウィンドウを表示する場合があります。アクセスを許可する必要があります）
 - `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151`（zeronet-conservancyを起動！）
 - [完全なtor匿名性のためにこれを起動] `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151 --tor always`
-- お気に入りのブラウザでhttp://127.0.0.1:43110に移動します！
+- お気に入りのブラウザでhttp://127.0.0.1:43110 に移動します！
 
 .exeをビルドするには
 
@@ -242,7 +242,7 @@ Githubリポジトリをクローンし、必要なPythonモジュールをイ�
 ### メンテナーを財政的に支援する
 
 このフォークは@caryoscelusによって作成および維持されました。あなたは
-https://caryoscelus.github.io/donate/で彼らに寄付する方法を確認してください（または
+https://caryoscelus.github.io/donate/ で彼らに寄付する方法を確認してください（または
 githubでこれを読んでいる場合は、他の方法についてはサイドバーを確認してください）。私たちのチームが成長するにつれて、私たちは
 フレンドリーなクラウドファンディングプラットフォームにチームアカウントを作成します。
 
