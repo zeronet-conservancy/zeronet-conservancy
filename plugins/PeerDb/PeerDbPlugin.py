@@ -18,7 +18,6 @@ class ContentDbPlugin(object):
 
         schema["tables"]["peer"] = {
             "cols": [
-                ["site_id", "INTEGER REFERENCES site (site_id) ON DELETE CASCADE"],
                 ["address", "TEXT NOT NULL"],
                 ["port", "INTEGER NOT NULL"],
                 ["hashfield", "BLOB"],
@@ -27,17 +26,17 @@ class ContentDbPlugin(object):
                 ["time_found", "INTEGER NOT NULL"]
             ],
             "indexes": [
-                "CREATE UNIQUE INDEX peer_key ON peer (site_id, address, port)"
+                "CREATE UNIQUE INDEX peer_key ON peer (address, port)"
             ],
-            "schema_changed": 2
+            "schema_changed": 3
         }
 
         return schema
 
     def loadPeers(self, site):
         s = time.time()
-        site_id = self.site_ids.get(site.address)
-        res = self.execute("SELECT * FROM peer WHERE site_id = :site_id", {"site_id": site_id})
+        address = site.address
+        res = self.execute('SELECT * FROM peer WHERE ?', {'address': address})
         num = 0
         num_hashfield = 0
         for row in res:
@@ -58,14 +57,13 @@ class ContentDbPlugin(object):
         site.log.debug("%s peers (%s with hashfield) loaded in %.3fs" % (num, num_hashfield, time.time() - s))
 
     def iteratePeers(self, site):
-        site_id = self.site_ids.get(site.address)
         for key, peer in list(site.peers.items()):
             address, port = key.rsplit(":", 1)
             if peer.has_hashfield:
                 hashfield = sqlite3.Binary(peer.hashfield.tobytes())
             else:
                 hashfield = ""
-            yield (site_id, address, port, hashfield, peer.reputation, int(peer.time_added), int(peer.time_found))
+            yield (address, port, hashfield, peer.reputation, int(peer.time_added), int(peer.time_found))
 
     def savePeers(self, site, spawn=False):
         if spawn:
@@ -75,12 +73,12 @@ class ContentDbPlugin(object):
             site.log.debug("Peers not saved: No peers found")
             return
         s = time.time()
-        site_id = self.site_ids.get(site.address)
+        address = site.address
         cur = self.getCursor()
         try:
-            cur.execute("DELETE FROM peer WHERE site_id = :site_id", {"site_id": site_id})
+            cur.execute('DELETE FROM peer WHERE ?', {'address': address})
             cur.executemany(
-                "INSERT INTO peer (site_id, address, port, hashfield, reputation, time_added, time_found) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                "INSERT INTO peer (address, port, hashfield, reputation, time_added, time_found) VALUES (?, ?, ?, ?, ?, ?)",
                 self.iteratePeers(site)
             )
         except Exception as err:
