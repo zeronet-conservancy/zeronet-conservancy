@@ -364,6 +364,8 @@ class Config:
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
+        self.parser.add_argument('--no-plugins', help="Disable all plugins", action='store_true')
+
         self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
         self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, config)', default=self.start_dir, metavar="path")
         self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
