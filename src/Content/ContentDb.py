@@ -34,7 +34,6 @@ class ContentDb(Db):
                 self.checkTables()
             except DbTableError:
                 pass
-        self.site_ids = {}
         self.sites = {}
 
     def getSchema(self):
@@ -52,47 +51,36 @@ class ContentDb(Db):
                 self.execute("INSERT INTO keyvalue ?", {"json_id": 0, "key": "table.content.version", "value": 1})
                 self.execute('INSERT INTO keyvalue ?', {'json_id': 0, 'key': 'table.size_limit.version', 'value': 1})
 
-        schema["tables"]["site"] = {
-            "cols": [
-                ["site_id", "INTEGER PRIMARY KEY ASC NOT NULL UNIQUE"],
-                ["address", "TEXT NOT NULL"],
-            ],
-            "indexes": [
-                "CREATE UNIQUE INDEX site_address ON site (address)"
-            ],
-            "schema_changed": 1,
-        }
-
         schema["tables"]["content"] = {
             "cols": [
                 ["content_id", "INTEGER PRIMARY KEY UNIQUE NOT NULL"],
-                ["site_id", "INTEGER REFERENCES site (site_id) ON DELETE CASCADE"],
+                ["address", "TEXT NOT NULL"],
                 ["inner_path", "TEXT"],
                 ["size", "INTEGER"],
                 ["size_files", "INTEGER"],
                 ["size_files_optional", "INTEGER"],
                 ["modified", "INTEGER"],
-                ["owner_id", "INTEGER REFERENCES site (site_id)"], # should be the same as site_id if not user content
+                ["owner_address", "TEXT NOT NULL"], # should be the same as address if not user content
             ],
             "indexes": [
-                "CREATE UNIQUE INDEX content_key ON content (site_id, inner_path)",
-                "CREATE INDEX content_modified ON content (site_id, modified)"
+                "CREATE UNIQUE INDEX content_key ON content (address, inner_path)",
+                "CREATE INDEX content_modified ON content (address, modified)"
             ],
-            "schema_changed": 2,
+            "schema_changed": 3,
         }
 
         schema['tables']['size_limit'] = {
             'cols': [
                 ['limit_id', 'INTEGER PRIMARY KEY UNIQUE NOT NULL'],
-                ['site_id', 'INTEGER REFERENCES site (site_id) ON DELETE CASCADE'],
-                ['source', 'INTEGER REFERENCES site (site_id) ON DELETE CASCADE'],
+                ['address', 'TEXT NOT NULL'],
+                ['source', 'TEXT NOT NULL'],
                 ['is_private', 'INTEGER'],
                 ['rule', 'TEXT NOT NULL'],
                 ['value', 'INTEGER'],
                 ['priority', 'INTEGER'],
             ],
             'indexes': [],
-            'schema_changed': 2,
+            'schema_changed': 3,
         }
 
         return schema
@@ -100,24 +88,10 @@ class ContentDb(Db):
     def initSite(self, site):
         self.sites[site.address] = site
 
-    def needSite(self, address):
-        if address not in self.site_ids:
-            params = {
-                'address': address,
-            }
-            self.execute("INSERT INTO site ? ON CONFLICT(address) DO NOTHING", params)
-            for row in self.execute('SELECT * FROM site WHERE ?', {'address': address}):
-                self.site_ids[row["address"]] = row["site_id"]
-            res = self.execute('SELECT site_id FROM site WHERE ?', params)
-            self.site_ids[address] = res.fetchone()[0]
-        return self.site_ids[address]
-
     def deleteSite(self, site):
-        site_id = self.site_ids.get(site.address, 0)
-        if site_id:
-            self.execute("DELETE FROM site WHERE site_id = :site_id", {"site_id": site_id})
-            del self.site_ids[site.address]
-            del self.sites[site.address]
+        address = site.address
+        self.execute('DELETE FROM content WHERE ?', {"address": address})
+        del self.sites[address]
 
     def setContent(self, site, inner_path, content, size):
         """Record content.json data of a site into DB"""
@@ -132,28 +106,28 @@ class ContentDb(Db):
             raise RuntimeError('Content not signed')
         if len(signs) > 1:
             raise RuntimeError("Multi-sig not supported (and probably shouldn't on this level)")
-        owner = list(signs)[0][0]
-        owner_id = self.site_ids.get(owner, None)
-        if owner_id is None:
-            owner_id = self.needSite(owner)
+        owner_address = list(signs)[0][0]
         self.insertOrUpdate("content", {
             "size": size,
             "size_files": sum([val["size"] for key, val in content.get("files", {}).items()]),
             "size_files_optional": sum([val["size"] for key, val in content.get("files_optional", {}).items()]),
             "modified": int(content.get("modified", 0)),
-            "owner_id": owner_id,
+            "owner_address": owner_address,
         }, {
-            "site_id": self.site_ids.get(site.address, 0),
+            "address": site.address,
             "inner_path": inner_path,
         })
 
     def deleteContent(self, site, inner_path):
-        self.execute("DELETE FROM content WHERE ?", {"site_id": self.site_ids.get(site.address, 0), "inner_path": inner_path})
+        self.execute('DELETE FROM content WHERE ?', {
+            'address': site.address,
+            'inner_path': inner_path,
+        })
 
     def loadDbDict(self, site):
         res = self.execute(
             "SELECT GROUP_CONCAT(inner_path, '|') AS inner_paths FROM content WHERE ?",
-            {"site_id": self.site_ids.get(site.address, 0)}
+            { 'address': site.address }
         )
         row = res.fetchone()
         if row and row["inner_paths"]:
@@ -163,7 +137,7 @@ class ContentDb(Db):
             return {}
 
     def getTotalSize(self, site, ignore=None):
-        params = {"site_id": self.site_ids.get(site.address, 0)}
+        params = { 'address': site.address }
         if ignore:
             params["not__inner_path"] = ignore
         res = self.execute("SELECT SUM(size) + SUM(size_files) AS size, SUM(size_files_optional) AS size_optional FROM content WHERE ?", params)
@@ -179,25 +153,24 @@ class ContentDb(Db):
     def getAllSigners(self):
         """Returns all known public public and whether they have related site and user profile"""
         query = '''SELECT
-            s.site_id,
             s.address,
             (c.content_count > 0) AS has_content_record,
-            (exists (SELECT 1 FROM content c1 WHERE c1.site_id = s.site_id AND c1.inner_path = 'profile/content.json')) AS has_profile_content
+            (exists (SELECT 1 FROM content c1 WHERE c1.address = s.address AND c1.inner_path = 'profile/content.json')) AS has_profile_content
         FROM site s
         LEFT JOIN (
             SELECT
-                site_id,
+                address,
                 COUNT(*) AS content_count
             FROM content
-            GROUP BY site_id
-        ) c ON s.site_id = c.site_id'''
+            GROUP BY address
+        ) c ON s.address = c.address'''
         res = self.execute(query)
         return [dict(x) for x in res.fetchall()]
 
     def getTotalSignedSize(self, address):
         """Get total size of files signed by address"""
         params = {
-            'owner_id': self.site_ids.get(address, 0),
+            'owner_address': address,
         }
         res = self.execute('SELECT SUM(size_files) FROM content WHERE ?', params)
         return res.fetchone()[0]
@@ -209,7 +182,7 @@ class ContentDb(Db):
         return [dict(x) for x in res.fetchall()]
 
     def listModified(self, site, after=None, before=None):
-        params = {"site_id": self.site_ids.get(site.address, 0)}
+        params = { 'address': site.address }
         if after:
             params["modified>"] = after
         if before:
