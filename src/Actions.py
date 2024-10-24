@@ -24,6 +24,7 @@ class Actions:
         import main
         from File import FileServer
         from Ui import UiServer
+        from Ui import API
         logging.info("Creating FileServer....")
         main.file_server = FileServer()
         logging.info("Creating UiServer....")

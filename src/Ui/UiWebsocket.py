@@ -25,10 +25,38 @@ from util.Flag import flag
 from Content.ContentManager import VerifyError, SignError
 from Content import ContentDb
 
+def requires_permission(permission):
+    """Decorator for adding required permissions to API handlers"""
+    def wrapper(f):
+        if not hasattr(f, 'required_permissions'):
+            f.required_permissions = set()
+        f.required_permissions.add(permission)
+        return f
+    return wrapper
 
+def ws_api_call(name):
+    """Decorator for websocket API handler functions
+
+    Usage:
+    @ws_api_call('coolThing')
+    def myCoolApi(args):
+        pass
+    """
+    def wrapper(f):
+        UiWebsocket.registerApiCall(name, f)
+        return f
+    return wrapper
+
+# TODO: NOPLUGIN
 @PluginManager.acceptPlugins
 class UiWebsocket:
     """Handle websocket communication with a specific site"""
+    apiHandlers = {}
+
+    @classmethod
+    def registerApiCall(cl, name, handler):
+        cl.apiHandlers[name] = handler
+
     def __init__(self, ws, site, server, user, request):
         self.ws = ws
         self.site = site
@@ -114,9 +142,12 @@ class UiWebsocket:
     def hasPlugin(self, name):
         return name in PluginManager.plugin_manager.plugin_names
 
-    # Has permission to run the command
     def hasCmdPermission(self, cmd):
-        flags = flag.db.get(self.getCmdFuncName(cmd), ())
+        """Check if site has permission to run the command"""
+        flags = flag.db.get(self.getCmdFuncName(cmd), set())
+        handler = self.apiHandlers.get(cmd)
+        if handler:
+            flags = flags.union(getattr(handler, 'required_permissions', set()))
         if "admin" in flags and "ADMIN" not in self.permissions:
             return False
         else:
@@ -216,20 +247,24 @@ class UiWebsocket:
         func_name = "action" + cmd[0].upper() + cmd[1:]
         return func_name
 
-    # Handle incoming messages
     def handleRequest(self, req):
+        """Handle incoming messages"""
 
         cmd = req.get("cmd")
         params = req.get("params")
         self.permissions = self.getPermissions(req["id"])
 
-        if cmd == "response":  # It's a response to a command
+        if self.site.settings.get("deleting"):
+            return self.response(req["id"], {"error": "Site is deleting"})
+        elif cmd == "response":  # It's a response to a command
             return self.actionResponse(req["to"], req["result"])
         else:  # Normal command
-            func_name = self.getCmdFuncName(cmd)
-            func = getattr(self, func_name, None)
-            if self.site.settings.get("deleting"):
-                return self.response(req["id"], {"error": "Site is deleting"})
+            handler = self.apiHandlers.get(cmd)
+            if handler:
+                func = lambda *args, **kwargs: handler(self, *args, **kwargs)
+            else:
+                func_name = self.getCmdFuncName(cmd)
+                func = getattr(self, func_name, None)
 
             if not func:  # Unknown command
                 return self.response(req["id"], {"error": "Unknown command: %s" % cmd})
@@ -237,8 +272,11 @@ class UiWebsocket:
             if not self.hasCmdPermission(cmd):  # Admin commands
                 return self.response(req["id"], {"error": "You don't have permission to run %s" % cmd})
 
-        # Execute in parallel
         func_flags = flag.db.get(self.getCmdFuncName(cmd), ())
+        if hasattr(func, 'required_permissions'):
+            func_flags = func_flags.union(func.required_permissions)
+
+        # Execute in parallel
         if func_flags and "async_run" in func_flags:
             func = self.asyncWrapper(func)
 
@@ -407,10 +445,6 @@ class UiWebsocket:
         else:
             self.log.error("Websocket callback not found: %s, %s" % (to, result))
 
-    def actionPing(self, to):
-        """Ping websocket connection"""
-        self.response(to, "pong")
-
     def actionSiteInfo(self, to, file_status=None):
         """Basic info about current site"""
         ret = self.formatSiteInfo(self.site)
@@ -457,11 +491,6 @@ class UiWebsocket:
                 self.channels.append(channel)
 
         self.response(to, "ok")
-
-    def actionServerInfo(self, to):
-        """Get server info"""
-        back = self.formatServerInfo()
-        self.response(to, back)
 
     @flag.admin
     def actionServerGetWrapperNonce(self, to):
