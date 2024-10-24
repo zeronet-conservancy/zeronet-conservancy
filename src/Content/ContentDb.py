@@ -202,6 +202,12 @@ class ContentDb(Db):
         res = self.execute('SELECT SUM(size_files) FROM content WHERE ?', params)
         return res.fetchone()[0]
 
+    def getSizeLimitRules(self):
+        """Get all size limit rules"""
+        query = '''SELECT * FROM size_limit'''
+        res = self.execute(query)
+        return [dict(x) for x in res.fetchall()]
+
     def listModified(self, site, after=None, before=None):
         params = {"site_id": self.site_ids.get(site.address, 0)}
         if after:
