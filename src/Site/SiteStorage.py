@@ -398,16 +398,15 @@ class SiteStorage(object):
     def isDir(self, inner_path):
         return os.path.isdir(self.getPath(inner_path))
 
-    # Security check and return path of site's file
     def getPath(self, inner_path):
-        inner_path = inner_path.replace("\\", "/")  # Windows separator fix
+        """Security check and return path of site's file"""
         if not inner_path:
             return self.directory
 
         if "../" in inner_path:
-            raise Exception("File not allowed: %s" % inner_path)
+            raise ValueError(f"File not allowed: {inner_path}")
 
-        return "%s/%s" % (self.directory, inner_path)
+        return self.directory / inner_path
 
     # Get site dir relative path
     def getInnerPath(self, path):
