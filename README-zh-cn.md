@@ -4,7 +4,7 @@
 
 **(注意：本文档的翻译版本通常滞后于最新内容)**
 
-[по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md) | [日本語](README-ja.md)
+[in English](README.md) | [em português](README-ptbr.md) | [по-русски](README-ru.md) | [日本語](README-ja.md)
 
 `zeronet-conservancy` 是 [零网 ZeroNet](https://github.com/HelloZeroNet/ZeroNet) 项目的一个分支/延续（其创建者已放弃维护），致力于维持现有的p2p网络，进一步发扬去中心化与自由的价值观，并逐步得到一个设计得更好的网络。
 
