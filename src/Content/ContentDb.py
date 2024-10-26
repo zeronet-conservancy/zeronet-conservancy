@@ -181,6 +181,20 @@ class ContentDb(Db):
         res = self.execute(query)
         return [dict(x) for x in res.fetchall()]
 
+    def addPrivateSizeLimitRule(self, address, rule, value, priority):
+        """Add private rule"""
+        self.execute('''
+            INSERT INTO size_limit(address, source, is_private, rule, value, priority)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', [
+            address,
+            '<local>',
+            True,
+            rule,
+            value,
+            priority,
+        ])
+
     def listModified(self, site, after=None, before=None):
         params = { 'address': site.address }
         if after:
