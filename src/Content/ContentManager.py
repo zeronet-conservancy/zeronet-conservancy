@@ -17,8 +17,8 @@ from util import Diff
 from util import SafeRe
 from Peer import PeerHashfield
 from .ContentDbDict import ContentDbDict
+from .Limits import applyLimitRules
 from Plugin import PluginManager
-
 
 class VerifyError(Exception):
     pass
@@ -30,9 +30,14 @@ class SignError(Exception):
 
 @PluginManager.acceptPlugins
 class ContentManager:
-    """Manage site content verifying and other related stuff"""
+    """Manage site content verifying and other related stuff
 
+    A separate instance is created per site.
+    """
+
+    @staticmethod
     def loadBadCerts():
+        """Load list of certificates that are considered untrustworthy"""
         try:
             with open(f'{config.data_dir}/badcerts.json') as f:
                 return set(json.load(f))
@@ -49,14 +54,15 @@ class ContentManager:
         self.has_optional_files = False
 
     def addBadCert(self, sign):
+        """Add untrustworthy cert"""
         addr = CryptBitcoin.get_sign_address_64('compromised', sign)
         if addr:
             self.bad_certs.add(addr)
             with open(f'{config.data_dir}/badcerts.json', 'w') as f:
                 json.dump(list(self.bad_certs), f)
 
-    # Load all content.json files
     def loadContents(self):
+        """Load all content.json files"""
         if len(self.contents) == 0:
             self.log.info("ContentDb not initialized, load files from filesystem...")
             self.loadContent(add_bad_files=False, delete_removed_files=False)
@@ -85,34 +91,36 @@ class ContentManager:
                 del(deleted[relative_path_old])
         return list(deleted), renamed
 
-    # Load content.json to self.content
-    # Return: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
     def loadContent(self, content_inner_path="content.json", add_bad_files=True, delete_removed_files=True, load_includes=True, force=False):
-        content_inner_path = content_inner_path.strip("/")  # Remove / from beginning
+        """Load content.json to self.content
+
+        Returns: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
+        """
+        content_inner_path = content_inner_path.strip('/')
         old_content = self.contents.get(content_inner_path)
         content_path = self.site.storage.getPath(content_inner_path)
         content_dir = os.path.dirname(content_path)
         content_inner_dir = helper.getDirname(content_inner_path)
 
-        if os.path.isfile(content_path):
-            try:
-                new_content = self.site.storage.loadJson(content_inner_path)
-                # Check if file is newer than what we have
-                if not force and old_content and not self.site.settings.get("own"):
-                    new_ts = int(float(new_content.get('modified', 0)))
-                    old_ts = int(float(old_content.get('modified', 0)))
-                    if new_ts < old_ts:
-                        self.log.debug(f'got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
-                        return [], []
-                    elif new_ts == old_ts:
-                        self.log.debug(f'got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
-                        return [], []
-            except Exception as err:
-                self.log.warning(f'{content_path} load error: {Debug.formatException(err)}')
-                return [], []
-        else:
-            self.log.debug(f'Content.json not exist: {content_path}')
-            return [], []  # Content.json not exist
+        if not content_path.is_file():
+            self.log.warning(f'Content.json not exist: {content_path}')
+            return [], []
+
+        try:
+            new_content = self.site.storage.loadJson(content_inner_path)
+            # Check if file is newer than what we have
+            if not force and old_content and not self.site.settings.get("own"):
+                new_ts = int(float(new_content.get('modified', 0)))
+                old_ts = int(float(old_content.get('modified', 0)))
+                if new_ts < old_ts:
+                    self.log.debug(f'got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
+                    return [], []
+                elif new_ts == old_ts:
+                    self.log.debug(f'got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
+                    return [], []
+        except Exception as err:
+            self.log.warning(f'{content_path} load error: {Debug.formatException(err)}')
+            return [], []
 
         try:
             # Get the files where the sha512 changed
@@ -464,9 +472,11 @@ class ContentManager:
         # Not found
         return False
 
-    # Get rules for the file
-    # Return: The rules for the file or False if not allowed
     def getRules(self, inner_path, content=None):
+        """Get rules for the file
+
+        Returns rules for the file or False if not allowed
+        """
         if not inner_path.endswith("content.json"):  # Find the files content.json first
             file_info = self.getFileInfo(inner_path)
             if not file_info:
@@ -494,9 +504,11 @@ class ContentManager:
     def isGoodCert(self, cert):
         return cert not in self.bad_certs
 
-    # Get rules for a user file
-    # Return: The rules of the file or False if not allowed
     def getUserContentRules(self, parent_content, inner_path, content):
+        """Get rules for a user file
+        
+        Returns: The rules of the file or False if not allowed
+        """
         user_contents = parent_content["user_contents"]
 
         # Delivered for directory
@@ -833,6 +845,7 @@ class ContentManager:
         return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
     def verifyCert(self, inner_path, content):
+        """Check if file is signed"""
         rules = self.getRules(inner_path, content)
 
         if not rules:
@@ -918,7 +931,7 @@ class ContentManager:
 
     def verifyContentInclude(self, inner_path, content, content_size, content_size_optional):
         # Load include details
-        rules = self.getRules(inner_path, content)
+        rules = applyLimitRules(self.getRules(inner_path, content))
         if not rules:
             raise VerifyError("No rules")
 

@@ -8,6 +8,7 @@ from Debug import Debug
 
 @PluginManager.acceptPlugins
 class ContentDb(Db):
+    """Interface for global content.db. This stores sites' content.json data and other info"""
     def __init__(self, path):
         Db.__init__(self, {"db_name": "ContentDb", "tables": {}}, path)
         self.foreign_keys = True

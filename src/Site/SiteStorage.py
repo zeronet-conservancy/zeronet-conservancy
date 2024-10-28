@@ -5,6 +5,7 @@ import json
 import time
 import errno
 from collections import defaultdict
+from pathlib import Path
 
 import sqlite3
 import gevent.event
@@ -400,24 +401,27 @@ class SiteStorage(object):
 
     def getPath(self, inner_path):
         """Security check and return path of site's file"""
+        if not isinstance(inner_path, Path):
+            self.log.warning(f"{inner_path} was passed to getPath not as Path object")
+            inner_path = Path(inner_path)
         if not inner_path:
             return self.directory
 
-        if "../" in inner_path:
+        if '..' in inner_path.parts:
             raise ValueError(f"File not allowed: {inner_path}")
 
         return self.directory / inner_path
 
-    # Get site dir relative path
     def getInnerPath(self, path):
-        if path == self.directory:
-            inner_path = ""
-        else:
-            if str(path).startswith(str(self.directory)):
-                inner_path = path[len(str(self.directory)) + 1:]
-            else:
-                raise Exception("File not allowed: %s" % path)
-        return inner_path
+        """Get site dir relative path"""
+        if not isinstance(path, Path):
+            self.log.warning(f"{path} was not presented as Path object")
+            path = Path(path)
+        try:
+            return path.relative_to(self.directory)
+        except ValueError as err:
+            self.log.warning(f"{path} is not relative to {self.directory} and thus not allowed")
+            raise err
 
     # Verify all files sha512sum using content.json
     def verifyFiles(self, quick_check=False, add_optional=False, add_changed=True):
