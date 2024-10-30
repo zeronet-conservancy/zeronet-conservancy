@@ -14,6 +14,8 @@
 - changes in directory structure (split data and config, use user directories by default)
 - use version information from git if available
 - different build types (portable vs package)
+- codebase improvements (including using Path objects more instead of raw strings)
+- more command-line options for development (--debug-unsafe, --no-plugins)
 - various improvements
 
 ### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
