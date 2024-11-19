@@ -7,6 +7,7 @@ import re
 import copy
 import logging
 import stat
+from pathlib import Path
 
 import gevent
 
@@ -535,7 +536,7 @@ class UiWebsocket:
             inner_path = file_info["content_inner_path"]
 
         # Add certificate to user files
-        is_user_content = file_info and ("cert_signers" in file_info or "cert_signers_pattern" in file_info)
+        is_user_content = file_info and 'cert_signers' in file_info
         if is_user_content and privatekey is None:
             cert = self.user.getCert(self.site.address)
             extend["cert_auth_type"] = cert["auth_type"]
@@ -769,14 +770,16 @@ class UiWebsocket:
             self.log.error("fileList %s error: %s" % (inner_path, Debug.formatException(err)))
             return {"error": Debug.formatExceptionMessage(err)}
 
-    # List directories in a directory
     @flag.async_run
     def actionDirList(self, to, inner_path, stats=False):
+        """List directories in a directory"""
         try:
+            inner_path = Path(inner_path)
             if stats:
                 back = []
                 for file_name in self.site.storage.list(inner_path):
-                    file_stats = os.stat(self.site.storage.getPath(inner_path + "/" + file_name))
+                    path = self.site.storage.getPath(inner_path / file_name)
+                    file_stats = path.stat()
                     is_dir = stat.S_ISDIR(file_stats.st_mode)
                     back.append(
                         {"name": file_name, "size": file_stats.st_size, "is_dir": is_dir}
@@ -785,7 +788,7 @@ class UiWebsocket:
             else:
                 return list(self.site.storage.list(inner_path))
         except Exception as err:
-            self.log.error("dirList %s error: %s" % (inner_path, Debug.formatException(err)))
+            self.log.error(f"dirList {inner_path} error: {Debug.formatException(err)}")
             return {"error": Debug.formatExceptionMessage(err)}
 
     # Sql query
@@ -916,7 +919,6 @@ class UiWebsocket:
             self.response(to, {"error": err.message})
 
     def cbCertAddConfirm(self, to, domain, auth_type, auth_user_name, cert):
-        self.user.deleteCert(domain)
         self.user.addCert(self.user.getAuthAddress(self.site.address), domain, auth_type, auth_user_name, cert)
         self.cmd(
             "notification",
@@ -926,41 +928,46 @@ class UiWebsocket:
         self.site.updateWebsocket(cert_changed=domain)
         self.response(to, "ok")
 
-    # Select certificate for site
-    def actionCertSelect(self, to, accepted_domains=[], accept_any=False, accepted_pattern=None):
+    def actionCertSelect(self, to, accepted_domains=None, accept_any=False, accepted_pattern=None):
+        """Select certificate for site"""
+        if accepted_domains is None:
+            accepted_domains = []
+        if accepted_pattern is not None:
+            raise RuntimeError("Usage of accepted_pattern is not longer supported")
         accounts = []
-        accounts.append(["", _["No certificate"], ""])  # Default option
-        active = ""  # Make it active if no other option found
 
-        # Add my certs
-        auth_address = self.user.getAuthAddress(self.site.address)  # Current auth address
-        site_data = self.user.getSiteData(self.site.address)  # Current auth address
+        site_data = self.user.getSiteData(self.site.address)
 
-        if not accepted_domains and not accepted_pattern:  # Accept any if no filter defined
+        noauth_address = site_data['auth_address']
+
+        selected_acc = site_data.get('account', None) or noauth_address
+
+        accounts.append(['', noauth_address, _["No certificate"], ''])
+
+        if not accepted_domains:  # Accept any if no filter defined
             accept_any = True
 
-        for domain, cert in list(self.user.certs.items()):
-            if auth_address == cert["auth_address"] and domain == site_data.get("cert"):
-                active = domain
-            title = cert["auth_user_name"] + "@" + domain
-            accepted_pattern_match = accepted_pattern and SafeRe.match(accepted_pattern, domain)
-            if domain in accepted_domains or accept_any or accepted_pattern_match:
-                accounts.append([domain, title, ""])
+        # append every ok certs
+        for acc in self.user.accounts:
+            domain = acc['cert_issuer']
+            title = f"{acc['auth_user_name']}@{domain}"
+            if domain in accepted_domains or accept_any:
+                accounts.append([domain, acc['auth_address'], title, ""])
             else:
-                accounts.append([domain, title, "disabled"])
+                accounts.append([domain, acc['auth_address'], title, "disabled"])
 
         # Render the html
         body = "<span style='padding-bottom: 5px; display: inline-block'>" + _["Select account you want to use in this site:"] + "</span>"
         # Accounts
-        for domain, account, css_class in accounts:
-            if domain == active:
+        for domain, address, username, css_class in accounts:
+            if address == selected_acc:
                 css_class += " active"  # Currently selected option
-                title = _("<b>%s</b> <small>({_[currently selected]})</small>") % account
+                title = _("<b>%s</b> <small>({_[currently selected]})</small>") % address
             else:
-                title = "<b>%s</b>" % account
+                title = "<b>%s</b>" % address
             body += "<a href='#Select+account' class='select select-close cert %s' title='%s'>%s</a>" % (css_class, domain, title)
         # More available  providers
-        more_domains = [domain for domain in accepted_domains if domain not in self.user.certs]  # Domains we not displayed yet
+        more_domains = accepted_domains
         if more_domains:
             # body+= "<small style='margin-top: 10px; display: block'>Accepted authorization providers by the site:</small>"
             body += "<div style='background-color: #F7F7F7; margin-right: -30px'>"

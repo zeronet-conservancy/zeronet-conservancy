@@ -473,7 +473,15 @@ class ContentManager:
         return False
 
     def getRules(self, inner_path, content=None):
-        """Get rules for the file
+        """Get rules for a file"""
+        siteRules = self.getSiteRules(inner_path, content)
+        if config.nocert_everywhere:
+            if siteRules.get('cert_signers'):
+                siteRules['cert_signers']['nocert'] = []
+        return siteRules
+
+    def getSiteRules(self, inner_path, content=None):
+        """Get rules for the file from site information
 
         Returns rules for the file or False if not allowed
         """
@@ -580,7 +588,8 @@ class ContentManager:
 
         # Accepted cert signers
         rules["cert_signers"] = user_contents.get("cert_signers", {})
-        rules["cert_signers_pattern"] = user_contents.get("cert_signers_pattern")
+        if pattern := user_contents.get("cert_signers_pattern"):
+            self.log.warning(f"Site has non-empty cert_signers_pattern: {pattern}. This is no longer supported and will be ignored. Please report this incident to site owner")
 
         if "signers" not in rules:
             rules["signers"] = []
@@ -845,30 +854,40 @@ class ContentManager:
         return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
     def verifyCert(self, inner_path, content):
-        """Check if file is signed"""
+        """Check if file is signed properly
+
+        returns True on success, False or throws VerifyError otherwise
+        """
         rules = self.getRules(inner_path, content)
 
         if not rules:
             raise VerifyError("No rules for this file")
 
-        if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
+        if not rules.get("cert_signers"):
             return True  # Does not need cert
 
         if "cert_user_id" not in content:
             raise VerifyError("Missing cert_user_id")
 
-        if content["cert_user_id"].count("@") != 1:
-            raise VerifyError("Invalid domain in cert_user_id")
+        if content['cert_user_id'].count('@') != 1:
+            raise VerifyError(f"Invalid cert_user_id: {cert_user_id}")
 
-        name, domain = content["cert_user_id"].rsplit("@", 1)
+        name, domain = content['cert_user_id'].split('@')
         cert_address = rules["cert_signers"].get(domain)
         if not cert_address:  # Unknown Cert signer
-            if rules.get("cert_signers_pattern") and SafeRe.match(rules["cert_signers_pattern"], domain):
-                cert_address = domain
-            else:
-                raise VerifyError("Invalid cert signer: %s" % domain)
+            raise VerifyError(f"Invalid cert signer: {domain}")
+
+        if cert_address == "nocert":
+            return self.verifyNocert(name, rules['user_address'])
 
         return self.verifyCertSign(rules["user_address"], content["cert_auth_type"], name, cert_address, content["cert_sign"])
+
+    def verifyNocert(self, name, user_address):
+        """Verifies that user is allowed to post by local node rules"""
+        if user_address != name:
+            return False
+        limits = getUserLimits(user_address)
+        return not limits.blocked and limits.size > 0
 
     # Checks if the content.json content is valid
     # Return: True or False
