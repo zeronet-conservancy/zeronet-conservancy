@@ -8,6 +8,8 @@ import sys
 
 import gevent
 
+from pathlib import Path
+
 from Debug import Debug
 from Crypt import CryptHash
 from Crypt import CryptBitcoin
@@ -629,10 +631,15 @@ class ContentManager:
         return diffs
 
     def hashFile(self, dir_inner_path, file_relative_path, optional=False):
-        back = {}
-        file_inner_path = dir_inner_path + "/" + file_relative_path
+        if not isinstance(dir_inner_path, Path):
+            dir_inner_path = Path(dir_inner_path)
+        if not isinstance(file_relative_path, Path):
+            file_relative_path = Path(file_relative_path)
 
+        back = {}
+        file_inner_path = dir_inner_path / file_relative_path
         file_path = self.site.storage.getPath(file_inner_path)
+
         file_size = os.path.getsize(file_path)
         sha512sum = CryptHash.sha512sum(file_path)  # Calculate sha512 sum of file
         if optional and not self.hashfield.hasHash(sha512sum):
@@ -642,18 +649,18 @@ class ContentManager:
         return back
 
     def isValidRelativePath(self, relative_path):
-        if ".." in relative_path.replace("\\", "/").split("/"):
+        if '..' in relative_path.parts:
             return False
-        elif len(relative_path) > 255:
+        elif len(str(relative_path)) > 255: # ???
             return False
-        elif relative_path[0] in ("/", "\\"):  # Starts with
+        elif relative_path.is_absolute():
             return False
-        elif relative_path[-1] in (".", " "):  # Ends with
+        elif relative_path.name[-1] == ' ':  # Ends with
             return False
-        elif re.match(r".*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)", relative_path, re.IGNORECASE):  # Protected on Windows
+        elif re.match(r".*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)", str(relative_path), re.IGNORECASE):  # Protected on Windows
             return False
         else:
-            return re.match(r"^[^\x00-\x1F\"*:<>?\\|]+$", relative_path)
+            return re.match(r"^[^\x00-\x1F\"*:<>?\\|]+$", str(relative_path))
 
     def sanitizePath(self, inner_path):
         return re.sub("[\x00-\x1F\"*:<>?\\|]", "", inner_path)
@@ -668,7 +675,7 @@ class ContentManager:
             self.log.error("- [ERROR] Only ascii encoded directories allowed: %s" % dir_inner_path)
 
         for file_relative_path in self.site.storage.walk(dir_inner_path, ignore_pattern):
-            file_name = helper.getFilename(file_relative_path)
+            file_name = file_relative_path.name
 
             ignored = optional = False
             if file_name == "content.json":
@@ -678,7 +685,7 @@ class ContentManager:
             elif not self.isValidRelativePath(file_relative_path):
                 ignored = True
                 self.log.error("- [ERROR] Invalid filename: %s" % file_relative_path)
-            elif dir_inner_path == "" and db_inner_path and file_relative_path.startswith(db_inner_path):
+            elif dir_inner_path == "" and db_inner_path and file_relative_path == db_inner_path:
                 ignored = True
             elif optional_pattern and SafeRe.match(optional_pattern, file_relative_path):
                 optional = True
@@ -736,7 +743,7 @@ class ContentManager:
                     content[key] = val
                     self.log.info("Extending content.json with: %s" % key)
 
-        directory = helper.getDirname(self.site.storage.getPath(inner_path))
+        directory = self.site.storage.getPath(inner_path).parent
         inner_directory = helper.getDirname(inner_path)
         self.log.info("Opening site data directory: %s..." % directory)
 
@@ -757,7 +764,7 @@ class ContentManager:
             old_hash = content.get("files", {}).get(file_relative_path, {}).get("sha512")
             new_hash = files_merged[file_relative_path]["sha512"]
             if old_hash != new_hash:
-                changed_files.append(inner_directory + file_relative_path)
+                changed_files.append(inner_directory / file_relative_path)
 
         self.log.debug("Changed files: %s" % changed_files)
         if update_changed_files:
@@ -808,6 +815,7 @@ class ContentManager:
         if "sign" in new_content:
             del(new_content["sign"])  # Delete old sign (backward compatibility)
 
+        new_content = helper.stringifyJsonTree(new_content)
         sign_content = json.dumps(new_content, sort_keys=True)
         sign = CryptBitcoin.sign(sign_content, privatekey)
         # new_content["signs"] = content.get("signs", {}) # TODO: Multisig
@@ -933,6 +941,7 @@ class ContentManager:
 
         # Verify valid filenames
         for file_relative_path in list(content.get("files", {}).keys()) + list(content.get("files_optional", {}).keys()):
+            file_relative_path = Path(file_relative_path)
             if not self.isValidRelativePath(file_relative_path):
                 raise VerifyError("Invalid relative path: %s" % file_relative_path)
 

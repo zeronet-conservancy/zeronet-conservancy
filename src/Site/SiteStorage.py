@@ -310,20 +310,21 @@ class SiteStorage(object):
         if rename_err:
             raise rename_err
 
-    # List files from a directory
     @thread_pool_fs_read.wrap
     def walk(self, dir_inner_path, ignore=None):
+        """List files from a directory"""
         directory = self.getPath(dir_inner_path)
-        for root, dirs, files in os.walk(directory):
-            root = root.replace("\\", "/")
-            root_relative_path = re.sub(f'^{re.escape(str(directory))}', '', root).lstrip('/')
+        for root, dirs, files in directory.walk():
+            print(root, dirs, files)
+            # root_relative_path = re.sub(f'^{re.escape(str(directory))}', '', root).lstrip('/')
+            root_relative_path = root.relative_to(directory)
             for file_name in files:
                 if root_relative_path:  # Not root dir
-                    file_relative_path = root_relative_path + "/" + file_name
+                    file_relative_path = root_relative_path / file_name
                 else:
                     file_relative_path = file_name
 
-                if ignore and SafeRe.match(ignore, file_relative_path):
+                if ignore and SafeRe.match(ignore, str(file_relative_path)):
                     continue
 
                 yield file_relative_path
@@ -333,11 +334,11 @@ class SiteStorage(object):
                 dirs_filtered = []
                 for dir_name in dirs:
                     if root_relative_path:
-                        dir_relative_path = root_relative_path + "/" + dir_name
+                        dir_relative_path = root_relative_path / dir_name
                     else:
                         dir_relative_path = dir_name
 
-                    if ignore == ".*" or re.match(".*([|(]|^)%s([|)]|$)" % re.escape(dir_relative_path + "/.*"), ignore):
+                    if ignore == ".*" or re.match('.*([|(]|^)' + re.escape(str(dir_relative_path) + "/.*") + '([|)]|$)', ignore):
                         continue
 
                     dirs_filtered.append(dir_name)
@@ -351,9 +352,11 @@ class SiteStorage(object):
 
     # Site content updated
     def onUpdated(self, inner_path, file=None):
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
         # Update Sql cache
-        should_load_to_db = inner_path.endswith(".json") or inner_path.endswith(".json.gz")
-        if inner_path == "dbschema.json":
+        should_load_to_db = inner_path.name.endswith(".json") or inner_path.name.endswith(".json.gz")
+        if inner_path.parent == Path() and inner_path.name == 'dbschema.json':
             self.has_db = self.isFile("dbschema.json")
             # Reopen DB to check changes
             if self.has_db:

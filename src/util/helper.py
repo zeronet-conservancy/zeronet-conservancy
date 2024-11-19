@@ -9,6 +9,7 @@ import logging
 import base64
 import json
 from pathlib import Path
+from numbers import Number
 
 import gevent
 
@@ -341,3 +342,21 @@ def openBrowser(agent):
             return subprocess.Popen([config.open_browser, url])
         except Exception as err:
             print(f"Error starting browser: {err}")
+
+
+def stringifyJsonTree(obj):
+    if isinstance(obj, str):
+        return obj
+    if isinstance(obj, Number):
+        return obj
+    if isinstance(obj, dict):
+        return {
+            str(k): stringifyJsonTree(v)
+            for k, v in obj.items()
+        }
+    if isinstance(obj, list):
+        return [
+            stringifyJsonTree(x)
+            for x in obj
+        ]
+    return str(obj)
