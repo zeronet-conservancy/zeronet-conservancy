@@ -153,18 +153,15 @@ class ContentDb(Db):
 
     def getAllSigners(self):
         """Returns all known public public and whether they have related site and user profile"""
-        query = '''SELECT
-            s.address,
-            (c.content_count > 0) AS has_content_record,
-            (exists (SELECT 1 FROM content c1 WHERE c1.address = s.address AND c1.inner_path = 'profile/content.json')) AS has_profile_content
-        FROM site s
-        LEFT JOIN (
+        query = '''
             SELECT
                 address,
-                COUNT(*) AS content_count
-            FROM content
+                COUNT(*) > 0 AS has_content_record,
+                EXISTS (SELECT 1 FROM content c1 WHERE c1.address = c.address AND c1.inner_path = 'profile/content.json') AS has_profile_content
+            FROM content c
             GROUP BY address
-        ) c ON s.address = c.address'''
+        '''
+
         res = self.execute(query)
         return [dict(x) for x in res.fetchall()]
 
