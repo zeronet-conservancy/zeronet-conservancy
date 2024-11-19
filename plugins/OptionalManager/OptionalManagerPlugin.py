@@ -143,7 +143,7 @@ class ContentManagerPlugin(object):
         else:
             res = self.contents.db.execute('''
                 SELECT is_downloaded FROM file_optional
-                WHERE ? AND is_downloaded = 1 LIMIT 1"
+                WHERE ? AND is_downloaded = 1 LIMIT 1
             ''', {
                 'address': self.site.address,
                 'hash_id': hash_id,
