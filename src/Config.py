@@ -251,7 +251,7 @@ class Config(object):
                                  metavar='address')
         self.parser.add_argument('--dist_type', help='Type of installed distribution', default='source')
 
-        self.parser.add_argument('--size_limit', help='Default site size limit in MB', default=10, type=int, metavar='limit')
+        self.parser.add_argument('--size_limit', help='Default site size limit in MB', default=100, type=int, metavar='limit')
         self.parser.add_argument('--file_size_limit', help='Maximum per file size limit in MB', default=10, type=int, metavar='limit')
         self.parser.add_argument('--connected_limit', help='Max connected peer per site', default=8, type=int, metavar='connected_limit')
         self.parser.add_argument('--global_connected_limit', help='Max connections', default=512, type=int, metavar='global_connected_limit')
