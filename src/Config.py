@@ -1,6 +1,7 @@
 import argparse
 import sys
 import os
+import platform
 import locale
 import re
 import configparser
@@ -8,13 +9,39 @@ import logging
 import logging.handlers
 import stat
 import time
+from pathlib import Path
 
+VERSION = "0.7.10+"
 
-class Config(object):
+class StartupError(RuntimeError):
+    pass
+
+class Config:
+    """Class responsible for storing and loading config.
+
+    Used as singleton `config`
+    """
 
     def __init__(self, argv):
-        self.version = "0.7.2"
-        self.rev = 4555
+        try:
+            from . import Build
+        except ImportError:
+            from .util import Git
+            self.build_type = 'source'
+            self.branch = Git.branch() or 'unknown'
+            self.commit = Git.commit() or 'unknown'
+            self.version = VERSION
+            self.platform = 'source'
+        else:
+            self.build_type = Build.build_type
+            self.branch = Build.branch
+            self.commit = Build.commit
+            self.version = Build.version or VERSION
+            self.platform = Build.platform
+        self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
+        self.user_agent = "conservancy"
+        # for compatibility
+        self.user_agent_rev = 8192
         self.argv = argv
         self.action = None
         self.test_parser = None
@@ -28,15 +55,18 @@ class Config(object):
         self.keys_restart_need = set([
             "tor", "fileserver_port", "fileserver_ip_type", "threads_fs_read", "threads_fs_write", "threads_crypt", "threads_db"
         ])
-        self.start_dir = self.getStartDir()
 
-        self.config_file = self.start_dir + "/zeronet.conf"
-        self.data_dir = self.start_dir + "/data"
-        self.log_dir = self.start_dir + "/log"
+        self.config_file = None
+        self.config_dir = None
+        self.data_dir = None
+        self.private_dir = None
+        self.log_dir = None
+        self.configurePaths(argv)
+
         self.openssl_lib_file = None
         self.openssl_bin_file = None
 
-        self.trackers_file = False
+        self.trackers_file = None
         self.createParser()
         self.createArguments()
 
@@ -53,11 +83,12 @@ class Config(object):
     def strToBool(self, v):
         return v.lower() in ("yes", "true", "t", "1")
 
-    def getStartDir(self):
+    def getStartDirOld(self):
+        """Get directory that would have been used by older versions (pre v0.7.11)"""
         this_file = os.path.abspath(__file__).replace("\\", "/").rstrip("cd")
 
-        if "--start_dir" in self.argv:
-            start_dir = self.argv[self.argv.index("--start_dir") + 1]
+        if "--start-dir" in self.argv:
+            start_dir = self.argv[self.argv.index("--start-dir") + 1]
         elif this_file.endswith("/Contents/Resources/core/src/Config.py"):
             # Running as ZeroNet.app
             if this_file.startswith("/Application") or this_file.startswith("/private") or this_file.startswith(os.path.expanduser("~/Library")):
@@ -69,33 +100,134 @@ class Config(object):
         elif this_file.endswith("/core/src/Config.py"):
             # Running as exe or source is at Application Support directory, put var files to outside of core dir
             start_dir = this_file.replace("/core/src/Config.py", "")
-        elif this_file.endswith("usr/share/zeronet/src/Config.py"):
+        elif not os.access(this_file.replace('/src/Config.py', ''), os.R_OK | os.W_OK):
             # Running from non-writeable location, e.g., AppImage
             start_dir = os.path.expanduser("~/ZeroNet")
         else:
             start_dir = "."
-
         return start_dir
+
+    def migrateOld(self, source):
+        print(f'[bold red]WARNING: found data {source}[/bold red]')
+        print( '  It used to be default behaviour to store data there,')
+        print( '  but now we default to place data and config in user home directory.')
+        print( '')
+
+    def configurePaths(self, argv):
+        if '--config-file' in argv:
+            self.config_file = argv[argv.index('--config-file') + 1]
+        old_dir = Path(self.getStartDirOld())
+        new_dir = Path(self.getStartDir())
+        no_migrate = '--no-migrate' in argv
+        silent_migrate = '--portable' in argv or '--migrate' in argv
+        try:
+            self.start_dir = self.maybeMigrate(old_dir, new_dir, no_migrate, silent_migrate)
+        except Exception as ex:
+            raise ex
+
+        self.updatePaths()
+
+    def updatePaths(self):
+        if self.config_file is None:
+            self.config_file = self.start_dir / 'znc.conf'
+        if self.config_dir is None:
+            self.config_dir = self.start_dir
+        if self.private_dir is None:
+            self.private_dir = self.start_dir / 'private'
+        if self.data_dir is None:
+            self.data_dir = self.start_dir / 'data'
+        if self.log_dir is None:
+            self.log_dir = self.start_dir / 'log'
+
+    def createPaths(self):
+        self.start_dir.mkdir(parents=True, exist_ok=True)
+        self.private_dir.mkdir(parents=True, exist_ok=True)
+        self.data_dir.mkdir(parents=True, exist_ok=True)
+        self.log_dir.mkdir(parents=True, exist_ok=True)
+
+    def checkDir(self, root):
+        return (root / 'znc.conf').is_file()
+
+    def doMigrate(self, old_dir, new_dir):
+        raise RuntimeError('Migration not implemented yet')
+
+    def askMigrate(self, old_dir, new_dir, silent):
+        if not sys.stdin.isatty():
+            raise StartupError('Migration refused: non-interactive shell')
+        while True:
+            r = input(f'You have old data in `{old_dir}`. Migrate to new format to `{new_dir}`? [Y/n]')
+            if r.lower().startswith('n'):
+                raise StartupError('Migration refused')
+            if r.lower().startswith('y'):
+                return self.doMigrate(old_dir, new_dir)
+
+    def createNewConfig(self, new_dir):
+        new_dir.mkdir(parents=True, exist_ok=True)
+        with (new_dir / 'znc.conf').open('w') as f:
+            f.write('# zeronet-conervancy config file')
+
+    def maybeMigrate(self, old_dir, new_dir, no_migrate, silent_migrate):
+        if old_dir.exists() and new_dir.exists():
+            if old_dir == new_dir:
+                if self.checkDir(new_dir):
+                    return new_dir
+                elif no_migrate:
+                    return StartError('Migration refused, but new directory should be migrated')
+                else:
+                    return askMigrate(old_dir, new_dir, silent_migrate)
+            else:
+                if self.checkDir(new_dir):
+                    if not no_migrate:
+                        print("There's an old starting directory")
+                    return new_dir
+                else:
+                    raise StartupError('Bad startup directory')
+        elif old_dir.exists():
+            if no_migrate:
+                self.createNewConfig(new_dir)
+                return new_dir
+            else:
+                return self.askMigrate(old_dir, new_dir, silent_migrate)
+        elif new_dir.exists():
+            if self.checkDir(new_dir):
+                return new_dir
+            else:
+                return StartupError('Bad startup directory')
+        else:
+            self.createNewConfig(new_dir)
+            return new_dir
+
+    def getStartDir(self):
+        """Return directory with config & data"""
+        if "--start-dir" in self.argv:
+            return self.argv[self.argv.index("--start-dir") + 1]
+
+        here = os.path.dirname(os.path.abspath(__file__).replace("\\", "/")).rstrip('/src')
+        if '--portable' in self.argv or self.build_type == 'portable':
+            return here
+
+        MACOSX_DIR = '~/Library/Application Support/zeronet-conservancy'
+        WINDOWS_DIR = '~/AppData/zeronet-conservancy'
+        LIBREDESKTOP_DIR = '~/.local/share/zeronet-conservancy'
+        if self.platform == 'source':
+            if platform.system() == 'Darwin':
+                path = MACOSX_DIR
+            elif platform.system() == 'Windows':
+                path = WINDOWS_DIR
+            else:
+                path = LIBREDESKTOP_DIR
+        elif self.platform == 'macosx':
+            path = MACOSX_DIR
+        elif self.platform == 'windows':
+            path = WINDOWS_DIR
+        elif self.platform == 'libredesktop':
+            path = LIBREDESKTOP_DIR
+        else:
+            raise RuntimeError(f'UNKNOWN PLATFORM: {self.platform}. Something must have went terribly wrong!')
+        return os.path.expanduser(path)
 
     # Create command line arguments
     def createArguments(self):
-        trackers = [
-            "zero://boot3rdez4rzn36x.onion:15441",
-            "zero://zero.booth.moe#f36ca555bee6ba216b14d10f38c16f7769ff064e0e37d887603548cc2e64191d:443",  # US/NY
-            "udp://tracker.coppersurfer.tk:6969",  # DE
-            "udp://104.238.198.186:8000",  # US/LA
-            "udp://retracker.akado-ural.ru:80",  # RU
-            "http://h4.trakx.nibba.trade:80/announce",  # US/VA
-            "http://open.acgnxtracker.com:80/announce",  # DE
-            "http://tracker.bt4g.com:2095/announce",  # Cloudflare
-            "zero://2602:ffc5::c5b2:5360:26312"  # US/ATL
-        ]
-        # Platform specific
-        if sys.platform.startswith("win"):
-            coffeescript = "type %s | tools\\coffee\\coffee.cmd"
-        else:
-            coffeescript = None
-
         try:
             language, enc = locale.getdefaultlocale()
             language = language.lower().replace("_", "-")
@@ -111,9 +243,9 @@ class Config(object):
         else:
             fix_float_decimals = False
 
-        config_file = self.start_dir + "/zeronet.conf"
-        data_dir = self.start_dir + "/data"
-        log_dir = self.start_dir + "/log"
+        config_file = self.config_file
+        data_dir = self.data_dir
+        log_dir = self.log_dir
 
         ip_local = ["127.0.0.1", "::1"]
 
@@ -123,7 +255,7 @@ class Config(object):
         # SiteCreate
         action = self.subparsers.add_parser("siteCreate", help='Create a new site')
         action.register('type', 'bool', self.strToBool)
-        action.add_argument('--use_master_seed', help="Allow created site's private key to be recovered using the master seed in users.json (default: True)", type="bool", choices=[True, False], default=True)
+        action.add_argument('--use-master_seed', help="Allow created site's private key to be recovered using the master seed in users.json (default: True)", type="bool", choices=[True, False], default=True)
 
         # SiteNeedFile
         action = self.subparsers.add_parser("siteNeedFile", help='Get a file from site')
@@ -138,9 +270,9 @@ class Config(object):
         action = self.subparsers.add_parser("siteSign", help='Update and sign content.json: address [privatekey]')
         action.add_argument('address', help='Site to sign')
         action.add_argument('privatekey', help='Private key (default: ask on execute)', nargs='?')
-        action.add_argument('--inner_path', help='File you want to sign (default: content.json)',
+        action.add_argument('--inner-path', help='File you want to sign (default: content.json)',
                             default="content.json", metavar="inner_path")
-        action.add_argument('--remove_missing_optional', help='Remove optional files that is not present in the directory', action='store_true')
+        action.add_argument('--remove-missing_optional', help='Remove optional files that is not present in the directory', action='store_true')
         action.add_argument('--publish', help='Publish site after the signing', action='store_true')
 
         # SitePublish
@@ -150,8 +282,10 @@ class Config(object):
                             default=None, nargs='?')
         action.add_argument('peer_port', help='Peer port to publish (default: random peer port from tracker)',
                             default=15441, nargs='?')
-        action.add_argument('--inner_path', help='Content.json you want to publish (default: content.json)',
+        action.add_argument('--inner-path', help='Content.json you want to publish (default: content.json)',
                             default="content.json", metavar="inner_path")
+        action.add_argument('--recursive', help="Whether to publish all of site's content.json. "
+                            "Overrides --inner-path. (default: false)", action='store_true', dest='recursive')
 
         # SiteVerify
         action = self.subparsers.add_parser("siteVerify", help='Verify site files using sha512: address')
@@ -162,6 +296,10 @@ class Config(object):
         action.add_argument('address', help='Site address')
         action.add_argument('cmd', help='API command name')
         action.add_argument('parameters', help='Parameters of the command', nargs='?')
+
+        # Import bundled sites
+        action = self.subparsers.add_parser("importBundle", help='Import sites from a .zip bundle')
+        action.add_argument('bundle', help='Path to a data bundle')
 
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
@@ -220,105 +358,113 @@ class Config(object):
         self.parser.add_argument('--verbose', help='More detailed logging', action='store_true')
         self.parser.add_argument('--debug', help='Debug mode', action='store_true')
         self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
-        self.parser.add_argument('--debug_socket', help='Debug socket connections', action='store_true')
-        self.parser.add_argument('--merge_media', help='Merge all.js and all.css', action='store_true')
+        self.parser.add_argument('--debug-socket', help='Debug socket connections', action='store_true')
+        self.parser.add_argument('--merge-media', help='Merge all.js and all.css', action='store_true')
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
-        self.parser.add_argument('--start_dir', help='Path of working dir for variable content (data, log, .conf)', default=self.start_dir, metavar="path")
-        self.parser.add_argument('--config_file', help='Path of config file', default=config_file, metavar="path")
-        self.parser.add_argument('--data_dir', help='Path of data directory', default=data_dir, metavar="path")
+        self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
+        self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, config)', default=self.start_dir, metavar="path")
+        self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
+        self.parser.add_argument('--data-dir', help='Path of data directory', default=data_dir, metavar="path")
+        self.parser.add_argument('--no-migrate', help='Ignore data directories from old 0net versions', action=argparse.BooleanOptionalAction, default=False)
 
-        self.parser.add_argument('--console_log_level', help='Level of logging to console', default="default", choices=["default", "DEBUG", "INFO", "ERROR", "off"])
+        self.parser.add_argument('--console-log-level', help='Level of logging to console', default="default", choices=["default", "DEBUG", "INFO", "ERROR", "off"])
 
-        self.parser.add_argument('--log_dir', help='Path of logging directory', default=log_dir, metavar="path")
-        self.parser.add_argument('--log_level', help='Level of logging to file', default="DEBUG", choices=["DEBUG", "INFO", "ERROR", "off"])
-        self.parser.add_argument('--log_rotate', help='Log rotate interval', default="daily", choices=["hourly", "daily", "weekly", "off"])
-        self.parser.add_argument('--log_rotate_backup_count', help='Log rotate backup count', default=5, type=int)
+        self.parser.add_argument('--log-dir', help='Path of logging directory', default=log_dir, metavar="path")
+        self.parser.add_argument('--log-level', help='Level of logging to file', default="DEBUG", choices=["DEBUG", "INFO", "ERROR", "off"])
+        self.parser.add_argument('--log-rotate', help='Log rotate interval', default="daily", choices=["hourly", "daily", "weekly", "off"])
+        self.parser.add_argument('--log-rotate-backup-count', help='Log rotate backup count', default=5, type=int)
 
         self.parser.add_argument('--language', help='Web interface language', default=language, metavar='language')
-        self.parser.add_argument('--ui_ip', help='Web interface bind address', default="127.0.0.1", metavar='ip')
-        self.parser.add_argument('--ui_port', help='Web interface bind port', default=43110, type=int, metavar='port')
-        self.parser.add_argument('--ui_restrict', help='Restrict web access', default=False, metavar='ip', nargs='*')
-        self.parser.add_argument('--ui_host', help='Allow access using this hosts', metavar='host', nargs='*')
-        self.parser.add_argument('--ui_trans_proxy', help='Allow access using a transparent proxy', action='store_true')
+        self.parser.add_argument('--ui-ip-protect', help="Protect UI server from being accessed through third-party pages and on unauthorized cross-origin pages (enabled by default when serving on localhost IPs; doesn't work with non-local IPs, need testing with host names)", choices=['always', 'local', 'off'], default='local')
+        self.parser.add_argument('--ui-ip', help='Web interface bind address', default="127.0.0.1", metavar='ip')
+        self.parser.add_argument('--ui-port', help='Web interface bind port', default=43110, type=int, metavar='port')
+        self.parser.add_argument('--ui-site-port', help='Port for serving site content, defaults to ui_port+1', default=None, metavar='port')
+        self.parser.add_argument('--ui-restrict', help='Restrict web access', default=False, metavar='ip', nargs='*')
+        self.parser.add_argument('--ui-host', help='Allow access using this hosts', metavar='host', nargs='*')
+        self.parser.add_argument('--ui-trans-proxy', help='Allow access using a transparent proxy', action='store_true')
 
-        self.parser.add_argument('--open_browser', help='Open homepage in web browser automatically',
+        self.parser.add_argument('--open-browser', help='Open homepage in web browser automatically',
                                  nargs='?', const="default_browser", metavar='browser_name')
-        self.parser.add_argument('--homepage', help='Web interface Homepage', default='1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D',
+        self.parser.add_argument('--homepage', help='Web interface Homepage', default='191CazMVNaAcT9Y1zhkxd9ixMBPs59g2um',
                                  metavar='address')
-        self.parser.add_argument('--updatesite', help='Source code update site', default='1uPDaT3uSyWAPdCv1WkMb5hBQjWSNNACf',
-                                 metavar='address')
-        self.parser.add_argument('--dist_type', help='Type of installed distribution', default='source')
+        # self.parser.add_argument('--updatesite', help='Source code update site', default='1uPDaT3uSyWAPdCv1WkMb5hBQjWSNNACf',
+                                 # metavar='address')
+        self.parser.add_argument('--admin-pages', help='Pages with admin privileges', default=[], metavar='address', nargs='*')
+        self.parser.add_argument('--dist-type', help='Type of installed distribution', default='source')
 
-        self.parser.add_argument('--size_limit', help='Default site size limit in MB', default=100, type=int, metavar='limit')
-        self.parser.add_argument('--file_size_limit', help='Maximum per file size limit in MB', default=10, type=int, metavar='limit')
-        self.parser.add_argument('--connected_limit', help='Max connected peer per site', default=8, type=int, metavar='connected_limit')
-        self.parser.add_argument('--global_connected_limit', help='Max connections', default=512, type=int, metavar='global_connected_limit')
+        self.parser.add_argument('--size-limit', help='Default site size limit in MB', default=100, type=int, metavar='limit')
+        self.parser.add_argument('--file-size-limit', help='Maximum per file size limit in MB', default=10, type=int, metavar='limit')
+        self.parser.add_argument('--connected-limit', help='Max connected peer per site', default=8, type=int, metavar='connected_limit')
+        self.parser.add_argument('--global-connected-limit', help='Max connections', default=512, type=int, metavar='global_connected_limit')
         self.parser.add_argument('--workers', help='Download workers per site', default=5, type=int, metavar='workers')
 
-        self.parser.add_argument('--fileserver_ip', help='FileServer bind address', default="*", metavar='ip')
-        self.parser.add_argument('--fileserver_port', help='FileServer bind port (0: randomize)', default=0, type=int, metavar='port')
-        self.parser.add_argument('--fileserver_port_range', help='FileServer randomization range', default="10000-40000", metavar='port')
-        self.parser.add_argument('--fileserver_ip_type', help='FileServer ip type', default="dual", choices=["ipv4", "ipv6", "dual"])
-        self.parser.add_argument('--ip_local', help='My local ips', default=ip_local, type=int, metavar='ip', nargs='*')
-        self.parser.add_argument('--ip_external', help='Set reported external ip (tested on start if None)', metavar='ip', nargs='*')
+        self.parser.add_argument('--fileserver-ip', help='FileServer bind address', default="*", metavar='ip')
+        self.parser.add_argument('--fileserver-port', help='FileServer bind port (0: randomize)', default=0, type=int, metavar='port')
+        self.parser.add_argument('--fileserver-port-range', help='FileServer randomization range', default="10000-40000", metavar='port')
+        self.parser.add_argument('--fileserver-ip-type', help='FileServer ip type', default="dual", choices=["ipv4", "ipv6", "dual"])
+        self.parser.add_argument('--ip-local', help='My local ips', default=ip_local, type=int, metavar='ip', nargs='*')
+        self.parser.add_argument('--ip-external', help='Set reported external ip (tested on start if None)', metavar='ip', nargs='*')
         self.parser.add_argument('--offline', help='Disable network communication', action='store_true')
+        self.parser.add_argument('--disable-port-check', help='Disable checking port', action='store_true')
 
-        self.parser.add_argument('--disable_udp', help='Disable UDP connections', action='store_true')
+        self.parser.add_argument('--disable-udp', help='Disable UDP connections', action='store_true')
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
-        self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=trackers, metavar='protocol://address', nargs='*')
-        self.parser.add_argument('--trackers_file', help='Load torrent trackers dynamically from a file', metavar='path', nargs='*')
-        self.parser.add_argument('--trackers_proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
-        self.parser.add_argument('--use_libsecp256k1', help='Use Libsecp256k1 liblary for speedup', type='bool', choices=[True, False], default=True)
-        self.parser.add_argument('--use_openssl', help='Use OpenSSL liblary for speedup', type='bool', choices=[True, False], default=True)
-        self.parser.add_argument('--openssl_lib_file', help='Path for OpenSSL library file (default: detect)', default=argparse.SUPPRESS, metavar="path")
-        self.parser.add_argument('--openssl_bin_file', help='Path for OpenSSL binary file (default: detect)', default=argparse.SUPPRESS, metavar="path")
-        self.parser.add_argument('--disable_db', help='Disable database updating', action='store_true')
-        self.parser.add_argument('--disable_encryption', help='Disable connection encryption', action='store_true')
-        self.parser.add_argument('--force_encryption', help="Enforce encryption to all peer connections", action='store_true')
-        self.parser.add_argument('--disable_sslcompression', help='Disable SSL compression to save memory',
+        self.parser.add_argument('--bootstrap-url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
+        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=argparse.BooleanOptionalAction, default=True)
+        self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
+        self.parser.add_argument('--trackers-file', help='Load torrent trackers dynamically from a file (using Syncronite by default)', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
+        self.parser.add_argument('--trackers-proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
+        self.parser.add_argument('--use-libsecp256k1', help='Use Libsecp256k1 liblary for speedup', type='bool', choices=[True, False], default=True)
+        self.parser.add_argument('--use-openssl', help='Use OpenSSL liblary for speedup', type='bool', choices=[True, False], default=True)
+        self.parser.add_argument('--openssl-lib-file', help='Path for OpenSSL library file (default: detect)', default=argparse.SUPPRESS, metavar="path")
+        self.parser.add_argument('--openssl-bin-file', help='Path for OpenSSL binary file (default: detect)', default=argparse.SUPPRESS, metavar="path")
+        self.parser.add_argument('--disable-db', help='Disable database updating', action='store_true')
+        self.parser.add_argument('--disable-encryption', help='Disable connection encryption', action='store_true')
+        self.parser.add_argument('--force-encryption', help="Enforce encryption to all peer connections", action='store_true')
+        self.parser.add_argument('--disable-sslcompression', help='Disable SSL compression to save memory',
                                  type='bool', choices=[True, False], default=True)
-        self.parser.add_argument('--keep_ssl_cert', help='Disable new SSL cert generation on startup', action='store_true')
-        self.parser.add_argument('--max_files_opened', help='Change maximum opened files allowed by OS to this value on startup',
+        self.parser.add_argument('--keep-ssl-cert', help='Disable new SSL cert generation on startup', action='store_true')
+        self.parser.add_argument('--max-files-opened', help='Change maximum opened files allowed by OS to this value on startup',
                                  default=2048, type=int, metavar='limit')
-        self.parser.add_argument('--stack_size', help='Change thread stack size', default=None, type=int, metavar='thread_stack_size')
-        self.parser.add_argument('--use_tempfiles', help='Use temporary files when downloading (experimental)',
+        self.parser.add_argument('--stack-size', help='Change thread stack size', default=None, type=int, metavar='thread_stack_size')
+        self.parser.add_argument('--use-tempfiles', help='Use temporary files when downloading (experimental)',
                                  type='bool', choices=[True, False], default=False)
-        self.parser.add_argument('--stream_downloads', help='Stream download directly to files (experimental)',
+        self.parser.add_argument('--stream-downloads', help='Stream download directly to files (experimental)',
                                  type='bool', choices=[True, False], default=False)
-        self.parser.add_argument("--msgpack_purepython", help='Use less memory, but a bit more CPU power',
+        self.parser.add_argument('--msgpack-purepython', help='Use less memory, but a bit more CPU power',
                                  type='bool', choices=[True, False], default=False)
-        self.parser.add_argument("--fix_float_decimals", help='Fix content.json modification date float precision on verification',
+        self.parser.add_argument('--fix-float-decimals', help='Fix content.json modification date float precision on verification',
                                  type='bool', choices=[True, False], default=fix_float_decimals)
-        self.parser.add_argument("--db_mode", choices=["speed", "security"], default="speed")
+        self.parser.add_argument('--db-mode', choices=["speed", "security"], default="speed")
 
-        self.parser.add_argument('--threads_fs_read', help='Number of threads for file read operations', default=1, type=int)
-        self.parser.add_argument('--threads_fs_write', help='Number of threads for file write operations', default=1, type=int)
-        self.parser.add_argument('--threads_crypt', help='Number of threads for cryptographic operations', default=2, type=int)
-        self.parser.add_argument('--threads_db', help='Number of threads for database operations', default=1, type=int)
+        self.parser.add_argument('--threads-fs-read', help='Number of threads for file read operations', default=1, type=int)
+        self.parser.add_argument('--threads-fs-write', help='Number of threads for file write operations', default=1, type=int)
+        self.parser.add_argument('--threads-crypt', help='Number of threads for cryptographic operations', default=2, type=int)
+        self.parser.add_argument('--threads-db', help='Number of threads for database operations', default=1, type=int)
 
-        self.parser.add_argument("--download_optional", choices=["manual", "auto"], default="manual")
+        self.parser.add_argument('--download-optional', choices=["manual", "auto"], default="manual")
 
-        self.parser.add_argument('--coffeescript_compiler', help='Coffeescript compiler for developing', default=coffeescript,
-                                 metavar='executable_path')
+        self.parser.add_argument('--lax-cert-check', action=argparse.BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
 
         self.parser.add_argument('--tor', help='enable: Use only for Tor peers, always: Use Tor for every connection', choices=["disable", "enable", "always"], default='enable')
-        self.parser.add_argument('--tor_controller', help='Tor controller address', metavar='ip:port', default='127.0.0.1:9051')
-        self.parser.add_argument('--tor_proxy', help='Tor proxy address', metavar='ip:port', default='127.0.0.1:9050')
-        self.parser.add_argument('--tor_password', help='Tor controller password', metavar='password')
-        self.parser.add_argument('--tor_use_bridges', help='Use obfuscated bridge relays to avoid Tor block', action='store_true')
-        self.parser.add_argument('--tor_hs_limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
-        self.parser.add_argument('--tor_hs_port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
+        self.parser.add_argument('--tor-controller', help='Tor controller address', metavar='ip:port', default='127.0.0.1:9051')
+        self.parser.add_argument('--tor-proxy', help='Tor proxy address', metavar='ip:port', default='127.0.0.1:9050')
+        self.parser.add_argument('--tor-password', help='Tor controller password', metavar='password')
+        self.parser.add_argument('--tor-use-bridges', help='Use obfuscated bridge relays to avoid Tor block', action='store_true')
+        self.parser.add_argument('--tor-hs-limit', help='Maximum number of hidden services in Tor always mode', metavar='limit', type=int, default=10)
+        self.parser.add_argument('--tor-hs-port', help='Hidden service port in Tor always mode', metavar='limit', type=int, default=15441)
 
-        self.parser.add_argument('--version', action='version', version='ZeroNet %s r%s' % (self.version, self.rev))
+        self.parser.add_argument('--repl', help='Instead of printing logs in console, drop into REPL after initialization', action='store_true')
+        self.parser.add_argument('--version', action='version', version=f'zeronet-conservancy {self.version_full}')
         self.parser.add_argument('--end', help='Stop multi value argument parsing', action='store_true')
 
         return self.parser
 
     def loadTrackersFile(self):
-        if not self.trackers_file:
+        if self.trackers_file is None:
             return None
 
         self.trackers = self.arguments.trackers[:]
@@ -328,16 +474,17 @@ class Config(object):
                 if trackers_file.startswith("/"):  # Absolute
                     trackers_file_path = trackers_file
                 elif trackers_file.startswith("{data_dir}"):  # Relative to data_dir
-                    trackers_file_path = trackers_file.replace("{data_dir}", self.data_dir)
-                else:  # Relative to zeronet.py
-                    trackers_file_path = self.start_dir + "/" + trackers_file
+                    trackers_file_path = trackers_file.replace('{data_dir}', str(self.data_dir))
+                else:
+                    # Relative to zeronet.py or something else, unsupported
+                    raise RuntimeError(f'trackers_file should be relative to {{data_dir}} or absolute path (not {trackers_file})')
 
                 for line in open(trackers_file_path):
                     tracker = line.strip()
                     if "://" in tracker and tracker not in self.trackers:
                         self.trackers.append(tracker)
             except Exception as err:
-                print("Error loading trackers file: %s" % err)
+                print(f'Error loading trackers file: {err}')
 
     # Find arguments specified for current action
     def getActionArguments(self):
@@ -402,6 +549,8 @@ class Config(object):
 
         self.parseCommandline(argv, silent)  # Parse argv
         self.setAttributes()
+        self.updatePaths()
+        self.createPaths()
         if parse_config:
             argv = self.parseConfig(argv)  # Add arguments from config file
 
@@ -420,8 +569,21 @@ class Config(object):
 
         self.loadTrackersFile()
 
-    # Parse command line arguments
+    def fixArgs(self, args):
+        "Fix old-style flags and issue a warning"
+        res = []
+        for arg in args:
+            if arg.startswith('--') and '_' in arg:
+                farg = arg.replace('_', '-')
+                print(f'[bold red]WARNING: using deprecated flag in command line: {arg} should be {farg}[/bold red]')
+                print('Support for deprecated flags might be removed in the future')
+            else:
+                farg = arg
+            res.append(farg)
+        return res
+
     def parseCommandline(self, argv, silent=False):
+        argv = self.fixArgs(argv)
         # Find out if action is specificed on start
         action = self.getAction(argv)
         if not action:
@@ -437,12 +599,19 @@ class Config(object):
                 self.arguments = {}
         else:
             self.arguments = self.parser.parse_args(argv[1:])
+        if self.arguments.ui_site_port is None:
+            self.arguments.ui_site_port = self.arguments.ui_port + 1
+        if self.arguments.ui_ip_protect == 'always':
+            self.arguments.ui_check_cors = True
+        elif self.arguments.ui_ip_protect == 'off':
+            self.arguments.ui_check_cors = False
+        elif self.arguments.ui_ip_protect == 'local':
+            self.arguments.ui_check_cors = self.arguments.ui_ip == '127.0.0.1' or self.arguments.ui_ip == '::1'
+        else:
+            raise Exception("Wrong argparse result")
 
-    # Parse config file
     def parseConfig(self, argv):
-        # Find config file path from parameters
-        if "--config_file" in argv:
-            self.config_file = argv[argv.index("--config_file") + 1]
+        argv = self.fixArgs(argv)
         # Load config file
         if os.path.isfile(self.config_file):
             config = configparser.RawConfigParser(allow_no_value=True, strict=False)
@@ -453,13 +622,9 @@ class Config(object):
                         val = None
                     if section != "global":  # If not global prefix key with section
                         key = section + "_" + key
+                    key = key.replace('_', '-')
 
-                    if key == "open_browser":  # Prefer config file value over cli argument
-                        while "--%s" % key in argv:
-                            pos = argv.index("--open_browser")
-                            del argv[pos:pos + 2]
-
-                    argv_extend = ["--%s" % key]
+                    argv_extend = [f'--{key}']
                     if val:
                         for line in val.strip().split("\n"):  # Allow multi-line values
                             argv_extend.append(line)
@@ -489,7 +654,7 @@ class Config(object):
                     val = val[:]
                 if key in ("data_dir", "log_dir", "start_dir", "openssl_bin_file", "openssl_lib_file"):
                     if val:
-                        val = val.replace("\\", "/")
+                        val = Path(val)
                 setattr(self, key, val)
 
     def loadPlugins(self):
@@ -591,7 +756,7 @@ class Config(object):
             format = '%(name)s %(message)s'
 
         if self.console_log_level == "default":
-            if self.silent:
+            if self.silent or self.repl:
                 level = logging.ERROR
             elif self.debug:
                 level = logging.DEBUG
@@ -642,10 +807,6 @@ class Config(object):
             except Exception as err:
                 print("Can't change permission of %s: %s" % (self.log_dir, err))
 
-        # Make warning hidden from console
-        logging.WARNING = 15  # Don't display warnings if not in debug mode
-        logging.addLevelName(15, "WARNING")
-
         logging.getLogger('').name = "-"  # Remove root prefix
 
         self.error_logger = ErrorLogHandler()
@@ -656,6 +817,28 @@ class Config(object):
             self.initConsoleLogger()
         if file_logging:
             self.initFileLogger()
+
+    def tor_proxy_split(self):
+        if self.tor_proxy:
+            if ':' in config.tor_proxy:
+                ip, port = config.tor_proxy.rsplit(":", 1)
+            else:
+                ip = 'localhost'
+                port = config.tor_proxy
+            return ip, int(port)
+        else:
+            return 'localhost', 9050
+
+    def tor_controller_split(self):
+        if self.tor_controller:
+            if ':' in config.tor_controller:
+                ip, port = config.tor_controller.rsplit(":", 1)
+            else:
+                ip = 'localhost'
+                port = config.tor_controller
+            return ip, int(port)
+        else:
+            return 'localhost', 9051
 
 
 class ErrorLogHandler(logging.StreamHandler):

@@ -1,40 +1,48 @@
-# ZeroNet [![Build Status](https://travis-ci.org/HelloZeroNet/ZeroNet.svg?branch=master)](https://travis-ci.org/HelloZeroNet/ZeroNet) [![Documentation](https://img.shields.io/badge/docs-faq-brightgreen.svg)](https://zeronet.io/docs/faq/) [![Help](https://img.shields.io/badge/keep_this_project_alive-donate-yellow.svg)](https://zeronet.io/docs/help_zeronet/donate/)
+# zeronet-conservancy
 
-[简体中文](./README-zh-cn.md)
-[English](./README.md)
+[in English](README.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md) | [日本語](README-ja.md)
 
-Децентрализованные вебсайты использующие Bitcoin криптографию и BitTorrent сеть - https://zeronet.io
+[![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+
+zeronet-conservancy — это форк/продолжение проекта [ZeroNet](https://github.com/HelloZeroNet/ZeroNet)
+(покинутого его создателем), предназначенный для поддержки существующей сети p2p и развития
+идей ценности децентрализации и свободы, постепенно развивающийся в более совершенную сеть
+
+## Зачем нужен этот форк?
+
+Во время кризиса onion-v3 появилась необходимость в форке, который работал бы с onion-v3 и не зависел от доверия к конкретным личностям.
+Для выполнения этой задачи форк начался с внесения минимальных изменений в
+[ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3), которые легко проверяются. В то время как остается возможность использования ранних версий форка для работы с onion-v3, цель данного форка изменилась и мы стали стремиться решать больше проблем и повышать удобность и безопасность для пользователей до тех пор, пока новая, полностью прозрачная и проверенная сеть не будет готова, и необходимость в этом проекте не отпадет.
 
 
-## Зачем?
+## Зачем нужен 0net?
 
-* Мы верим в открытую, свободную, и не отцензуренную сеть и коммуникацию.
+* Мы верим в открытую, свободную, и не поддающуюся цензуре сеть и коммуникацию.
 * Нет единой точки отказа: Сайт онлайн пока по крайней мере 1 пир обслуживает его.
 * Никаких затрат на хостинг: Сайты обслуживаются посетителями.
 * Невозможно отключить: Он нигде, потому что он везде.
 * Быстр и работает оффлайн: Вы можете получить доступ к сайту, даже если Интернет недоступен.
 
 
+
+
 ## Особенности
  * Обновляемые в реальном времени сайты
- * Поддержка Namecoin .bit доменов
- * Лёгок в установке: распаковал & запустил
  * Клонирование вебсайтов в один клик
- * Password-less [BIP32](https://github.com/bitcoin/bips/blob/master/bip-0032.mediawiki)
-   based authorization: Ваша учетная запись защищена той же криптографией, что и ваш Bitcoin-кошелек
- * Встроенный SQL-сервер с синхронизацией данных P2P: Позволяет упростить разработку сайта и ускорить загрузку страницы
- * Анонимность: Полная поддержка сети Tor с помощью скрытых служб .onion вместо адресов IPv4
- * TLS зашифрованные связи
- * Автоматическое открытие uPnP порта
+ * Авторизация без паролей, с использованием пары публичный/приватный ключ
+ * Встроенный SQL-сервер с синхронизацией данных P2P: позволяет упростить разработку сайта
+ * Анонимность: поддержка сети Tor с помощью скрытых служб .onion (включая onion-v3)
+ * TLS зашифрованные связи (в клирнете)
+ * Автоматическое открытие uPnP порта (опционально)
  * Плагин для поддержки многопользовательской (openproxy)
  * Работает с любыми браузерами и операционными системами
 
 
 ## Как это работает?
 
-* После запуска `zeronet.py` вы сможете посетить зайты (zeronet сайты) используя адрес
+* После запуска `zeronet.py` вы сможете посетить zeronet сайты используя адрес
   `http://127.0.0.1:43110/{zeronet_address}`
-(например. `http://127.0.0.1:43110/1HeLLo4uzjaLetFx6NH3PMwFP3qbRbTf3D`).
+(например. `http://127.0.0.1:43110/1MCoA8rQHhwu4LY2t2aabqcGSRqrL8uf2X`).
 * Когда вы посещаете новый сайт zeronet, он пытается найти пиров с помощью BitTorrent
   чтобы загрузить файлы сайтов (html, css, js ...) из них.
 * Каждый посещенный зайт также обслуживается вами. (Т.е хранится у вас на компьютере)
@@ -44,168 +52,117 @@
   подписывает новый `content.json` и публикует его для пиров. После этого пиры проверяют целостность `content.json`
   (используя подпись), они загружают измененные файлы и публикуют новый контент для других пиров.
 
+
+Ссылки c информацией о ZeroNet:
+
 ####  [Слайд-шоу о криптографии ZeroNet, обновлениях сайтов, многопользовательских сайтах »](https://docs.google.com/presentation/d/1_2qK1IuOKJ51pgBvllZ9Yu7Au2l551t3XBgyTSvilew/pub?start=false&loop=false&delayms=3000)
 ####  [Часто задаваемые вопросы »](https://zeronet.io/docs/faq/)
-
 ####  [Документация разработчика ZeroNet »](https://zeronet.io/docs/site_development/getting_started/)
+#### [Скриншоты в ZeroNet документации »](https://zeronet.io/docs/using_zeronet/sample_sites/)
 
+## Как присоединиться
 
-## Скриншоты
+### Установить из репозитория вашего дистрибутива
 
-![Screenshot](https://i.imgur.com/H60OAHY.png)
-![ZeroTalk](https://zeronet.io/docs/img/zerotalk.png)
+- NixOS: https://search.nixos.org/packages?channel=22.05&show=zeronet-conservancy&type=packages&query=zeronet-conservancy
+- ArchLinux: [последний релиз](https://aur.archlinux.org/packages/zeronet-conservancy), [git-версия](https://aur.archlinux.org/packages/zeronet-conservancy-git)
 
-#### [Больше скриншотов в ZeroNet документации »](https://zeronet.io/docs/using_zeronet/sample_sites/)
+### Установить из исходного кода (рекомендовано)
 
+#### System dependencies
 
-## Как вступить
+##### Generic unix-like (including mac os x)
 
-* Скачайте ZeroBundle пакет:
-  * [Microsoft Windows](https://github.com/HelloZeroNet/ZeroNet-win/archive/dist/ZeroNet-win.zip)
-  * [Apple macOS](https://github.com/HelloZeroNet/ZeroNet-mac/archive/dist/ZeroNet-mac.zip)
-  * [Linux 64-bit](https://github.com/HelloZeroNet/ZeroBundle/raw/master/dist/ZeroBundle-linux64.tar.gz)
-  * [Linux 32-bit](https://github.com/HelloZeroNet/ZeroBundle/raw/master/dist/ZeroBundle-linux32.tar.gz)
-* Распакуйте где угодно
-* Запустите `ZeroNet.exe` (win), `ZeroNet(.app)` (osx), `ZeroNet.sh` (linux)
+Установите autoconf и другие базовые инструменты разработки, python3 и pip.
 
-### Linux терминал
+##### Apt-based (debian, ubuntu, etc)
+ - `sudo apt update`
+ - `sudo apt install pkg-config python3-pip python3-venv`
 
-* `wget https://github.com/HelloZeroNet/ZeroBundle/raw/master/dist/ZeroBundle-linux64.tar.gz`
-* `tar xvpfz ZeroBundle-linux64.tar.gz`
-* `cd ZeroBundle`
-* Запустите с помощью `./ZeroNet.sh`
+##### Android/Termux
+ - Установите [Termux](https://termux.com/) (в Termux вы можете устанавливать пакеты через команду `pkg install <package-names>`)
+ - `pkg update`
+ - `pkg install python automake git binutils libtool`
+ - (optional) `pkg install tor`
+ - (optional) запустить тор через команду `tor --ControlPort 9051 --CookieAuthentication 1` (вы можете открыть новый сеанс свайпом вправо)
 
-Он загружает последнюю версию ZeroNet, затем запускает её автоматически.
+#### Скрипт, который всё сделает за вас
+ - после установки общих зависимостей и клонирования репозитория (как указано выше) запустите `start-venv.sh` который создаст для вас виртуальную среду (если её ещё нет) и установит необходимые пакеты Python
+ - больше удобных скриптов будует добавлено в ближайшее время
 
-#### Ручная установка для Debian Linux
+#### Установка Python-зависимостей и запуск
+ - клонируйте репозиторий (NOTE: на Android/Termux вы должны клонировать его в «домашнюю» папку Termux, потому что виртуальная среда не может находиться в `storage/`)
+ - `python3 -m venv venv` (создайте виртуальную среду python, последнее `venv` это просто имя/название, если вы используете другое, вы должны заменить его в более поздних командах.)
+ - `source venv/bin/activate` (активируйте среду)
+ - `python3 -m pip install -r requirements.txt` (установите зависимости)
+ - `python3 zeronet.py` (**запустите zeronet-conservancy!**)
+ -  откройте основную страницу в браузере, перейдя по: http://127.0.0.1:43110/
+ -  для повторного запуска с нового терминала вам нужно перейти в деректорию репозитория и ввести :
+ - `source venv/bin/activate`
+ - `python3 zeronet.py`
 
-* `sudo apt-get update`
-* `sudo apt-get install msgpack-python python-gevent`
-* `wget https://github.com/HelloZeroNet/ZeroNet/archive/master.tar.gz`
-* `tar xvpfz master.tar.gz`
-* `cd ZeroNet-master`
-* Запустите с помощью `python2 zeronet.py`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
+#### (альтернативно) Создание образа Docker
+- создание образа: `docker build -t 0net-conservancy:latest . -f Dockerfile`
+- или создрание образа с встроенным tor: `docker build -t 0net-conservancy:latest . -f Dockerfile.integrated_tor`
+- и его запуск: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net-conservancy:latest`
+- /path/to/0n/data/directory - директория, куда будут сохраняться все данные в том числе секретные ключи. Если вы запускаете в боевом режиме, не потеряйте эту папку!
+- или вы можете воспользоваться docker-compose: `docker compose up -d 0net-conservancy` запускает два контейнера раздельно, для 0net и tor сервисов.
+- или: `docker compose up -d 0net-tor` запускает один контейнер с tor и 0net.
 
-### [Arch Linux](https://www.archlinux.org)
+## Текущие ограничения 
 
-* `git clone https://aur.archlinux.org/zeronet.git`
-* `cd zeronet`
-* `makepkg -srci`
-* `systemctl start zeronet`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
-
-Смотрите [ArchWiki](https://wiki.archlinux.org)'s [ZeroNet
-article](https://wiki.archlinux.org/index.php/ZeroNet) для дальнейшей помощи.
-
-### [Gentoo Linux](https://www.gentoo.org)
-
-* [`layman -a raiagent`](https://github.com/leycec/raiagent)
-* `echo '>=net-vpn/zeronet-0.5.4' >> /etc/portage/package.accept_keywords`
-* *(Опционально)* Включить поддержку Tor: `echo 'net-vpn/zeronet tor' >>
-  /etc/portage/package.use`
-* `emerge zeronet`
-* `rc-service zeronet start`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
-
-Смотрите `/usr/share/doc/zeronet-*/README.gentoo.bz2` для дальнейшей помощи.
-
-### [FreeBSD](https://www.freebsd.org/)
-
-* `pkg install zeronet` or `cd /usr/ports/security/zeronet/ && make install clean`
-* `sysrc zeronet_enable="YES"`
-* `service zeronet start`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
-
-### [Vagrant](https://www.vagrantup.com/)
-
-* `vagrant up`
-* Подключитесь к VM с помощью `vagrant ssh`
-* `cd /vagrant`
-* Запустите `python2 zeronet.py --ui_ip 0.0.0.0`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
-
-### [Docker](https://www.docker.com/)
-* `docker run -d -v <local_data_folder>:/root/data -p 15441:15441 -p 127.0.0.1:43110:43110 nofish/zeronet`
-* Это изображение Docker включает в себя прокси-сервер Tor, который по умолчанию отключён.
-  Остерегайтесь что некоторые хостинг-провайдеры могут не позволить вам запускать Tor на своих серверах.
-  Если вы хотите включить его,установите переменную среды `ENABLE_TOR` в` true` (по умолчанию: `false`) Например:
-
- `docker run -d -e "ENABLE_TOR=true" -v <local_data_folder>:/root/data -p 15441:15441 -p 127.0.0.1:43110:43110 nofish/zeronet`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
-
-### [Virtualenv](https://virtualenv.readthedocs.org/en/latest/)
-
-* `virtualenv env`
-* `source env/bin/activate`
-* `pip install msgpack gevent`
-* `python2 zeronet.py`
-* Откройте http://127.0.0.1:43110/ в вашем браузере.
-
-## Текущие ограничения
-
-* ~~Нет torrent-похожего файла разделения для поддержки больших файлов~~ (поддержка больших файлов добавлена)
-* ~~Не анонимнее чем Bittorrent~~ (добавлена встроенная поддержка Tor)
-* Файловые транзакции не сжаты ~~ или незашифрованы еще ~~ (добавлено шифрование TLS)
+* Файловые транзакции не сжаты
 * Нет приватных сайтов
+* Отсутствует поддержка DHT
+* Централизованные элементы, такие как Zeroid (мы работаем над этим!)
+* Нет надежной защиты от спама (в процессе разработки)
+* Не работает напрямую из браузера (один из главных приоритетов в ближайшем будущем)
+* Нет прозрачности данных
 
 
-## Как я могу создать сайт в Zeronet?
+## Как создать сайт ZeroNet?
 
-Завершите работу zeronet, если он запущен
-
-```bash
-$ zeronet.py siteCreate
-...
-- Site private key (Приватный ключ сайта): 23DKQpzxhbVBrAtvLEc2uvk7DZweh4qL3fn3jpM3LgHDczMK2TtYUq
-- Site address (Адрес сайта): 13DNDkMUExRf9Xa9ogwPKqp7zyHFEqbhC2
-...
-- Site created! (Сайт создан)
-$ zeronet.py
-...
-```
-
-Поздравляем, вы закончили! Теперь каждый может получить доступ к вашему зайту используя
-`http://localhost:43110/13DNDkMUExRf9Xa9ogwPKqp7zyHFEqbhC2`
+ * Нажмите на **⋮** > **"Create new, empty site"** пункт меню на [admin page](http://127.0.0.1:43110/126NXcevn1AUehWFZLTBw7FrX1crEizQdr).
+ * Вы будете перенаправлены **redirected** на совершенно новый сайт, который можете изменить только вы!
+ * Вы можете найти и изменить содержимое своего сайта в каталоге **data/[yoursiteaddress]**
+ * После внесения изменений откройте свой сайт, перетащите верхнюю правую кнопку «0» влево, затем нажмите кнопки **sign** и **publish** , находящиеся внизу.
 
 Следующие шаги: [ZeroNet Developer Documentation](https://zeronet.io/docs/site_development/getting_started/)
 
-
-## Как я могу модифицировать Zeronet сайт?
-
-* Измените файлы расположенные в data/13DNDkMUExRf9Xa9ogwPKqp7zyHFEqbhC2 директории.
-  Когда закончите с изменением:
-
-```bash
-$ zeronet.py siteSign 13DNDkMUExRf9Xa9ogwPKqp7zyHFEqbhC2
-- Signing site (Подпись сайта): 13DNDkMUExRf9Xa9ogwPKqp7zyHFEqbhC2...
-Private key (Приватный ключ) (input hidden):
-```
-
-* Введите секретный ключ, который вы получили при создании сайта, потом:
-
-```bash
-$ zeronet.py sitePublish 13DNDkMUExRf9Xa9ogwPKqp7zyHFEqbhC2
-...
-Site:13DNDk..bhC2 Publishing to 3/10 peers...
-Site:13DNDk..bhC2 Successfuly published to 3 peers
-- Serving files....
-```
-
-* Вот и всё! Вы успешно подписали и опубликовали свои изменения.
-
-
 ## Поддержите проект
 
-- Bitcoin: 1QDhxQ6PraUZa21ET5fYUCPgdrwBomnFgX
-- Paypal: https://zeronet.io/docs/help_zeronet/donate/
+### Вы можете стать одним из сопровождающих 
 
-### Спонсоры
+Нам нужно больше сопровождающих! Станьте им сегодня! Вам не нужно знать, как кодировать,
+есть много другой работы.
 
-* Улучшенная совместимость с MacOS / Safari стала возможной благодаря [BrowserStack.com](https://www.browserstack.com)
+### Исправленные баги & новые функции
 
-#### Спасибо!
+Мы решили пойти дальше и создать идеальную сеть p2p, поэтому нам нужна дополнительная помощь в воплощении этой идеи.
 
-* Больше информации, помощь, журнал изменений, zeronet сайты: https://www.reddit.com/r/zeronet/
-* Приходите, пообщайтесь с нами: [#zeronet @ FreeNode](https://kiwiirc.com/client/irc.freenode.net/zeronet) или на [gitter](https://gitter.im/HelloZeroNet/ZeroNet)
-* Email: hello@zeronet.io (PGP: CB9613AE)
+### Создайте свой сайт / переносите свой контент
+
+Мы знаем, что документации не хватает, но мы делаем все возможное, чтобы поддержать любого
+кто хочет переехать. Не стесняйтесь спрашивать.
+
+### Используйте его и делитесь информацией о его существовании
+
+Обязательно расскажите людям, почему вы используете 0net и этот форк в частности! Люди
+должны знать об альтернативах.
+
+
+### Финансовая поддержка сопровождающих
+
+В настоящее время ведущим разработчиком/сопровождающим этого форка является @caryoscelus. Вы можете
+посмотреть способы пожертвования на https://caryoscelus.github.io/donate/ (или проверьте
+боковую панель, если вы читаете это на github, чтобы узнать больше). По мере роста нашей команды мы
+также создаст командные аккаунты на дружественных краудфандинговых платформах.
+
+Если вы хотите, чтобы ваше пожертвование было признано пожертвованием для этого
+проекта, для этого также есть специальный биткоин-адрес:
+1Kjuw3reZvxRVNs27Gen7jPJYCn6LY7Fg6. Либо если хотите сделать более анонимный донат, вы
+можете пожертвовать Monero:
+4AiYUcqVRH4C2CVr9zbBdkhRnJnHiJoypHEsq4N7mQziGUoosPCpPeg8SPr87nvwypaRzDgMHEbWWDekKtq8hm9LBmgcMzC
+
+Если вы хотите сделать пожертвование другим способом, не стесняйтесь обращаться к сопровождающему или
+создать запрос

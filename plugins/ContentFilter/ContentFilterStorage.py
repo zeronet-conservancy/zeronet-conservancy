@@ -14,7 +14,7 @@ from util import helper
 class ContentFilterStorage(object):
     def __init__(self, site_manager):
         self.log = logging.getLogger("ContentFilterStorage")
-        self.file_path = "%s/filters.json" % config.data_dir
+        self.file_path = config.config_dir / 'filters.json'
         self.site_manager = site_manager
         self.file_content = self.load()
 
@@ -36,12 +36,12 @@ class ContentFilterStorage(object):
 
     def load(self):
         # Rename previously used mutes.json -> filters.json
-        if os.path.isfile("%s/mutes.json" % config.data_dir):
+        if (config.config_dir / 'mutes.json').is_file():
             self.log.info("Renaming mutes.json to filters.json...")
-            os.rename("%s/mutes.json" % config.data_dir, self.file_path)
-        if os.path.isfile(self.file_path):
+            os.rename(config.config_dir / 'mutes.json', self.file_path)
+        if self.file_path.is_file():
             try:
-                return json.load(open(self.file_path))
+                return json.load(self.file_path.open())
             except Exception as err:
                 self.log.error("Error loading filters.json: %s" % err)
                 return None
@@ -158,7 +158,7 @@ class ContentFilterStorage(object):
             dir_inner_path = helper.getDirname(row["inner_path"])
             for file_name in site.storage.walk(dir_inner_path):
                 if action == "remove":
-                    site.storage.onUpdated(dir_inner_path + file_name, False)
+                    site.storage.delete(dir_inner_path + file_name)
                 else:
                     site.storage.onUpdated(dir_inner_path + file_name)
                 site.onFileDone(dir_inner_path + file_name)

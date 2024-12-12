@@ -1,4 +1,5 @@
 import time
+import sys
 
 import gevent
 import gevent.lock
@@ -6,6 +7,8 @@ import gevent.lock
 from Debug import Debug
 from Config import config
 from Content.ContentManager import VerifyError
+
+import traceback
 
 
 class WorkerDownloadError(Exception):
@@ -119,13 +122,18 @@ class Worker(object):
                 self.manager.log.error("%s: Error writing: %s (%s: %s)" % (self.key, task["inner_path"], type(err), err))
             raise WorkerIOError(str(err))
 
-    def onTaskVerifyFail(self, task, error_message):
+    def onTaskVerifyFail(self, task, error):
         self.num_failed += 1
         if self.manager.started_task_num < 50 or config.verbose:
-            self.manager.log.debug(
+            self.manager.log.info(
                 "%s: Verify failed: %s, error: %s, failed peers: %s, workers: %s" %
-                (self.key, task["inner_path"], error_message, len(task["failed"]), task["workers_num"])
+                (self.key, task["inner_path"], error, len(task["failed"]), task["workers_num"])
             )
+            if sys.version_info.major == 3 and sys.version_info.minor < 10:
+                tbk = traceback.format_exc() # ugh, this could in theory be a different error
+            else:
+                tbk = traceback.format_exception(error)
+            self.manager.log.debug(''.join(tbk))
         task["failed"].append(self.peer)
         self.peer.hash_failed += 1
         if self.peer.hash_failed >= max(len(self.manager.tasks), 3) or self.peer.connection_error > 10:

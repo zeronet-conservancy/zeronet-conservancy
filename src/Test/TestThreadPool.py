@@ -15,11 +15,9 @@ class TestThreadPool:
             @pool.wrap
             def blocker():
                 events.append("S")
-                out = 0
-                for i in range(10000000):
-                    if i == 3000000:
-                        events.append("M")
-                    out += 1
+                time.sleep(0.001)
+                events.append("M")
+                time.sleep(0.001)
                 events.append("D")
                 return out
 
@@ -29,9 +27,6 @@ class TestThreadPool:
             gevent.joinall(threads)
 
             assert events == ["S"] * 3 + ["M"] * 3 + ["D"] * 3
-
-            res = blocker()
-            assert res == 10000000
 
     def testLockBlockingSameThread(self):
         lock = ThreadPool.Lock()

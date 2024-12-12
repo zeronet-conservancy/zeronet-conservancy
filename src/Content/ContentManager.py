@@ -10,6 +10,7 @@ import gevent
 
 from Debug import Debug
 from Crypt import CryptHash
+from Crypt import CryptBitcoin
 from Config import config
 from util import helper
 from util import Diff
@@ -28,7 +29,17 @@ class SignError(Exception):
 
 
 @PluginManager.acceptPlugins
-class ContentManager(object):
+class ContentManager:
+    """Manage site content verifying and other related stuff"""
+
+    def loadBadCerts():
+        try:
+            with open(f'{config.data_dir}/badcerts.json') as f:
+                return set(json.load(f))
+        except FileNotFoundError:
+            return set()
+
+    bad_certs = loadBadCerts()
 
     def __init__(self, site):
         self.site = site
@@ -36,6 +47,13 @@ class ContentManager(object):
         self.contents = ContentDbDict(site)
         self.hashfield = PeerHashfield()
         self.has_optional_files = False
+
+    def addBadCert(self, sign):
+        addr = CryptBitcoin.get_sign_address_64('compromised', sign)
+        if addr:
+            self.bad_certs.add(addr)
+            with open(f'{config.data_dir}/badcerts.json', 'w') as f:
+                json.dump(list(self.bad_certs), f)
 
     # Load all content.json files
     def loadContents(self):
@@ -73,27 +91,27 @@ class ContentManager(object):
         content_inner_path = content_inner_path.strip("/")  # Remove / from beginning
         old_content = self.contents.get(content_inner_path)
         content_path = self.site.storage.getPath(content_inner_path)
-        content_dir = helper.getDirname(self.site.storage.getPath(content_inner_path))
+        content_dir = os.path.dirname(content_path)
         content_inner_dir = helper.getDirname(content_inner_path)
 
         if os.path.isfile(content_path):
             try:
+                new_content = self.site.storage.loadJson(content_inner_path)
                 # Check if file is newer than what we have
                 if not force and old_content and not self.site.settings.get("own"):
-                    for line in open(content_path):
-                        if '"modified"' not in line:
-                            continue
-                        match = re.search(r"([0-9\.]+),$", line.strip(" \r\n"))
-                        if match and float(match.group(1)) <= old_content.get("modified", 0):
-                            self.log.debug("%s loadContent same json file, skipping" % content_inner_path)
-                            return [], []
-
-                new_content = self.site.storage.loadJson(content_inner_path)
+                    new_ts = int(float(new_content.get('modified', 0)))
+                    old_ts = int(float(old_content.get('modified', 0)))
+                    if new_ts < old_ts:
+                        self.log.debug(f'got older version of {content_inner_path} ({new_ts} < {old_ts}), ignoring')
+                        return [], []
+                    elif new_ts == old_ts:
+                        self.log.debug(f'got same timestamp version of {content_inner_path} ({new_ts}), ignoring')
+                        return [], []
             except Exception as err:
-                self.log.warning("%s load error: %s" % (content_path, Debug.formatException(err)))
+                self.log.warning(f'{content_path} load error: {Debug.formatException(err)}')
                 return [], []
         else:
-            self.log.debug("Content.json not exist: %s" % content_path)
+            self.log.debug(f'Content.json not exist: {content_path}')
             return [], []  # Content.json not exist
 
         try:
@@ -401,10 +419,10 @@ class ContentManager(object):
     # Return: { "sha512": "c29d73d...21f518", "size": 41 , "content_inner_path": "content.json"}
     def getFileInfo(self, inner_path, new_file=False):
         dirs = inner_path.split("/")  # Parent dirs of content.json
-        inner_path_parts = [dirs.pop()]  # Filename relative to content.json
-        while True:
-            content_inner_path = "%s/content.json" % "/".join(dirs)
-            content_inner_path = content_inner_path.strip("/")
+        inner_path_parts = []  # Filename relative to content.json
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
             content = self.contents.get(content_inner_path)
 
             # Check in files
@@ -447,12 +465,6 @@ class ContentManager(object):
                 back["optional"] = None
                 return back
 
-            # No inner path in this dir, lets try the parent dir
-            if dirs:
-                inner_path_parts.insert(0, dirs.pop())
-            else:  # No more parent dirs
-                break
-
         # Not found
         return False
 
@@ -472,21 +484,19 @@ class ContentManager(object):
 
         dirs = inner_path.split("/")  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
-        inner_path_parts.insert(0, dirs.pop())  # Dont check in self dir
-        while True:
-            content_inner_path = "%s/content.json" % "/".join(dirs)
-            parent_content = self.contents.get(content_inner_path.strip("/"))
+        # Dont check in self dir
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
+            parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
                 return parent_content["includes"].get("/".join(inner_path_parts))
             elif parent_content and "user_contents" in parent_content:
                 return self.getUserContentRules(parent_content, inner_path, content)
-            else:  # No inner path in this dir, lets try the parent dir
-                if dirs:
-                    inner_path_parts.insert(0, dirs.pop())
-                else:  # No more parent dirs
-                    break
-
         return False
+
+    def isGoodCert(self, cert):
+        return cert not in self.bad_certs
 
     # Get rules for a user file
     # Return: The rules of the file or False if not allowed
@@ -521,9 +531,29 @@ class ContentManager(object):
             banned = False
         if "signers" in rules:
             rules["signers"] = rules["signers"][:]  # Make copy of the signers
-        for permission_pattern, permission_rules in list(user_contents["permission_rules"].items()):  # Regexp rules
+
+        if content is not None:
+            name, domain = content['cert_user_id'].rsplit('@', 1)
+            cert_addresses = parent_content['user_contents']['cert_signers'].get(domain)
+        else:
+            cert_addresses = None
+        # to prevent spam, if cert is compromised, only allow personal rules
+        if config.lax_cert_check or cert_addresses is None or self.isGoodCert(cert_addresses[0]):
+            permission_rules = user_contents.get('permission_rules', {}).items()
+            if cert_addresses is None:
+                self.log.warning('Accepting no certificate because you have --lax-cert-check on.')
+            elif not self.isGoodCert(cert_addresses[0]):
+                self.log.warning('Accepting compromised certificate! This may lead to spam attack. Turn off with --no-lax-cert-check. Default behaviour may change in the future.')
+        else:
+            permission_rules = {}
+        for permission_pattern, permission_rules in permission_rules:  # Regexp rules
             if not SafeRe.match(permission_pattern, user_urn):
                 continue  # Rule is not valid for user
+            if permission_rules is None:
+                self.log.info(f'Permission rule for {permission_pattern} is null, '
+                               'we set max_size[_optional] to zero. '
+                               'NOTE: This is not supported by <0.7.10')
+                permission_rules = {'max_size': 0, 'max_size_optional': 0}
             # Update rules if its better than current recorded ones
             for key, val in permission_rules.items():
                 if key not in rules:
@@ -729,14 +759,14 @@ class ContentManager(object):
 
         new_content["modified"] = int(time.time())  # Add timestamp
         if inner_path == "content.json":
-            new_content["zeronet_version"] = config.version
+            # add for backward compatibility, but don't expose user version
+            new_content["zeronet_version"] = config.user_agent
             new_content["signs_required"] = content.get("signs_required", 1)
 
         new_content["address"] = self.site.address
         new_content["inner_path"] = inner_path
 
         # Verify private key
-        from Crypt import CryptBitcoin
         self.log.info("Verifying private key...")
         privatekey_address = CryptBitcoin.privatekeyToAddress(privatekey)
         valid_signers = self.getValidSigners(inner_path, new_content)
@@ -803,8 +833,7 @@ class ContentManager(object):
         return 1  # Todo: Multisig
 
     def verifyCertSign(self, user_address, user_auth_type, user_name, issuer_address, sign):
-        from Crypt import CryptBitcoin
-        cert_subject = "%s#%s/%s" % (user_address, user_auth_type, user_name)
+        cert_subject = f'{user_address}#{user_auth_type}/{user_name}'
         return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
     def verifyCert(self, inner_path, content):
@@ -898,9 +927,9 @@ class ContentManager(object):
             raise VerifyError("No rules")
 
         # Check include size limit
-        if rules.get("max_size") is not None:  # Include size limit
-            if content_size > rules["max_size"]:
-                raise VerifyError("Include too large %sB > %sB" % (content_size, rules["max_size"]))
+        max_size = rules.get('max_size')
+        if max_size is not None and content_size > max_size:
+            raise VerifyError(f'Include too large {content_size}B > {max_size}B')
 
         if rules.get("max_size_optional") is not None:  # Include optional files limit
             if content_size_optional > rules["max_size_optional"]:
@@ -929,18 +958,14 @@ class ContentManager(object):
     # Return: None = Same as before, False = Invalid, True = Valid
     def verifyFile(self, inner_path, file, ignore_same=True):
         if inner_path.endswith("content.json"):  # content.json: Check using sign
-            from Crypt import CryptBitcoin
             try:
                 if type(file) is dict:
                     new_content = file
                 else:
                     try:
-                        if sys.version_info.major == 3 and sys.version_info.minor < 6:
-                            new_content = json.loads(file.read().decode("utf8"))
-                        else:
-                            new_content = json.load(file)
+                        new_content = json.load(file)
                     except Exception as err:
-                        raise VerifyError("Invalid json file: %s" % err)
+                        raise VerifyError(f"Invalid json file: {err}")
                 if inner_path in self.contents:
                     old_content = self.contents.get(inner_path, {"modified": 0})
                     # Checks if its newer the ours
@@ -998,8 +1023,10 @@ class ContentManager(object):
                         raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
                     else:
                         return self.verifyContent(inner_path, new_content)
-                else:  # Old style signing
+                elif sign:
                     raise VerifyError("Invalid old-style sign")
+                else:
+                    raise VerifyError("Not signed")
 
             except Exception as err:
                 self.log.warning("%s: verify sign error: %s" % (inner_path, Debug.formatException(err)))

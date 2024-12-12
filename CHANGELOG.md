@@ -1,6 +1,208 @@
-### ZeroNet 0.7.2 (2020-09-?) Rev4206?
+### zeronet-conservancy 0.7.10+
+- disable site-plugins installed for security reasons (@caryoscelus)
+- fix downloading geoip db (@caryoscelus)
+- python <3.8 is officially unsupported
+- SafeRe improvements by @geekless
+- remove and don't update muted files (@caryoscelus)
+- option to disable port checking (@caryoscelus)
+- new install startup improvements (@caryoscelus)
+- fix blank site with UiPassword under certain conditions (reported & sponsored by @bitcoren) (@caryoscelus)
+- fix chromium compatibility (@caryoscelus)
+- better fix of local sites leak (@caryoscelus)
+- ipython-based repl via --repl for debug/interactive development (@caryoscelus)
+- optional blocking of compromised id certificates for spam protection (@caryoscelus)
+- changes in directory structure (split data and config, use user directories by default)
+- use version information from git if available
+- different build types (portable vs package)
+- various improvements
 
+### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
+prepared by @caryoscelus
+- update merkletools dependency to avoid legacy pysha3 (@caryoscelus)
+- fix ReDoS in file editor (UiFileManager plugin) due to outdated codemirror (@caryoscelus)
+- more anonymous UPnP (thanks to 0netdwf for reporting)
+- remove old zeroname plugins (.bit deprecation)
+- sitePublish --recursive option
+- windows build instruction improvement
+- importBundle command line action
+- use Syncronite tracker site by default
+- fix leak of local 0net sites to clearnet sites (originally reported by @egosown/beardog)
+- various improvements
 
+### zeronet-conservancy 0.7.9 (2023-07-02) (f966a4203fe33bd9f35)
+maintainers: @caryoscelus -> none
+- update README (build/dev instructions; thanks to @fgaz)
+- better debugging of update non-propagation
+- sec update of msgpck dependency (@chncaption)
+- deprecate python-3.6 as it apparently is no longer used (by active users)
+- improvement in imports and naming (@caryoscelus)
+- siteSign accepts absolute paths as well as paths relative to working directory (@caryoscelus)
+- updated trackers from Syncronite by @Styromaniac
+- no longer officially maintained
+
+### zeronet-conservancy 0.7.8.1 (2022-11-28) (0054eca9df0c9c8c2f4a78)
+maintainers: @caryoscelus
+- fix favourite/unfavourite in sidebar
+- fix tracker connection regression introduced in dc804b9d5f3a2a9f1fffa1b97d82e0e04c44508b (thanks to @bitcoren)
+- GiveUpGitHub notice
+- update README
+- new, more compact boot logo in console (more suitable for small screens)
+
+### zeronet-conservancy 0.7.8 (2022-11-23) (110307a4198cb13cc907ae)
+maintainers: @caryoscelus
+- use archived version of .bit domain registry to avoid malicious rewrites
+- readdress .bit domains as part of their deprecation
+- remove potential vulnerability via setuptools (@ajesse11x)
+- improve copying peers from sidebar
+- reduce fingerprinting information available to unprivileged sites
+- improve starting script
+- fix default ssl version to be secure
+- disable geoip-related ip address leak when in tor-only mode
+- windows os build/running instruction (WIP)
+- better command line parsing
+- ArchLinux AUR package
+- update android instruction (thanks oseido for reporting)
+- better browser launch handling
+- ability to add/remove from favourites from sidebar
+- NoNewSites plugin
+- show help message even when startup fails
+- fix plugin options handling regression
+- multiple code improvements
+
+### zeronet-conservancy 0.7.7 (2022-07-27) (f40dbfeb2163b9902495ba)
+maintainers: @caryoscelus, @FraYoshi, @prtngn, @d47081 (ex @d4708)
+- return UPnP using secure xml library (@caryoscelus)
+- xmr donations in sidebar fixed (@caryoscelus)
+- add libffi-dev dependency (@d47081)
+- add more deb dependencies (@BlueRook)
+- add pyaes as external dependency (@caryoscelus)
+- remove built-in pyaes (thanks to @emdee-net)
+- fix error messages in sidebar (@caryoscelus)
+- reduce fingerprinting of site owner (@caryoscelus)
+- minor code improvements and reduce fingerprinting from zeronet-enhanced (by @geekless, adopted by @caryoscelus)
+- improve and speed up content.json loading (@caryoscelus)
+- show `--help` even if data directory is inaccessible (@caryoscelus)
+- ask for optional user mute reason (@caryoscelus)
+- multiple code improvements
+
+### zeronet-conservancy 0.7.6 (2022-06-10) (864b7feb797d12077)
+maintainers: @caryoscelus, @d4708, @FraYoshi, @prtngn
+- more trackers from Syncronite by default
+- introduce multiple donations methods (@caryoscelus)
+- easier termux startup script (@unmanbearpig)
+- Brazilian Portuguese readme translation (@iFallenHunt)
+- reduce fingerprinting information (@caryoscelus)
+- only enable site donations when activated (@caryoscelus)
+- new docker files (@prtngn)
+- updated Russian readme (@Programmator9000)
+- multiple improvements in sidebar button UX and icons (@d4708)
+- fuller debug messages (@caryoscelus)
+- new contributions are GPLv3+
+
+### zeronet-conservancy 0.7.5 (2022-05-17) (fca3c8544debd533)
+maintainers: @caryoscelus , @d4708
+- disable UPnP until it's proven robust
+- new icon & minor rebranding
+- don't check port in tor-only mode
+- documentation updates & fixes (by @caryoscelus and @d4708)
+- update Android/Termux dependency list (thx to nnmnmknmki reports)
+- fix compatibility with modern hashlib (affects Android/Termux & others)
+- cleanup
+- more active trackers
+- replace old start script with a better one
+- colourful greetings
+
+### zeronet-conservancy 0.7.4 (2022-04-25) (733b1b05b1)
+maintainers: @caryoscelus
+- fix UiRequest.parsePath & minor code improvements
+- Sidebar "Open site directory" feature (by @defder-su)
+- fix multiuser/merger plugin interaction
+- use new admin page
+- update dependency instructions
+
+### zeronet-conservancy 0.7.3.2 (2022-01-26) (1a73dd7)
+maintainers: @caryoscelus
+(quick fix: technical release with proper versioning info)
+
+### zeronet-conservancy 0.7.3.1 (2022-01-26) (a57ebf8)
+maintainers: @caryoscelus
+- don't grant ADMIN permission to home or update pages
+- allow granting ADMIN permission via `--admin_pages` command line option
+- fix infinite readdress bug (thx @mahdi-ln for reporting)
+
+### zeronet-conservancy 0.7.3 (2022-01-21) Rev5000
+maintainers: @caryoscelus
+- forked from the latest py3 branch of ZeroNet
+- fixed potential vulnerability discovered by @purplesyringa
+- onion v3 support (thanks to @anonymoose, @zeroseed and @geekless)
+- partial readme rewrite (thanks to @mitya57)
+- disable updating through zite (unsafe)
+- polish translation update (by Krzysztof Otręba)
+- improved install instructions
+
+### ZeroNet 0.7.2+ (latest official py3 branch)
+maintainers: shortcutme a.k.a nofish a.k.a HelloZeroNet a.k.a Tamas Kocsis
+- Update requirements.txt (#2617) (Jabba)
+- Fix Cors permission request for connecting site
+- Allow sites to request several CORS permissions at once (#2631) (Ivanq)
+- Display library versions at /Env url endpoint
+- Fix OpenSSL dll/so location find patcher
+- Fix site listing show on big site visit
+- Fix 404 error handler in UiFilePlugin (Ivanq)
+- other fixes, improvements and translation updates (see more in git log)
+
+### ZeroNet 0.7.2 2020-09-21 (Rev4528)
+maintainers: shortcutme a.k.a nofish a.k.a HelloZeroNet a.k.a Tamas Kocsis
+- Save content.json of site even if limit size is reached (#2114) (Lola Dam)
+- fix #2107; Still save the content.json received even if site size limit is reached but dont download files (Lola Dam)
+- Add multiuser admin status to server info
+- Restrict blocked site addition when using mergerSiteAdd
+- Open console with #ZeroNet:Console hash in url
+- Fix compacting large json files
+- Fix utf8 post data parsing
+- Remove UiRequestPlugin from Zeroname plugin
+- Fix shutdown errors on macOS
+- Fix OpenSSL cert generation using LibreSSL
+- Allow NOSANDBOX in local mode (#2238) (Filip Š)
+- Remove limitations for img, font, media, style src in raw mode
+- Use master seed to create new site from cli
+- No restart after update (#2242) (Lola Dam)
+- Upgrade to Python 3.8 (Christian Clauss)
+- Allow all valid filenames to be added to content.json (#2141) (Josh)
+- Fix loading screen scrolling on smaller screens
+- Fix file rendering if content.json download failed
+- Replace usage of deprecated API 'cgi.parse_qsl' (Natalia Fenclová)
+- Handle announcer thread killing properly
+- Move file writes and reads to separate thread
+- Allow images from data uris
+- Prefer connecting to non-onion peers
+- Make sure we use local peers if possible
+- Faster, async local ip discovery
+- improve db access locks
+- Fix memory leak when using sleep in threads
+- more thread safety
+- Validate json files in src and plugins dir
+- Don't add escaping iframe message for link without target=_top
+- Fix updateing deleted site in contentdb
+- Don't allow parallel sites.json loading
+- Fix incomplete loading of dbschema.json
+- Added Custom Openssl Path for Native Clients and start_dir config (canewsin)
+- Fixed "LookupError: 'hex' is not a text encoding" on /StatsBootstrapper page (#2442) (krzotr)
+- Switch from gevent-websocket to gevent-ws (#2439) (Ivanq)
+- Make ThreadPool a context manager to prevent memory leaks (Ivanq)
+- Fix sslcrypto thread safety (#2454)
+- Search for any OpenSSL version in LD_LIBRARY_PATH (Ivanq)
+- Change to GPLv3 license
+- Allow opening the sidebar while content.json is not loaded (Vadim Ushakov)
+- UiPassword fixes
+- Fix loading invalid site block list
+- Fix wrapper_nonce adding to url
+- Try to recover site privatekey from master seed when site owned switch enabled
+- Fix not downloaded site delete on startup
+- bad file download fixes
+- UiFileManager plugin
+- translation updates
+- many other fixes and improvements (see git log for details)
 
 ### ZeroNet 0.7.1 (2019-07-01) Rev4206
 ### Added
@@ -20,7 +222,7 @@
  - Link to site's sidebar with "#ZeroNet:OpenSidebar" hash
 
 ### Changed
- - Allow .. in file names [Thanks to imachug]
+ - Allow .. in file names [Thanks to purplesyringa]
  - Change unstable trackers
  - More clean errors on sites.json/users.json load error
  - Various tweaks for tracker rating on unstable connections
@@ -31,12 +233,12 @@
 
 ### Fixed
  - Fix parsing config lines that have no value
- - Fix start.py [Thanks to imachug]
+ - Fix start.py [Thanks to purplesyringa]
  - Allow multiple values of the same key in the config file [Thanks ssdifnskdjfnsdjk for reporting]
  - Fix parsing config file lines that has % in the value [Thanks slrslr for reporting]
  - Fix bootstrapper plugin hash reloads [Thanks geekless for reporting]
  - Fix CryptMessage plugin OpenSSL dll loading on Windows (ZeroMail errors) [Thanks cxgreat2014 for reporting]
- - Fix startup error when using OpenSSL 1.1 [Thanks to imachug]
+ - Fix startup error when using OpenSSL 1.1 [Thanks to purplesyringa]
  - Fix a bug that did not loaded merged site data for 5 sec after the merged site got added
  - Fix typo that allowed to add new plugins in public proxy mode. [Thanks styromaniac for reporting]
  - Fix loading non-big files with "|all" postfix [Thanks to krzotr]
@@ -59,10 +261,10 @@ Note: The fix is also back ported to ZeroNet Py 2.x version (Rev3870)
  - Generated SSL certificate randomization to avoid protocol filters (Thanks to ValdikSS)
  - Offline mode
  - P2P source code update using ZeroNet protocol
- - ecdsaSign/Verify commands to CryptMessage plugin (Thanks to imachug)
+ - ecdsaSign/Verify commands to CryptMessage plugin (Thanks to purplesyringa)
  - Efficient file rename: change file names instead of re-downloading the file.
  - Make redirect optional on site cloning (Thanks to Lola)
- - EccPrivToPub / EccPubToPriv functions (Thanks to imachug)
+ - EccPrivToPub / EccPubToPriv functions (Thanks to purplesyringa)
  - Detect and change dark/light theme based on OS setting (Thanks to filips123)
 
 ### Changed
@@ -81,7 +283,7 @@ Note: The fix is also back ported to ZeroNet Py 2.x version (Rev3870)
  - Fix site download as zip file
  - Fix displaying sites with utf8 title
  - Error message if dbRebuild fails (Thanks to Lola)
- - Fix browser reopen if executing start.py again. (Thanks to imachug)
+ - Fix browser reopen if executing start.py again. (Thanks to purplesyringa)
 
 
 ### ZeroNet 0.6.5 (2019-02-16) Rev3851 (Last release targeting Python 2.7.x)
@@ -170,7 +372,7 @@ Affected versions: All versions before ZeroNet Rev3616
  - Detect network level tracker blocking and easy setting meek proxy for tracker connections.
  - Support downloading 2GB+ sites as .zip (Thx to Radtoo)
  - Support ZeroNet as a transparent proxy (Thx to JeremyRand)
- - Allow fileQuery as CORS command (Thx to imachug)
+ - Allow fileQuery as CORS command (Thx to purplesyringa)
  - Windows distribution includes Tor and meek client by default
  - Download sites as zip link to sidebar
  - File server port randomization
@@ -233,7 +435,7 @@ Affected versions: All versions before ZeroNet Rev3616
 ### Added
  - New plugin: Chart
  - Collect and display charts about your contribution to ZeroNet network
- - Allow list as argument replacement in sql queries. (Thanks to imachug)
+ - Allow list as argument replacement in sql queries. (Thanks to purplesyringa)
  - Newsfeed query time statistics (Click on "From XX sites in X.Xs on ZeroHello)
  - New UiWebsocket API command: As to run commands as other site
  - Ranged ajax queries for big files
@@ -254,7 +456,7 @@ Affected versions: All versions before ZeroNet Rev3616
  - Only zoom sidebar globe if mouse button is pressed down
 
 ### Fixed
- - Open port checking error reporting (Thanks to imachug)
+ - Open port checking error reporting (Thanks to purplesyringa)
  - Out-of-range big file requests
  - Don't output errors happened on gevent greenlets twice
  - Newsfeed skip sites with no database
@@ -334,7 +536,7 @@ Affected versions: All versions before ZeroNet Rev3616
  - Opened port checking (Thanks l5h5t7 & saber28 for reporting)
  - Standalone update.py argument parsing (Thanks Zalex for reporting)
  - uPnP crash on startup (Thanks Vertux for reporting)
- - CoffeeScript 1.12.6 compatibility (Thanks kavamaken & imachug)
+ - CoffeeScript 1.12.6 compatibility (Thanks kavamaken & purplesyringa)
  - Multi value argument parsing
  - Database error when running from directory that contains special characters (Thanks Pupiloho for reporting)
  - Site lock violation logging

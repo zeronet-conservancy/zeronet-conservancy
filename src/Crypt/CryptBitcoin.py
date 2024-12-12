@@ -4,6 +4,9 @@ import binascii
 import time
 import hashlib
 
+from collections.abc import Container
+from typing import Optional
+
 from util.Electrum import dbl_format
 from Config import config
 
@@ -69,7 +72,8 @@ def privatekeyToAddress(privatekey):  # Return address from private key
         return False
 
 
-def sign(data, privatekey):  # Return sign to data using private key
+def sign(data: str, privatekey: str) -> str:
+    """Sign data with privatekey, return base64 string signature"""
     if privatekey.startswith("23") and len(privatekey) > 52:
         return None  # Old style private key not supported
     return base64.b64encode(sslcurve.sign(
@@ -79,13 +83,13 @@ def sign(data, privatekey):  # Return sign to data using private key
         hash=dbl_format
     )).decode()
 
-
-def verify(data, valid_address, sign, lib_verify=None):  # Verify data using address and sign
+def get_sign_address_64(data: str, sign: str, lib_verify=None) -> Optional[str]:
+    """Returns pubkey/address of signer if any"""
     if not lib_verify:
         lib_verify = lib_verify_best
 
     if not sign:
-        return False
+        return None
 
     if lib_verify == "libsecp256k1":
         sign_address = libsecp256k1message.recover_address(data.encode("utf8"), sign).decode("utf8")
@@ -95,7 +99,33 @@ def verify(data, valid_address, sign, lib_verify=None):  # Verify data using add
     else:
         raise Exception("No library enabled for signature verification")
 
-    if type(valid_address) is list:  # Any address in the list
-        return sign_address in valid_address
-    else:  # One possible address
-        return sign_address == valid_address
+    return sign_address
+
+def verify(*args, **kwargs):
+    """Default verify, see verify64"""
+    return verify64(*args, **kwargs)
+
+def verify64(data: str, addresses: str | Container[str], sign: str, lib_verify=None) -> bool:
+    """Verify that sign is a valid signature for data by one of addresses
+
+    Expecting signature to be in base64
+    """
+    sign_address = get_sign_address_64(data, sign, lib_verify)
+
+    if isinstance(addresses, str):
+        return sign_address == addresses
+    else:
+        return sign_address in addresses
+
+def isValidAddress(addr):
+    '''Check if provided address is valid bitcoin address'''
+    if addr[0] != '1':
+        # no support for new-style addrs
+        return False
+    from base58 import b58decode
+    bs = b58decode(addr)
+    main = bs[:-4]
+    checksum = bs[-4:]
+    h1 = hashlib.sha256(main).digest()
+    h2 = hashlib.sha256(h1).digest()
+    return h2[:4] == checksum

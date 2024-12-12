@@ -154,17 +154,18 @@ class Peer(object):
 
         self.log("Send request: %s %s %s %s" % (params.get("site", ""), cmd, params.get("inner_path", ""), params.get("location", "")))
 
-        for retry in range(1, 4):  # Retry 3 times
+        for retry in range(3):
             try:
                 if not self.connection:
+                    # this is redundant, already established that self.connection is present
                     raise Exception("No connection found")
                 res = self.connection.request(cmd, params, stream_to)
                 if not res:
-                    raise Exception("Send error")
+                    raise Exception("Send error: result is empty")
                 if "error" in res:
                     self.log("%s error: %s" % (cmd, res["error"]))
                     self.onConnectionError("Response error")
-                    break
+                    return res
                 else:  # Successful request, reset connection error num
                     self.connection_error = 0
                 self.time_response = time.time()
@@ -182,9 +183,9 @@ class Peer(object):
                         "%s (connection_error: %s, hash_failed: %s, retry: %s)" %
                         (Debug.formatException(err), self.connection_error, self.hash_failed, retry)
                     )
-                    time.sleep(1 * retry)
+                    time.sleep(retry+1)
                     self.connect()
-        return None  # Failed after 4 retry
+        return None  # Failed after 3 attempts
 
     # Get a file content from peer
     def getFile(self, site, inner_path, file_size=None, pos_from=0, pos_to=None, streaming=False):

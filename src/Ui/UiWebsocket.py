@@ -10,6 +10,8 @@ import stat
 
 import gevent
 
+from rich import print
+
 from Config import config
 from Site import SiteManager
 from Crypt import CryptBitcoin
@@ -260,7 +262,14 @@ class UiWebsocket(object):
                 del(content["signers_sign"])
 
         settings = site.settings.copy()
-        del settings["wrapper_key"]  # Dont expose wrapper key
+        # remove fingerprinting information for non-admin sites
+        if 'ADMIN' not in self.site.settings['permissions']:
+            del settings['wrapper_key']
+            settings['added'] = 0
+            settings['serving'] = True
+            settings['ajax_key'] = ''
+            settings['peers'] = 1
+            settings['cache'] = {}
 
         ret = {
             "auth_address": self.user.getAuthAddress(site.address, create=create_user),
@@ -279,49 +288,90 @@ class UiWebsocket(object):
             "workers": len(site.worker_manager.workers),
             "content": content
         }
+        if 'ADMIN' not in self.site.settings['permissions']:
+            ret.update({
+                "content_updated": 0,
+                "bad_files": len(site.bad_files), # ?
+                "size_limit": site.getSizeLimit(), # ?
+                "next_size_limit": site.getNextSizeLimit(), # ?
+                "peers": 1,
+                "started_task_num": 0,
+                "tasks": 0,
+                "workers": 0,
+            })
         if site.settings["own"]:
             ret["privatekey"] = bool(self.user.getSiteData(site.address, create=create_user).get("privatekey"))
-        if site.isServing() and content:
+        if site.isServing() and content and "ADMIN" in self.site.settings['permissions']:
             ret["peers"] += 1  # Add myself if serving
         return ret
 
     def formatServerInfo(self):
-        import main
-        file_server = main.file_server
-        if file_server.port_opened == {}:
-            ip_external = None
+        # unprivileged sites should not get any fingerprinting information
+        if "ADMIN" in self.site.settings['permissions']:
+            import main
+            file_server = main.file_server
+            if file_server.port_opened == {}:
+                ip_external = None
+            else:
+                ip_external = any(file_server.port_opened.values())
+            back = {
+                'ip_external' : ip_external,
+                'port_opened' : file_server.port_opened,
+                'platform' : sys.platform,
+                'dist_type' : config.dist_type,
+                'fileserver_ip' : config.fileserver_ip,
+                'fileserver_port' : config.fileserver_port,
+                'tor_enabled' : file_server.tor_manager.enabled,
+                'tor_status' : file_server.tor_manager.status,
+                'tor_has_meek_bridges' : file_server.tor_manager.has_meek_bridges,
+                'tor_use_bridges' : config.tor_use_bridges,
+                'ui_ip' : config.ui_ip,
+                'ui_port' : config.ui_port,
+                'version' : config.version,
+                # Some legacy code relies on this being an integer, so lets return dummy one
+                'rev' : config.user_agent_rev,
+                'timecorrection' : file_server.timecorrection,
+                'language' : config.language,
+                'debug' : config.debug,
+                'offline' : config.offline,
+                'plugins' : PluginManager.plugin_manager.plugin_names,
+                # For compat only
+                'plugins_rev' : {},
+                'user_settings' : self.user.settings,
+                'lib_verify_best' : CryptBitcoin.lib_verify_best
+            }
         else:
-            ip_external = any(file_server.port_opened.values())
-        back = {
-            "ip_external": ip_external,
-            "port_opened": file_server.port_opened,
-            "platform": sys.platform,
-            "fileserver_ip": config.fileserver_ip,
-            "fileserver_port": config.fileserver_port,
-            "tor_enabled": file_server.tor_manager.enabled,
-            "tor_status": file_server.tor_manager.status,
-            "tor_has_meek_bridges": file_server.tor_manager.has_meek_bridges,
-            "tor_use_bridges": config.tor_use_bridges,
-            "ui_ip": config.ui_ip,
-            "ui_port": config.ui_port,
-            "version": config.version,
-            "rev": config.rev,
-            "timecorrection": file_server.timecorrection,
-            "language": config.language,
-            "debug": config.debug,
-            "offline": config.offline,
-            "plugins": PluginManager.plugin_manager.plugin_names,
-            "plugins_rev": PluginManager.plugin_manager.plugins_rev,
-            "user_settings": self.user.settings
-        }
-        if "ADMIN" in self.site.settings["permissions"]:
-            back["updatesite"] = config.updatesite
-            back["dist_type"] = config.dist_type
-            back["lib_verify_best"] = CryptBitcoin.lib_verify_best
+            back = {
+                'ip_external' : None,
+                'port_opened' : False,
+                'platform' : 'generic',
+                'dist_type' : 'generic',
+                'fileserver_ip' : '127.0.0.1',
+                'fileserver_port' : 15441,
+                'tor_enabled' : True,
+                'tor_status' : 'OK',
+                'tor_has_meek_bridges' : True,
+                'tor_use_bridges' : True,
+                'ui_ip' : '127.0.0.1',
+                'ui_port' : 43110,
+                'version' : config.user_agent,
+                'rev' : config.user_agent_rev,
+                'timecorrection' : 0.0,
+                'language' : config.language, #?
+                'debug' : False,
+                'offline' : False,
+                'plugins' : [],
+                'plugins_rev' : {},
+                'user_settings' : self.user.settings #?
+            }
         return back
 
     def formatAnnouncerInfo(self, site):
-        return {"address": site.address, "stats": site.announcer.stats}
+        if "ADMIN" in self.site.settings['permissions']:
+            stats = site.announcer.stats
+        else:
+            stats = {}
+        return {"address": site.address, "stats": stats}
 
     # - Actions -
 
@@ -356,6 +406,9 @@ class UiWebsocket(object):
 
     def actionSiteBadFiles(self, to):
         return list(self.site.bad_files.keys())
+
+    def actionBadCert(self, to, sign):
+        self.site.content_manager.addBadCert(sign)
 
     # Join to an event channel
     def actionChannelJoin(self, to, channels):
@@ -424,10 +477,6 @@ class UiWebsocket(object):
             extend["cert_sign"] = cert["cert_sign"]
             self.log.debug("Extending content.json with cert %s" % extend["cert_user_id"])
 
-        if not self.hasFilePermission(inner_path):
-            self.log.error("SiteSign error: you don't own this site & site owner doesn't allow you to do so.")
-            return self.response(to, {"error": "Forbidden, you can only modify your own sites"})
-
         if privatekey == "stored":  # Get privatekey from sites.json
             privatekey = self.user.getSiteData(self.site.address).get("privatekey")
             if not privatekey:
@@ -467,6 +516,8 @@ class UiWebsocket(object):
 
     # Sign and publish content.json
     def actionSitePublish(self, to, privatekey=None, inner_path="content.json", sign=True, remove_missing_optional=False, update_changed_files=False):
+        # TODO: check certificates (https://github.com/zeronet-conservancy/zeronet-conservancy/issues/190)
+        # TODO: update certificates (https://github.com/zeronet-conservancy/zeronet-conservancy/issues/194)
         if sign:
             inner_path = self.actionSiteSign(
                 to, privatekey, inner_path, response_ok=False,
@@ -859,7 +910,7 @@ class UiWebsocket(object):
     @flag.admin
     def actionPermissionDetails(self, to, permission):
         if permission == "ADMIN":
-            self.response(to, _["Modify your client's configuration and access all site"] + " <span style='color: red'>" + _["(Dangerous!)"] + "</span>")
+            self.response(to, _["Allow this site to administrate your 0net node"] + " <span style='color: red'>" + _["(Make sure you trust site developer before accepting!)"] + "</span>")
         elif permission == "NOSANDBOX":
             self.response(to, _["Modify your client's configuration and access all site"] + " <span style='color: red'>" + _["(Dangerous!)"] + "</span>")
         elif permission == "PushNotification":
@@ -891,7 +942,7 @@ class UiWebsocket(object):
 
     # List all site info
     @flag.admin
-    def actionSiteList(self, to, connecting_sites=False):
+    def actionSiteList(self, to, connecting_sites=True):
         ret = []
         for site in list(self.server.sites.values()):
             if not site.content_manager.contents.get("content.json") and not connecting_sites:
@@ -953,6 +1004,35 @@ class UiWebsocket(object):
             self.response(to, "Resumed")
         else:
             self.response(to, {"error": "Unknown site: %s" % address})
+
+    def siteFavUnfav(self, to, address, action, response):
+        dashboard = config.homepage
+        dsite = self.user.sites.get(dashboard, None)
+        if not dsite:
+            raise RuntimeError(f'No dashboard {dashboard} found to add site to favourites')
+        if 'settings' not in dsite:
+            dsite['settings'] = {}
+        dsettings = dsite['settings']
+        if 'favorite_sites' not in dsettings:
+            dsettings['favorite_sites'] = {}
+        favs = dsettings['favorite_sites']
+        action(favs)
+        self.user.setSiteSettings(dashboard, dsettings)
+        self.response(to, response)
+
+    @flag.admin
+    @flag.no_multiuser
+    def actionSiteFavourite(self, to, address):
+        def do_add(favs):
+            favs[address] = True
+        self.siteFavUnfav(to, address, do_add, "Added to favourites")
+
+    @flag.admin
+    @flag.no_multiuser
+    def actionSiteUnfavourite(self, to, address):
+        def do_del(favs):
+            del favs[address]
+        self.siteFavUnfav(to, address, do_del, "Removed from favourites")
 
     @flag.admin
     @flag.no_multiuser

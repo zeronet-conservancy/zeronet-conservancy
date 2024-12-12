@@ -16,7 +16,7 @@ def importPluginnedClasses():
     from User import UserManager
 
 try:
-    local_master_addresses = set(json.load(open("%s/users.json" % config.data_dir)).keys())  # Users in users.json
+    local_master_addresses = set(json.load((config.private_dir / 'users.json').open()).keys())  # Users in users.json
 except Exception as err:
     local_master_addresses = set()
 
@@ -26,6 +26,9 @@ class UiRequestPlugin(object):
     def __init__(self, *args, **kwargs):
         self.user_manager = UserManager.user_manager
         super(UiRequestPlugin, self).__init__(*args, **kwargs)
+
+    def parsePath(self, path):
+        return super(UiRequestPlugin, self).parsePath(path)
 
     # Create new user and inject user welcome message if necessary
     # Return: Html body also containing the injection
@@ -269,7 +272,7 @@ class UiWebsocketPlugin(object):
 class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("Multiuser plugin")
-        group.add_argument('--multiuser_local', help="Enable unsafe Ui functions and write users to disk", action='store_true')
-        group.add_argument('--multiuser_no_new_sites', help="Denies adding new sites by normal users", action='store_true')
+        group.add_argument('--multiuser-local', help="Enable unsafe Ui functions and write users to disk", action='store_true')
+        group.add_argument('--multiuser-no-new-sites', help="Denies adding new sites by normal users", action='store_true')
 
         return super(ConfigPlugin, self).createArguments()

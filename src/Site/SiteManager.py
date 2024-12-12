@@ -14,7 +14,7 @@ from Config import config
 from util import helper
 from util import RateLimit
 from util import Cached
-
+from Debug import Debug
 
 @PluginManager.acceptPlugins
 class SiteManager(object):
@@ -30,25 +30,25 @@ class SiteManager(object):
     # Load all sites from data/sites.json
     @util.Noparallel()
     def load(self, cleanup=True, startup=False):
-        from Debug import Debug
-        self.log.info("Loading sites... (cleanup: %s, startup: %s)" % (cleanup, startup))
-        self.loaded = False
         from .Site import Site
+        self.log.info(f'Loading sites... ({cleanup=}, {startup=})')
+        self.loaded = False
         address_found = []
         added = 0
         load_s = time.time()
         # Load new adresses
         try:
-            json_path = "%s/sites.json" % config.data_dir
+            json_path = config.private_dir / 'sites.json'
             data = json.load(open(json_path))
         except Exception as err:
-            raise Exception("Unable to load %s: %s" % (json_path, err))
+            self.log.error(f"Unable to load {json_path}: {err}")
+            data = {}
 
         sites_need = []
 
         for address, settings in data.items():
             if address not in self.sites:
-                if os.path.isfile("%s/%s/content.json" % (config.data_dir, address)):
+                if (config.data_dir / address / 'content.json').is_file():
                     # Root content.json exists, try load site
                     s = time.time()
                     try:
@@ -121,7 +121,7 @@ class SiteManager(object):
 
         s = time.time()
         if data:
-            helper.atomicWrite("%s/sites.json" % config.data_dir, helper.jsonDumps(data).encode("utf8"))
+            helper.atomicWrite(config.private_dir / 'sites.json', helper.jsonDumps(data).encode("utf8"))
         else:
             self.log.debug("Save error: No data")
         time_write = time.time() - s

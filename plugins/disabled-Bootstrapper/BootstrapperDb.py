@@ -12,7 +12,7 @@ class BootstrapperDb(Db.Db):
     def __init__(self):
         self.version = 7
         self.hash_ids = {}  # hash -> id cache
-        super(BootstrapperDb, self).__init__({"db_name": "Bootstrapper"}, "%s/bootstrapper.db" % config.data_dir)
+        super(BootstrapperDb, self).__init__({"db_name": "Bootstrapper"}, config.start_dir / 'bootstrapper.db')
         self.foreign_keys = True
         self.checkTables()
         self.updateHashCache()

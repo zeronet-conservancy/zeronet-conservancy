@@ -16,17 +16,17 @@ from Config import config
 
 def atomicWrite(dest, content, mode="wb"):
     try:
-        with open(dest + "-tmpnew", mode) as f:
+        with open(f'{dest}-tmpnew', mode) as f:
             f.write(content)
             f.flush()
             os.fsync(f.fileno())
-        if os.path.isfile(dest + "-tmpold"):  # Previous incomplete write
-            os.rename(dest + "-tmpold", dest + "-tmpold-%s" % time.time())
+        if os.path.isfile(f'{dest}-tmpold'):  # Previous incomplete write
+            os.rename(f'{dest}-tmpold', f'{dest}-tmpold-{time.time()}')
         if os.path.isfile(dest):  # Rename old file to -tmpold
-            os.rename(dest, dest + "-tmpold")
-        os.rename(dest + "-tmpnew", dest)
-        if os.path.isfile(dest + "-tmpold"):
-            os.unlink(dest + "-tmpold")  # Remove old file
+            os.rename(dest, f'{dest}-tmpold')
+        os.rename(f'{dest}-tmpnew', dest)
+        if os.path.isfile(f'{dest}-tmpold'):
+            os.unlink(f'{dest}-tmpold')  # Remove old file
         return True
     except Exception as err:
         from Debug import Debug
@@ -34,8 +34,8 @@ def atomicWrite(dest, content, mode="wb"):
             "File %s write failed: %s, (%s) reverting..." %
             (dest, Debug.formatException(err), Debug.formatStack())
         )
-        if os.path.isfile(dest + "-tmpold") and not os.path.isfile(dest):
-            os.rename(dest + "-tmpold", dest)
+        if os.path.isfile(f'{dest}-tmpold') and not os.path.isfile(dest):
+            os.rename(f'{dest}-tmpold', dest)
         return False
 
 
@@ -85,7 +85,7 @@ def openLocked(path, mode="wb"):
 def getFreeSpace():
     free_space = -1
     if "statvfs" in dir(os):  # Unix
-        statvfs = os.statvfs(config.data_dir.encode("utf8"))
+        statvfs = os.statvfs(str(config.data_dir).encode("utf8"))
         free_space = statvfs.f_frsize * statvfs.f_bavail
     else:  # Windows
         try:
@@ -111,7 +111,7 @@ def shellquote(*args):
     if len(args) == 1:
         return '"%s"' % args[0].replace('"', "")
     else:
-        return tuple(['"%s"' % arg.replace('"', "") for arg in args])
+        return tuple(['"%s"' % str(arg).replace('"', "") for arg in args])
 
 
 def packPeers(peers):
@@ -193,40 +193,6 @@ def mergeDicts(dicts):
         for key, val in d.items():
             back[key].update(val)
     return dict(back)
-
-
-# Request https url using gevent SSL error workaround
-def httpRequest(url, as_file=False):
-    if url.startswith("http://"):
-        import urllib.request
-        response = urllib.request.urlopen(url)
-    else:  # Hack to avoid Python gevent ssl errors
-        import socket
-        import http.client
-        import ssl
-
-        host, request = re.match("https://(.*?)(/.*?)$", url).groups()
-
-        conn = http.client.HTTPSConnection(host)
-        sock = socket.create_connection((conn.host, conn.port), conn.timeout, conn.source_address)
-        conn.sock = ssl.wrap_socket(sock, conn.key_file, conn.cert_file)
-        conn.request("GET", request)
-        response = conn.getresponse()
-        if response.status in [301, 302, 303, 307, 308]:
-            logging.info("Redirect to: %s" % response.getheader('Location'))
-            response = httpRequest(response.getheader('Location'))
-
-    if as_file:
-        import io
-        data = io.BytesIO()
-        while True:
-            buff = response.read(1024 * 16)
-            if not buff:
-                break
-            data.write(buff)
-        return data
-    else:
-        return response
 
 
 def timerCaller(secs, func, *args, **kwargs):
@@ -354,3 +320,17 @@ def encodeResponse(func):  # Encode returned data from utf8 to bytes
                 yield back.encode()
 
     return wrapper
+
+def openBrowser(agent):
+    if agent and agent != "False":
+        print(f"Opening browser: {agent}...")
+        ui_ip = config.ui_ip if config.ui_ip != "*" else "127.0.0.1"
+        if ':' in ui_ip: # IPv6
+            url = f'http://[{ui_ip}]:{config.ui_port}/{config.homepage}'
+        else: # IPv4
+            url = f'http://{ui_ip}:{config.ui_port}/{config.homepage}'
+        try:
+            import subprocess
+            return subprocess.Popen([config.open_browser, url])
+        except Exception as err:
+            print(f"Error starting browser: {err}")

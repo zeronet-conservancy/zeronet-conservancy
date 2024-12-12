@@ -13,6 +13,7 @@ from Config import config
 from Debug import Debug
 import importlib
 
+from util import helper
 
 # Skip websocket handler if not necessary
 class UiWSGIHandler(WebSocketHandler):
@@ -28,7 +29,7 @@ class UiWSGIHandler(WebSocketHandler):
             import main
             main.DebugHook.handleError()
         else:
-            ui_request = UiRequest(self.server, {}, self.environ, self.start_response)
+            ui_request = UiRequest(self.server, self.environ, self.start_response, is_data_request=False)
             block_gen = ui_request.error500("UiWSGIHandler error: %s" % Debug.formatExceptionMessage(err))
             for block in block_gen:
                 self.write(block)
@@ -54,6 +55,7 @@ class UiServer:
     def __init__(self):
         self.ip = config.ui_ip
         self.port = config.ui_port
+        self.site_port = config.ui_site_port
         self.running = False
         if self.ip == "*":
             self.ip = "0.0.0.0"  # Bind all
@@ -95,11 +97,7 @@ class UiServer:
     # Handle WSGI request
     def handleRequest(self, env, start_response):
         path = bytes(env["PATH_INFO"], "raw-unicode-escape").decode("utf8")
-        if env.get("QUERY_STRING"):
-            get = dict(urllib.parse.parse_qsl(env['QUERY_STRING']))
-        else:
-            get = {}
-        ui_request = UiRequest(self, get, env, start_response)
+        ui_request = UiRequest(self, env, start_response, is_data_request=False)
         if config.debug:  # Let the exception catched by werkezung
             return ui_request.route(path)
         else:  # Catch and display the error
@@ -144,18 +142,7 @@ class UiServer:
             self.log.info("Web interface: http://%s:%s/" % (config.ui_ip, config.ui_port))
         self.log.info("--------------------------------------")
 
-        if config.open_browser and config.open_browser != "False":
-            logging.info("Opening browser: %s...", config.open_browser)
-            import webbrowser
-            try:
-                if config.open_browser == "default_browser":
-                    browser = webbrowser.get()
-                else:
-                    browser = webbrowser.get(config.open_browser)
-                url = "http://%s:%s/%s" % (config.ui_ip if config.ui_ip != "*" else "127.0.0.1", config.ui_port, config.homepage)
-                gevent.spawn_later(0.3, browser.open, url, new=2)
-            except Exception as err:
-                print("Error starting browser: %s" % err)
+        helper.openBrowser(config.open_browser)
 
         self.server = WSGIServer((self.ip, self.port), handler, handler_class=UiWSGIHandler, log=self.log)
         self.server.sockets = {}
@@ -167,6 +154,19 @@ class UiServer:
             import main
             main.file_server.stop()
         self.log.debug("Stopped.")
+
+    def handleSiteRequest(self, env, start_response):
+        path = bytes(env["PATH_INFO"], "raw-unicode-escape").decode("utf8")
+        ui_request = UiRequest(self, env, start_response, is_data_request=True)
+        try:
+            return ui_request.route(path)
+        except Exception as err:
+            logging.debug(f"UiRequest @ site error: {Debug.formatException(err)}")
+            return ui_request.error500('Error while trying to serve site data')
+
+    def startSiteServer(self):
+        self.site_server = WSGIServer((self.ip, self.site_port), self.handleSiteRequest, log=self.log)
+        self.site_server.serve_forever()
 
     def stop(self):
         self.log.debug("Stopping...")

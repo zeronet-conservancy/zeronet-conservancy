@@ -152,8 +152,13 @@ class FileServer(ConnectionServer):
         FileRequest = imp.load_source("FileRequest", "src/File/FileRequest.py").FileRequest
 
     def portCheck(self):
-        if config.offline:
-            self.log.info("Offline mode: port check disabled")
+        if config.offline or config.tor == 'always' or config.disable_port_check:
+            if config.offline:
+                self.log.info(f'Offline mode: port check disabled')
+            elif config.tor == 'always':
+                self.log.info('Tor-only mode: port check disabled')
+            else:
+                self.log.info('Port check disabled')
             res = {"ipv4": None, "ipv6": None}
             self.port_opened = res
             return res
@@ -305,15 +310,15 @@ class FileServer(ConnectionServer):
                 time.sleep(1)  # Prevent too quick request
 
             site = None
-            gc.collect()  # Implicit garbage collection
+            gc.collect()  # Explicit garbage collection
             startup = False
             time.sleep(60 * 20)
 
     def announceSite(self, site):
         site.announce(mode="update", pex=False)
         active_site = time.time() - site.settings.get("modified", 0) < 24 * 60 * 60
-        if site.settings["own"] or active_site:
-            # Check connections more frequently on own and active sites to speed-up first connections
+        if active_site:
+            # Check connections more frequently on active sites to speed-up first connections
             site.needConnections(check_site_on_reconnect=True)
         site.sendMyHashfield(3)
         site.updateHashfield(3)

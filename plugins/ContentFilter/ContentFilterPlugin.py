@@ -38,7 +38,7 @@ class SiteManagerPlugin(object):
                 block_details = None
 
         if block_details:
-            raise Exception("Site blocked: %s" % html.escape(block_details.get("reason", "unknown reason")))
+            raise Exception(f'Site blocked: {html.escape(block_details.get("reason", "unknown reason"))}')
         else:
             return super(SiteManagerPlugin, self).add(address, *args, **kwargs)
 
@@ -56,14 +56,11 @@ class UiWebsocketPlugin(object):
 
     @flag.no_multiuser
     def actionMuteAdd(self, to, auth_address, cert_user_id, reason):
-        if "ADMIN" in self.getPermissions(to):
-            self.cbMuteAdd(to, auth_address, cert_user_id, reason)
-        else:
-            self.cmd(
-                "confirm",
-                [_["Hide all content from <b>%s</b>?"] % html.escape(cert_user_id), _["Mute"]],
-                lambda res: self.cbMuteAdd(to, auth_address, cert_user_id, reason)
-            )
+        self.cmd(
+            "prompt",
+            [_["Remove all content from <b>%s</b>?"] % html.escape(cert_user_id), reason, _["Mute"]],
+            lambda res: self.cbMuteAdd(to, auth_address, cert_user_id, res if res else reason)
+        )
 
     @flag.no_multiuser
     def cbMuteRemove(self, to, auth_address):
@@ -207,18 +204,40 @@ class SiteStoragePlugin(object):
             # Check if any of the adresses are in the mute list
             for auth_address in matches:
                 if filter_storage.isMuted(auth_address):
-                    self.log.debug("Mute match: %s, ignoring %s" % (auth_address, inner_path))
+                    self.log.debug(f'Mute match: {auth_address}, ignoring {inner_path}')
                     return False
 
         return super(SiteStoragePlugin, self).updateDbFile(inner_path, file=file, cur=cur)
 
     def onUpdated(self, inner_path, file=None):
-        file_path = "%s/%s" % (self.site.address, inner_path)
-        if file_path in filter_storage.file_content["includes"]:
-            self.log.debug("Filter file updated: %s" % inner_path)
+        file_path = f'{self.site.address}/{inner_path}'
+        if file_path in filter_storage.file_content['includes']:
+            self.log.debug('Filter file updated: {inner_path}')
             filter_storage.includeUpdateAll()
         return super(SiteStoragePlugin, self).onUpdated(inner_path, file=file)
 
+@PluginManager.registerTo("Site")
+class SitePlugin(object):
+    def needFile(self, inner_path, update=False, blocking=True, peer=None, priority=0):
+        self.log.debug(f'needFile {inner_path}')
+        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        for auth_address in matches:
+            if filter_storage.isMuted(auth_address):
+                self.log.info(f'Mute match in Site.needFile: {auth_address}, ignoring {inner_path}')
+                return False
+        return super(SitePlugin, self).needFile(inner_path, update, blocking, peer, priority)
+
+@PluginManager.registerTo("FileRequest")
+class FileRequestPlugin:
+    def actionUpdate(self, params):
+        inner_path = params.get('inner_path', '')
+        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        for auth_address in matches:
+            if filter_storage.isMuted(auth_address):
+                self.log.info(f'Mute match in FileRequest.actionUpdate: {auth_address}, ignoring {inner_path}')
+                self.response({'ok': f'Thanks, file {inner_path} updated!'})
+                return False
+        return super(FileRequestPlugin, self).actionUpdate(params)
 
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):

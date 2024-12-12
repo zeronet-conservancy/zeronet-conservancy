@@ -1,17 +1,28 @@
 #!/usr/bin/env python3
 import os
 import sys
+from src.Config import config
 
+# fix further imports from src dir
+sys.modules['Config'] = sys.modules['src.Config']
 
-def main():
-    if sys.version_info.major < 3:
-        print("Error: Python 3.x is required")
+def pyReq():
+    major = sys.version_info.major
+    minor = sys.version_info.minor
+    if major < 3 or (major == 3 and minor < 8):
+        print("Error: Python 3.8+ is required")
         sys.exit(0)
+    if major == 3 and minor < 11:
+        print(f"Python 3.11+ is recommended (you're running {sys.version})")
 
-    if "--silent" not in sys.argv:
-        print("- Starting ZeroNet...")
+def launch():
+    '''renamed from main to avoid clashes with main module'''
+    pyReq()
 
-    main = None
+    if '--silent' not in sys.argv:
+        from greet import fancy_greet
+        fancy_greet(config.version)
+
     try:
         import main
         main.start()
@@ -23,11 +34,10 @@ def main():
         except Exception as log_err:
             print("Failed to log error:", log_err)
             traceback.print_exc()
-        from Config import config
-        error_log_path = config.log_dir + "/error.log"
+        error_log_path = config.log_dir / "error.log"
         traceback.print_exc(file=open(error_log_path, "w"))
         print("---")
-        print("Please report it: https://github.com/HelloZeroNet/ZeroNet/issues/new?assignees=&labels=&template=bug-report.md")
+        print("Please report it: https://github.com/zeronet-conservancy/zeronet-conservancy/issues/new?template=bug-report.md")
         if sys.platform.startswith("win") and "python.exe" not in sys.executable:
             displayErrorMessage(err, error_log_path)
 
@@ -66,8 +76,8 @@ def displayErrorMessage(err, error_log_path):
     res = ctypes.windll.user32.MessageBoxW(0, err_title, "ZeroNet error", MB_YESNOCANCEL | MB_ICONEXCLAIMATION)
     if res == ID_YES:
         import webbrowser
-        report_url = "https://github.com/HelloZeroNet/ZeroNet/issues/new?assignees=&labels=&template=bug-report.md&title=%s"
-        webbrowser.open(report_url % urllib.parse.quote("Unhandled exception: %s" % err_message))
+        report_url = "https://github.com/zeronet-conservancy/zeronet-conservancy/issues/new"
+        webbrowser.open(report_url)
     if res in [ID_YES, ID_NO]:
         subprocess.Popen(['notepad.exe', error_log_path])
 
@@ -120,6 +130,7 @@ def restart():
 
 
 def start():
+    config.working_dir = os.getcwd()
     app_dir = os.path.dirname(os.path.abspath(__file__))
     os.chdir(app_dir)  # Change working dir to zeronet.py dir
     sys.path.insert(0, os.path.join(app_dir, "src/lib"))  # External liblary directory
@@ -131,7 +142,7 @@ def start():
         import update
         update.update()
     else:
-        main()
+        launch()
 
 
 if __name__ == '__main__':

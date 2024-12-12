@@ -1,3 +1,5 @@
+## please note that this file uses custom db cursor and thus may surprise you with how sql queries are performed
+
 import sqlite3
 import json
 import time
@@ -375,10 +377,7 @@ class Db(object):
                 if file_path.endswith("json.gz"):
                     file = helper.limitedGzipFile(fileobj=file)
 
-                if sys.version_info.major == 3 and sys.version_info.minor < 6:
-                    data = json.loads(file.read().decode("utf8"))
-                else:
-                    data = json.load(file)
+                data = json.load(file)
         except Exception as err:
             self.log.debug("Json file %s load error: %s" % (file_path, err))
             data = {}

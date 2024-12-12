@@ -13,6 +13,7 @@ import gevent
 
 from Config import config
 from Crypt import CryptRsa
+from Crypt import ed25519
 from Site import SiteManager
 import socks
 from gevent.lock import RLock
@@ -50,11 +51,8 @@ class TorManager(object):
         else:
             self.fileserver_port = config.fileserver_port
 
-        self.ip, self.port = config.tor_controller.rsplit(":", 1)
-        self.port = int(self.port)
-
-        self.proxy_ip, self.proxy_port = config.tor_proxy.rsplit(":", 1)
-        self.proxy_port = int(self.proxy_port)
+        self.ip, self.port = config.tor_controller_split()
+        self.proxy_ip, self.proxy_port = config.tor_proxy_split()
 
     def start(self):
         self.log.debug("Starting (Tor: %s)" % config.tor)
@@ -214,8 +212,8 @@ class TorManager(object):
             return False
 
     def makeOnionAndKey(self):
-        res = self.request("ADD_ONION NEW:RSA1024 port=%s" % self.fileserver_port)
-        match = re.search("ServiceID=([A-Za-z0-9]+).*PrivateKey=RSA1024:(.*?)[\r\n]", res, re.DOTALL)
+        res = self.request(f"ADD_ONION NEW:ED25519-V3 port={self.fileserver_port}")
+        match = re.search("ServiceID=([A-Za-z0-9]+).*PrivateKey=ED25519-V3:(.*?)[\r\n]", res, re.DOTALL)
         if match:
             onion_address, onion_privatekey = match.groups()
             return (onion_address, onion_privatekey)

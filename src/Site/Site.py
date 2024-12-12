@@ -35,6 +35,7 @@ class Site(object):
     def __init__(self, address, allow_create=True, settings=None):
         self.address = str(re.sub("[^A-Za-z0-9]", "", address))  # Make sure its correct address
         self.address_hash = hashlib.sha256(self.address.encode("ascii")).digest()
+        # sha1 is used for clearnet trackers
         self.address_sha1 = hashlib.sha1(self.address.encode("ascii")).digest()
         self.address_short = "%s..%s" % (self.address[:6], self.address[-4:])  # Short address for logging
         self.log = logging.getLogger("Site:%s" % self.address_short)
@@ -86,7 +87,12 @@ class Site(object):
     # Load site settings from data/sites.json
     def loadSettings(self, settings=None):
         if not settings:
-            settings = json.load(open("%s/sites.json" % config.data_dir)).get(self.address)
+            try:
+                with (config.private_dir / 'sites.json').open() as f:
+                    settings = json.load(f).get(self.address)
+            except Exception as err:
+                logging.error(f'Error loading {config.private_dir}/sites.json: {err}')
+                settings = {}
         if settings:
             self.settings = settings
             if "cache" not in settings:
@@ -110,8 +116,8 @@ class Site(object):
             if config.download_optional == "auto":
                 self.settings["autodownloadoptional"] = True
 
-        # Add admin permissions to homepage
-        if self.address in (config.homepage, config.updatesite) and "ADMIN" not in self.settings["permissions"]:
+        # Add admin permissions according to user settings
+        if self.address in config.admin_pages and "ADMIN" not in self.settings["permissions"]:
             self.settings["permissions"].append("ADMIN")
 
         return
@@ -595,7 +601,6 @@ class Site(object):
         num_connected_peers = len(peers)
 
         random.shuffle(peers)
-        peers = sorted(peers, key=lambda peer: peer.connection.handshake.get("rev", 0) < config.rev - 100)  # Prefer newer clients
 
         if len(peers) < limit * 2 and len(self.peers) > len(peers):  # Add more, non-connected peers if necessary
             peers += self.getRecentPeers(limit * 2)

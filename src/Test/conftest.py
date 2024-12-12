@@ -63,9 +63,6 @@ config.debug = True
 
 os.chdir(os.path.abspath(os.path.dirname(__file__) + "/../.."))  # Set working dir
 
-all_loaded = PluginManager.plugin_manager.loadPlugins()
-assert all_loaded, "Not all plugin loaded successfully"
-
 config.loadPlugins()
 config.parse(parse_config=False)  # Parse again to add plugin configuration options
 

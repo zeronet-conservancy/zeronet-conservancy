@@ -35,8 +35,9 @@ class User(object):
     # Save to data/users.json
     @util.Noparallel(queue=True, ignore_class=True)
     def save(self):
+        users_json = config.private_dir / 'users.json'
         s = time.time()
-        users = json.load(open("%s/users.json" % config.data_dir))
+        users = json.load(open(users_json))
         if self.master_address not in users:
             users[self.master_address] = {}  # Create if not exist
         user_data = users[self.master_address]
@@ -45,7 +46,7 @@ class User(object):
         user_data["sites"] = self.sites
         user_data["certs"] = self.certs
         user_data["settings"] = self.settings
-        helper.atomicWrite("%s/users.json" % config.data_dir, helper.jsonDumps(users).encode("utf8"))
+        helper.atomicWrite(users_json, helper.jsonDumps(users).encode("utf8"))
         self.log.debug("Saved in %.3fs" % (time.time() - s))
         self.delayed_save_thread = None
 

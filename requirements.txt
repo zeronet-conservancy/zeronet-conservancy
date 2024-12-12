@@ -1,9 +1,9 @@
-gevent==1.4.0; python_version <= "3.6"
-greenlet==0.4.16; python_version <= "3.6"
-gevent>=20.9.0; python_version >= "3.7"
-msgpack>=0.4.4
+setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
+gevent>=23.9.0
+msgpack>=0.6.0
 base58
-merkletools
+# for some reason nobody released fresh merkletools that don't require on outdated pysha3
+git+https://github.com/Tierion/pymerkletools.git@f10d71e2cd529a833728e836dc301f9af502d0b0
 rsa
 PySocks>=1.6.8
 pyasn1
@@ -11,3 +11,9 @@ websocket_client
 gevent-ws
 coincurve
 maxminddb
+rich
+defusedxml>=0.7
+pyaes
+requests
+ipython>=8
+GitPython

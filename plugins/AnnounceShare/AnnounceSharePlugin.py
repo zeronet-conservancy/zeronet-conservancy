@@ -14,7 +14,7 @@ from util import helper
 class TrackerStorage(object):
     def __init__(self):
         self.log = logging.getLogger("TrackerStorage")
-        self.file_path = "%s/trackers.json" % config.data_dir
+        self.file_path = config.start_dir / 'trackers.json'
         self.load()
         self.time_discover = 0.0
         atexit.register(self.save)
@@ -185,6 +185,6 @@ class FileServerPlugin(object):
 class ConfigPlugin(object):
     def createArguments(self):
         group = self.parser.add_argument_group("AnnounceShare plugin")
-        group.add_argument('--working_shared_trackers_limit', help='Stop discovering new shared trackers after this number of shared trackers reached', default=5, type=int, metavar='limit')
+        group.add_argument('--working-shared-trackers-limit', help='Stop discovering new shared trackers after this number of shared trackers reached', default=5, type=int, metavar='limit')
 
         return super(ConfigPlugin, self).createArguments()

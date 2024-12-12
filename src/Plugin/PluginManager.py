@@ -17,17 +17,15 @@ class PluginManager:
     def __init__(self):
         self.log = logging.getLogger("PluginManager")
         self.path_plugins = os.path.abspath(os.path.dirname(plugins.__file__))
-        self.path_installed_plugins = config.data_dir + "/__plugins__"
         self.plugins = defaultdict(list)  # Registered plugins (key: class name, value: list of plugins for class)
         self.subclass_order = {}  # Record the load order of the plugins, to keep it after reload
         self.pluggable = {}
         self.plugin_names = []  # Loaded plugin names
         self.plugins_updated = {}  # List of updated plugins since restart
-        self.plugins_rev = {}  # Installed plugins revision numbers
         self.after_load = []   # Execute functions after loaded plugins
         self.function_flags = {}  # Flag function for permissions
         self.reloading = False
-        self.config_path = config.data_dir + "/plugins.json"
+        self.config_path = config.config_dir / 'plugins.json'
         self.loadConfig()
 
         self.config.setdefault("builtin", {})
@@ -89,37 +87,8 @@ class PluginManager:
             plugin["dir_path"] = dir_path
             plugin["inner_path"] = plugin_name
             plugin["enabled"] = is_enabled
-            plugin["rev"] = config.rev
             plugin["loaded"] = plugin_name in self.plugin_names
             plugins.append(plugin)
-
-        plugins += self.listInstalledPlugins(list_disabled)
-        return plugins
-
-    def listInstalledPlugins(self, list_disabled=False):
-        plugins = []
-
-        for address, site_plugins in sorted(self.config.items()):
-            if address == "builtin":
-                continue
-            for plugin_inner_path, plugin_config in sorted(site_plugins.items()):
-                is_enabled = plugin_config.get("enabled", False)
-                if not is_enabled and not list_disabled:
-                    continue
-                plugin_name = os.path.basename(plugin_inner_path)
-
-                dir_path = "%s/%s/%s" % (self.path_installed_plugins, address, plugin_inner_path)
-
-                plugin = {}
-                plugin["source"] = address
-                plugin["name"] = plugin_name
-                plugin["dir_name"] = plugin_name
-                plugin["dir_path"] = dir_path
-                plugin["inner_path"] = plugin_inner_path
-                plugin["enabled"] = is_enabled
-                plugin["rev"] = plugin_config.get("rev", 0)
-                plugin["loaded"] = plugin_name in self.plugin_names
-                plugins.append(plugin)
 
         return plugins
 
@@ -130,7 +99,6 @@ class PluginManager:
         for plugin in self.listPlugins():
             self.log.debug("Loading plugin: %s (%s)" % (plugin["name"], plugin["source"]))
             if plugin["source"] != "builtin":
-                self.plugins_rev[plugin["name"]] = plugin["rev"]
                 site_plugin_dir = os.path.dirname(plugin["dir_path"])
                 if site_plugin_dir not in sys.path:
                     sys.path.append(site_plugin_dir)
@@ -156,10 +124,10 @@ class PluginManager:
         for module_name, module in list(sys.modules.items()):
             if not module or not getattr(module, "__file__", None):
                 continue
-            if self.path_plugins not in module.__file__ and self.path_installed_plugins not in module.__file__:
+            if self.path_plugins not in module.__file__:
                 continue
 
-            if "allow_reload" in dir(module) and not module.allow_reload:  # Reload disabled
+            if not getattr(module, 'allow_reload', True):  # Reload disabled
                 # Re-add non-reloadable plugins
                 for class_name, classes in self.plugins_before.items():
                     for c in classes:

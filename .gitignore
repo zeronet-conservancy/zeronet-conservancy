@@ -7,6 +7,7 @@ __pycache__/
 
 # Hidden files
 .*
+!.dockerignore
 !/.github
 !/.gitignore
 !/.travis.yml
@@ -14,13 +15,16 @@ __pycache__/
 
 # Temporary files
 *.bak
+*~
 
 # Data dir
 data/*
+docker/data/
 *.db
 
 # Virtualenv
 env/*
+venv/*
 
 # Tor data
 tools/tor/data
@@ -33,3 +37,14 @@ zeronet.conf
 
 # ZeroNet log files
 log/*
+
+# Enabled plugins that disabled by default
+plugins/Bootstrapper
+plugins/DonationMessage
+plugins/Multiuser
+plugins/NoNewSites
+plugins/StemPort
+plugins/UiPassword
+
+# Build files
+src/Build.py

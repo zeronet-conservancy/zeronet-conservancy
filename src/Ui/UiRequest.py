@@ -49,13 +49,13 @@ class SecurityError(Exception):
 
 
 @PluginManager.acceptPlugins
-class UiRequest(object):
+class UiRequest:
 
-    def __init__(self, server, get, env, start_response):
+    def __init__(self, server, env, start_response, is_data_request=False):
         if server:
             self.server = server
             self.log = server.log
-        self.get = get  # Get parameters
+        self.get = dict(urllib.parse.parse_qsl(env.get('QUERY_STRING', '')))
         self.env = env  # Enviroment settings
         # ['CONTENT_LENGTH', 'CONTENT_TYPE', 'GATEWAY_INTERFACE', 'HTTP_ACCEPT', 'HTTP_ACCEPT_ENCODING', 'HTTP_ACCEPT_LANGUAGE',
         #  'HTTP_COOKIE', 'HTTP_CACHE_CONTROL', 'HTTP_HOST', 'HTTP_HTTPS', 'HTTP_ORIGIN', 'HTTP_PROXY_CONNECTION', 'HTTP_REFERER',
@@ -66,6 +66,7 @@ class UiRequest(object):
         self.start_response = start_response  # Start response function
         self.user = None
         self.script_nonce = None  # Nonce for script tags in wrapper html
+        self.is_data_request = is_data_request
 
     def learnHost(self, host):
         self.server.allowed_hosts.add(host)
@@ -81,7 +82,7 @@ class UiRequest(object):
             self.learnHost(host)
             return True
 
-        if ":" in host and helper.isIp(host.rsplit(":", 1)[0]):  # Test without port
+        if ":" in host and helper.isIp(host.rsplit(":", 1)[0].lstrip("[").rstrip("]")):  # Test without port
             self.learnHost(host)
             return True
 
@@ -99,8 +100,83 @@ class UiRequest(object):
     def resolveDomain(self, domain):
         return self.server.site_manager.resolveDomainCached(domain)
 
-    # Call the request handler function base on path
+    def hasCorsPermission(self, referer):
+        """Check if site from referer has CORS permission to read site in current request
+
+        NOTE: this allows embedding WITHOUT prepending "cors-" (as it has already been used
+        for a long time e.g. on ZeroBlog++ based sites) as long as read permission has been
+        granted.
+        """
+        target_path = self.env['PATH_INFO']
+        if referer is None or target_path is None:
+            return False
+        s_parts = self.parsePath(referer)
+        t_parts = self.parsePath(target_path)
+        s_address = s_parts['address']
+        t_address = t_parts['address']
+        if not s_address or not t_address:
+            return False
+        s_site = self.server.sites[s_address]
+        return f'Cors:{t_address}' in s_site.settings['permissions']
+
+    def isCrossOriginRequest(self):
+        """Prevent detecting sites on this 0net instance
+
+        In particular, we block non-user requests from other hosts as well as
+        cross-site
+        """
+
+        url = self.getRequestUrl()
+        fetch_mode = self.env.get('HTTP_SEC_FETCH_MODE')
+        origin = self.env.get('HTTP_ORIGIN')
+        referer = self.env.get('HTTP_REFERER')
+
+        # Allow all user-initiated requests
+        if fetch_mode == 'navigate':
+            return False
+
+        # Deny requests that cannot be traced
+        if not origin and not referer:
+            return True
+
+        # Deny requests from non-0net origins
+        if origin and not self.isSameHost(origin, url):
+            return True
+
+        # Allow non-site specific requests
+        if self.getRequestSite() == '/':
+            return False
+
+        # Deny cross site requests
+        if not self.isSameOrigin(referer, url) and not self.hasCorsPermission(referer):
+            return True
+
+        return False
+
     def route(self, path):
+        """Main routing
+
+        If no internal action is performed, calls action[Path] from plugins
+
+        This behaviour is not very flexible or easy to follow, so perhaps
+        we'd want something else..
+        """
+
+        is_navigate = self.env.get('HTTP_SEC_FETCH_MODE') == 'navigate'
+        is_iframe = self.env.get('HTTP_SEC_FETCH_DEST') == 'iframe'
+
+        if ((is_navigate and not is_iframe) or not config.ui_check_cors) and self.is_data_request:
+            host = self.getHostWithoutPort()
+            path_info = self.env['PATH_INFO']
+            query_string = self.env['QUERY_STRING']
+            protocol = self.env['wsgi.url_scheme']
+            return self.actionRedirect(f'{protocol}://{host}:{config.ui_port}{path_info}?{query_string}')
+
+        if config.ui_check_cors and self.isCrossOriginRequest():
+            # we are still exposed by answering on port
+            self.log.warning('Cross-origin request detected. Someone might be trying to analyze your 0net usage')
+            return []
+
         # Restict Ui access by ip
         if config.ui_restrict and self.env['REMOTE_ADDR'] not in config.ui_restrict:
             return self.error403(details=False)
@@ -124,6 +200,7 @@ class UiRequest(object):
             ).encode("utf8")
             return iter([ret_error, ret_body])
 
+        # TODO: phase out .bit support
         # Prepend .bit host for transparent proxy
         if self.isDomain(self.env.get("HTTP_HOST")):
             path = re.sub("^/", "/" + self.env.get("HTTP_HOST") + "/", path)
@@ -175,7 +252,7 @@ class UiRequest(object):
             return self.actionConsole()
         # Wrapper-less static files
         elif path.startswith("/raw/"):
-            return self.actionSiteMedia(path.replace("/raw", "/media", 1), header_noscript=True)
+            return self.actionSiteMedia(path.replace("/raw", "/media", 1), header_noscript=True, raw=True)
 
         elif path.startswith("/add/"):
             return self.actionSiteAdd()
@@ -230,8 +307,12 @@ class UiRequest(object):
     # Return: <dict> Posted variables
     def getPosted(self):
         if self.env['REQUEST_METHOD'] == "POST":
+            try:
+                content_length = int(self.env.get('CONTENT_LENGTH', 0))
+            except ValueError:
+                content_length = 0
             return dict(urllib.parse.parse_qsl(
-                self.env['wsgi.input'].readline().decode()
+                self.env['wsgi.input'].read(content_length).decode()
             ))
         else:
             return {}
@@ -269,15 +350,22 @@ class UiRequest(object):
         else:
             return referer
 
-    def isScriptNonceSupported(self):
-        user_agent = self.env.get("HTTP_USER_AGENT")
-        if "Edge/" in user_agent:
-            is_script_nonce_supported = False
-        elif "Safari/" in user_agent and "Chrome/" not in user_agent:
-            is_script_nonce_supported = False
-        else:
-            is_script_nonce_supported = True
-        return is_script_nonce_supported
+    def getRequestSite(self):
+        """Return 0net site addr associated with current request
+
+        If request is site-agnostic, returns /
+        """
+        path = self.env["PATH_INFO"]
+        match = re.match(r'(/raw)?(?P<site>/1[a-zA-Z0-9]*)', path)
+        if not match:
+            match = re.match(r'(/raw)?/(?P<domain>[a-zA-Z0-9\.\-_]*)', path)
+            if match:
+                domain = match.group('domain')
+                if self.isDomain(domain):
+                    addr = self.resolveDomain(domain)
+                    return '/'+addr
+            return '/'
+        return match.group('site')
 
     # Send response headers
     def sendHeader(self, status=200, content_type="text/html", noscript=False, allow_ajax=False, script_nonce=None, extra_headers=[]):
@@ -285,21 +373,28 @@ class UiRequest(object):
         headers["Version"] = "HTTP/1.1"
         headers["Connection"] = "Keep-Alive"
         headers["Keep-Alive"] = "max=25, timeout=30"
-        headers["X-Frame-Options"] = "SAMEORIGIN"
-        if content_type != "text/html" and self.env.get("HTTP_REFERER") and self.isSameOrigin(self.getReferer(), self.getRequestUrl()):
-            headers["Access-Control-Allow-Origin"] = "*"  # Allow load font files from css
+        headers["Referrer-Policy"] = "same-origin"
 
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
-        elif script_nonce and self.isScriptNonceSupported():
-            headers["Content-Security-Policy"] = "default-src 'none'; script-src 'nonce-{0}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src 'self' blob:".format(script_nonce)
+        elif script_nonce:
+            host = self.getHostWithoutPort()
+            port = int(self.env['SERVER_PORT'])
+            if port == config.ui_port:
+                other_port = config.ui_site_port
+                frame_src = '*'
+            else:
+                other_port = config.ui_port
+                frame_src = 'self'
+
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
 
         if self.env["REQUEST_METHOD"] == "OPTIONS":
             # Allow json access
-            headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Cookie, Range"
+            headers["Access-Control-Allow-Headers"] = "Origin, X-Requested-With, Content-Type, Accept, Cookie, Range, Referer"
             headers["Access-Control-Allow-Credentials"] = "true"
 
         # Download instead of display file types that can be dangerous
@@ -329,7 +424,7 @@ class UiRequest(object):
 
         def renderReplacer(m):
             if m.group(1) in kwargs:
-                return "%s" % kwargs.get(m.group(1), "")
+                return str(kwargs[m.group(1)])
             else:
                 return m.group(0)
 
@@ -371,7 +466,7 @@ class UiRequest(object):
     # Redirect to an url
     def actionRedirect(self, url):
         self.start_response('301 Redirect', [('Location', str(url))])
-        yield self.formatRedirect(url)
+        return self.formatRedirect(url)
 
     def actionIndex(self):
         return self.actionRedirect("/" + config.homepage + "/")
@@ -397,8 +492,9 @@ class UiRequest(object):
             if self.isWebSocketRequest():
                 return self.error403("WebSocket request not allowed to load wrapper")  # No websocket
 
-            if "text/html" not in self.env.get("HTTP_ACCEPT", ""):
-                return self.error403("Invalid Accept header to load wrapper: %s" % self.env.get("HTTP_ACCEPT", ""))
+            http_accept = self.env.get("HTTP_ACCEPT", "")
+            if "text/html" not in http_accept and "*/*" not in http_accept:
+                return self.error403(f"Invalid Accept header to load wrapper: {http_accept}")
             if "prefetch" in self.env.get("HTTP_X_MOZ", "") or "prefetch" in self.env.get("HTTP_PURPOSE", ""):
                 return self.error403("Prefetch not allowed to load wrapper")
 
@@ -448,6 +544,9 @@ class UiRequest(object):
         else:
             server_url = ""
         return server_url
+
+    def getHostWithoutPort(self):
+        return ':'.join(self.env['HTTP_HOST'].split(':')[:-1])
 
     def processQueryString(self, site, query_string):
         match = re.search("zeronet_peers=(.*?)(&|$)", query_string)
@@ -541,17 +640,40 @@ class UiRequest(object):
         if show_loadingscreen is None:
             show_loadingscreen = not site.storage.isFile(file_inner_path)
 
+        def xescape(s):
+            '''combines parts from re.escape & html.escape'''
+            # https://github.com/python/cpython/blob/3.10/Lib/re.py#L267
+            # '&' is handled otherwise
+            re_chars = {i: '\\' + chr(i) for i in  b'()[]{}*+-|^$\\.~# \t\n\r\v\f'}
+            # https://github.com/python/cpython/blob/3.10/Lib/html/__init__.py#L12
+            html_chars = {
+                '<' : '&lt;',
+                '>' : '&gt;',
+                '"' : '&quot;',
+                "'" : '&#x27;',
+            }
+            # we can't replace '&' because it makes certain zites work incorrectly
+            # it should however in no way interfere with re.sub in render
+            repl = {}
+            repl.update(re_chars)
+            repl.update(html_chars)
+            return s.translate(repl)
+
+        scheme = self.env['wsgi.url_scheme']
+        host = self.getHostWithoutPort()
+
         return self.render(
             "src/Ui/template/wrapper.html",
+            site_file_server=f'{scheme}://{host}:{config.ui_site_port}',
             server_url=server_url,
             inner_path=inner_path,
-            file_url=re.escape(file_url),
-            file_inner_path=re.escape(file_inner_path),
+            file_url=xescape(file_url),
+            file_inner_path=xescape(file_inner_path),
             address=site.address,
-            title=html.escape(title),
+            title=xescape(title),
             body_style=body_style,
             meta_tags=meta_tags,
-            query_string=re.escape(inner_query_string),
+            query_string=xescape(inner_query_string),
             wrapper_key=site.settings["wrapper_key"],
             ajax_key=site.settings["ajax_key"],
             wrapper_nonce=wrapper_nonce,
@@ -559,7 +681,7 @@ class UiRequest(object):
             permissions=json.dumps(site.settings["permissions"]),
             show_loadingscreen=json.dumps(show_loadingscreen),
             sandbox_permissions=sandbox_permissions,
-            rev=config.rev,
+            rev=config.commit,
             lang=config.language,
             homepage=homepage,
             themeclass=themeclass,
@@ -584,7 +706,26 @@ class UiRequest(object):
         self.server.add_nonces.append(add_nonce)
         return add_nonce
 
+    def isSameHost(self, url_a, url_b):
+        """Check if urls have the same HOST (to prevent leaking resources to clearnet sites)"""
+        if not url_a or not url_b:
+            return False
+
+        host_pattern = r'(?P<host>http[s]?://.*?)(/|$)'
+
+        match_a = re.match(host_pattern, url_a)
+        match_b = re.match(host_pattern, url_b)
+
+        if not match_a or not match_b:
+            return False
+
+        host_a = match_a.group('host')
+        host_b = match_b.group('host')
+
+        return host_a == host_b
+
     def isSameOrigin(self, url_a, url_b):
+        """Check if 0net origin is the same"""
         if not url_a or not url_b:
             return False
 
@@ -611,10 +752,12 @@ class UiRequest(object):
         if "../" in path or "./" in path:
             raise SecurityError("Invalid path")
 
-        match = re.match(r"/media/(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
+        match = re.match(r"(?P<server>(http[s]{0,1}://(.*?))?)/(media/)?(?P<address>[A-Za-z0-9]+[A-Za-z0-9\._-]+)(?P<inner_path>/.*|$)", path)
         if match:
             path_parts = match.groupdict()
-            if self.isDomain(path_parts["address"]):
+            addr = path_parts["address"]
+            if self.isDomain(addr):
+                path_parts["domain"] = addr
                 path_parts["address"] = self.resolveDomain(path_parts["address"])
             path_parts["request_address"] = path_parts["address"]  # Original request address (for Merger sites)
             path_parts["inner_path"] = path_parts["inner_path"].lstrip("/")
@@ -625,18 +768,25 @@ class UiRequest(object):
             return None
 
     # Serve a media for site
-    def actionSiteMedia(self, path, header_length=True, header_noscript=False):
+    def actionSiteMedia(self, path, header_length=True, header_noscript=False, raw=False):
         try:
             path_parts = self.parsePath(path)
         except SecurityError as err:
             return self.error403(err)
+
+        if "domain" in path_parts:
+            addr = path_parts['address']
+            path = path_parts['inner_path']
+            query = self.env['QUERY_STRING']
+            raw = "/raw" if raw else ""
+            return self.actionRedirect(f"{raw}/{addr}/{path}?{query}")
 
         if not path_parts:
             return self.error404(path)
 
         address = path_parts["address"]
 
-        file_path = "%s/%s/%s" % (config.data_dir, address, path_parts["inner_path"])
+        file_path = config.data_dir / address / path_parts['inner_path']
 
         if (config.debug or config.merge_media) and file_path.split("/")[-1].startswith("all."):
             # If debugging merge *.css to all.css and *.js to all.js
@@ -862,20 +1012,8 @@ class UiRequest(object):
             return [b"No error! :)"]
 
     # Just raise an error to get console
+    # Is this even useful anymore?
     def actionConsole(self):
-        import sys
-        sites = self.server.sites
-        main = sys.modules["main"]
-
-        def bench(code, times=100, init=None):
-            sites = self.server.sites
-            main = sys.modules["main"]
-            s = time.time()
-            if init:
-                eval(compile(init, '<string>', 'exec'), globals(), locals())
-            for _ in range(times):
-                back = eval(code, globals(), locals())
-            return ["%s run: %.3fs" % (times, time.time() - s), back]
         raise Exception("Here is your console")
 
     # - Tests -
@@ -921,7 +1059,7 @@ class UiRequest(object):
 
         if details and config.debug:
             details = {key: val for key, val in list(self.env.items()) if hasattr(val, "endswith") and "COOKIE" not in key}
-            details["version_zeronet"] = "%s r%s" % (config.version, config.rev)
+            details["version_zeronet"] = config.version_full
             details["version_python"] = sys.version
             details["version_gevent"] = gevent.__version__
             details["plugins"] = PluginManager.plugin_manager.plugin_names

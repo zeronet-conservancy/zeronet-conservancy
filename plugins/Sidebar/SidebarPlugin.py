@@ -12,6 +12,7 @@ import urllib.parse
 import gevent
 
 import util
+import main
 from Config import config
 from Plugin import PluginManager
 from Debug import Debug
@@ -115,11 +116,11 @@ class UiWebsocketPlugin(object):
             local_html = ""
 
         peer_ips = [peer.key for peer in site.getConnectablePeers(20, allow_private=False)]
+        self_onion = main.file_server.tor_manager.site_onions.get(site.address, None)
+        if self_onion is not None:
+            peer_ips.append(self_onion+'.onion')
         peer_ips.sort(key=lambda peer_ip: ".onion:" in peer_ip)
-        copy_link = "http://127.0.0.1:43110/%s/?zeronet_peers=%s" % (
-            site.content_manager.contents.get("content.json", {}).get("domain", site.address),
-            ",".join(peer_ips)
-        )
+        copy_link = f'http://127.0.0.1:43110/{site.address}/?zeronet_peers={",".join(peer_ips)}'
 
         body.append(_("""
             <li>
@@ -415,43 +416,87 @@ class UiWebsocketPlugin(object):
             class_pause = "hidden"
             class_resume = ""
 
+        dashboard = config.homepage
+        dsite = self.user.sites.get(dashboard, None)
+        if not dsite:
+            print('No dashboard found, cannot favourite')
+            class_favourite = "hidden"
+            class_unfavourite = "hidden"
+        elif not dsite.get('settings', {}).get('favorite_sites', {}).get(self.site.address, False):
+            class_favourite = ""
+            class_unfavourite = "hidden"
+        else:
+            class_favourite = "hidden"
+            class_unfavourite = ""
+
         body.append(_("""
             <li>
              <label>{_[Site control]}</label>
              <a href='#Update' class='button noupdate' id='button-update'>{_[Update]}</a>
              <a href='#Pause' class='button {class_pause}' id='button-pause'>{_[Pause]}</a>
+             <a href='#Favourite' class='button {class_favourite}' id='button-favourite'>{_[Favourite]}</a>
+             <a href='#Unfavourite' class='button {class_unfavourite}' id='button-unfavourite'>{_[Unfavourite]}</a>
              <a href='#Resume' class='button {class_resume}' id='button-resume'>{_[Resume]}</a>
              <a href='#Delete' class='button noupdate' id='button-delete'>{_[Delete]}</a>
             </li>
         """))
 
-        donate_key = site.content_manager.contents.get("content.json", {}).get("donate", True)
         site_address = self.site.address
         body.append(_("""
             <li>
              <label>{_[Site address]}</label><br>
              <div class='flex'>
               <span class='input text disabled'>{site_address}</span>
-        """))
-        if donate_key == False or donate_key == "":
-            pass
-        elif (type(donate_key) == str or type(donate_key) == str) and len(donate_key) > 0:
-            body.append(_("""
              </div>
             </li>
+        """))
+        donate_generic = site.content_manager.contents.get("content.json", {}).get("donate", None) or site.content_manager.contents.get("content.json", {}).get("donate-generic", None)
+        donate_btc = site.content_manager.contents.get("content.json", {}).get("donate-btc", None)
+        donate_xmr = site.content_manager.contents.get("content.json", {}).get("donate-xmr", None)
+        donate_ada = site.content_manager.contents.get("content.json", {}).get("donate-ada", None)
+        donate_enabled = bool(donate_generic or donate_btc or donate_xmr or donate_ada)
+        if donate_enabled:
+            body.append(_("""
             <li>
-             <label>{_[Donate]}</label><br>
-             <div class='flex'>
-             {donate_key}
+              <label>{_[Donate]}</label><br>
             """))
-        else:
+        if donate_generic:
             body.append(_("""
-              <a href='bitcoin:{site_address}' class='button' id='button-donate'>{_[Donate]}</a>
+            <div class='flex'>
+              {donate_generic}
+            </div>
             """))
-        body.append(_("""
-             </div>
+        if donate_btc:
+            body.append(_("""
+            <div class='flex'>
+              <span style="font-size:90%">{donate_btc}</span><br/>
+            </div>
+            <div class='flex'>
+              <a href='bitcoin:{donate_btc}' class='button'>{_[Donate BTC]}</a>
+            </div>
+            """))
+        if donate_xmr:
+            body.append(_("""
+            <div class='flex'>
+              <span style="font-size:90%">{donate_xmr}</span><br/>
+            </div>
+            <div class='flex'>
+              <a href='monero:{donate_xmr}' class='button'>{_[Donate Monero]}</a>
+            </div>
+            """))
+        if donate_ada:
+            body.append(_("""
+            <div class='flex'>
+              <span style="font-size:90%">{donate_ada}</span><br/>
+            </div>
+            <div class='flex'>
+              <a href='web+cardano:{donate_ada}' class='button'>{_[Donate Ada/Cardano]}</a>
+            </div>
+            """))
+        if donate_enabled:
+            body.append(_("""
             </li>
-        """))
+            """))
 
     def sidebarRenderOwnedCheckbox(self, body, site):
         if self.site.settings["own"]:
@@ -557,9 +602,9 @@ class UiWebsocketPlugin(object):
     def downloadGeoLiteDb(self, db_path):
         import gzip
         import shutil
-        from util import helper
+        import requests
 
-        if config.offline:
+        if config.offline or config.tor == 'always':
             return False
 
         self.log.info("Downloading GeoLite2 City database...")
@@ -572,19 +617,18 @@ class UiWebsocketPlugin(object):
             downloadl_err = None
             try:
                 # Download
-                response = helper.httpRequest(db_url)
-                data_size = response.getheader('content-length')
+                response = requests.get(db_url, stream=True)
+                data_size = response.headers.get('content-length')
+                if data_size is None:
+                    data.write(response.content)
+                data_size = int(data_size)
                 data_recv = 0
                 data = io.BytesIO()
-                while True:
-                    buff = response.read(1024 * 512)
-                    if not buff:
-                        break
+                for buff in response.iter_content(chunk_size=1024 * 512):
                     data.write(buff)
                     data_recv += 1024 * 512
-                    if data_size:
-                        progress = int(float(data_recv) / int(data_size) * 100)
-                        self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], progress])
+                    progress = int(float(data_recv) / data_size * 100)
+                    self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], progress])
                 self.log.info("GeoLite2 City database downloaded (%s bytes), unpacking..." % data.tell())
                 data.seek(0)
 
@@ -642,7 +686,7 @@ class UiWebsocketPlugin(object):
         if sys.platform == "linux":
             sys_db_paths += ['/usr/share/GeoIP/' + db_name]
 
-        data_dir_db_path = os.path.join(config.data_dir, db_name)
+        data_dir_db_path = config.start_dir / db_name
 
         db_paths = sys_db_paths + [data_dir_db_path]
 
@@ -739,9 +783,6 @@ class UiWebsocketPlugin(object):
     @flag.admin
     @flag.no_multiuser
     def actionSiteSetOwned(self, to, owned):
-        if self.site.address == config.updatesite:
-            return {"error": "You can't change the ownership of the updater site"}
-
         self.site.settings["own"] = bool(owned)
         self.site.updateWebsocket(owned=owned)
         return "ok"

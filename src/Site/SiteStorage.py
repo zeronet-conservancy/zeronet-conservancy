@@ -29,7 +29,7 @@ thread_pool_fs_batch = ThreadPool.ThreadPool(1, name="FS batch")
 class SiteStorage(object):
     def __init__(self, site, allow_create=True):
         self.site = site
-        self.directory = "%s/%s" % (config.data_dir, self.site.address)  # Site data diretory
+        self.directory = config.data_dir / self.site.address  # Site data diretory
         self.allowed_dir = os.path.abspath(self.directory)  # Only serve file within this dir
         self.log = site.log
         self.db = None  # Db class
@@ -314,7 +314,7 @@ class SiteStorage(object):
         directory = self.getPath(dir_inner_path)
         for root, dirs, files in os.walk(directory):
             root = root.replace("\\", "/")
-            root_relative_path = re.sub("^%s" % re.escape(directory), "", root).lstrip("/")
+            root_relative_path = re.sub(f'^{re.escape(str(directory))}', '', root).lstrip('/')
             for file_name in files:
                 if root_relative_path:  # Not root dir
                     file_relative_path = root_relative_path + "/" + file_name
@@ -413,8 +413,8 @@ class SiteStorage(object):
         if path == self.directory:
             inner_path = ""
         else:
-            if path.startswith(self.directory):
-                inner_path = path[len(self.directory) + 1:]
+            if str(path).startswith(str(self.directory)):
+                inner_path = path[len(str(self.directory)) + 1:]
             else:
                 raise Exception("File not allowed: %s" % path)
         return inner_path
@@ -452,19 +452,21 @@ class SiteStorage(object):
                     bad_files.append(file_inner_path)
                     continue
 
+                error = None
                 if quick_check:
                     ok = os.path.getsize(file_path) == content["files"][file_relative_path]["size"]
                     if not ok:
-                        err = "Invalid size"
+                        error = "Invalid size"
                 else:
                     try:
                         ok = self.site.content_manager.verifyFile(file_inner_path, open(file_path, "rb"))
                     except Exception as err:
+                        error = err
                         ok = False
 
                 if not ok:
                     back["num_file_invalid"] += 1
-                    self.log.debug("[INVALID] %s: %s" % (file_inner_path, err))
+                    self.log.debug("[INVALID] %s: %s" % (file_inner_path, error))
                     if add_changed or content.get("cert_user_id"):  # If updating own site only add changed user files
                         bad_files.append(file_inner_path)
 

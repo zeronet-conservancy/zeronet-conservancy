@@ -413,7 +413,7 @@ class ConfigPlugin(object):
         back = super(ConfigPlugin, self).createArguments()
         if self.getCmdlineValue("test") == "benchmark":
             self.test_parser.add_argument(
-                '--num_multipler', help='Benchmark run time multipler',
+                '--num-multipler', help='Benchmark run time multipler',
                 default=1.0, type=float, metavar='num'
             )
             self.test_parser.add_argument(
@@ -422,7 +422,7 @@ class ConfigPlugin(object):
             )
         elif self.getCmdlineValue("test") == "portChecker":
             self.test_parser.add_argument(
-                '--func_name', help='Name of open port checker function',
+                '--func-name', help='Name of open port checker function',
                 default=None, metavar='func_name'
             )
         return back

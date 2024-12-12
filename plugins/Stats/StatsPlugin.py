@@ -41,7 +41,7 @@ class UiRequestPlugin(object):
         from Crypt import CryptConnection
 
         # Memory
-        yield "rev%s | " % config.rev
+        yield f'{config.version_full} | '
         yield "%s | " % main.file_server.ip_external_list
         yield "Port: %s | " % main.file_server.port
         yield "Network: %s | " % main.file_server.supported_ip_types
@@ -579,7 +579,7 @@ class ActionsPlugin:
         yield "\n"
 
         yield from self.formatTable(
-            ["ZeroNet version:", "%s rev%s" % (config.version, config.rev)],
+            ["zeronet-conservancy version:", config.version_full],
             ["Python:", "%s" % sys.version],
             ["Platform:", "%s" % sys.platform],
             ["Crypt verify lib:", "%s" % CryptBitcoin.lib_verify_best],

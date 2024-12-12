@@ -202,7 +202,7 @@ class SiteAnnouncer(object):
             else:
                 raise AnnounceError("Unknown protocol: %s" % address_parts["protocol"])
         except Exception as err:
-            self.site.log.warning("Tracker %s announce failed: %s in mode %s" % (tracker, Debug.formatException(err), mode))
+            self.site.log.debug("Tracker %s announce failed: %s in mode %s" % (tracker, Debug.formatException(err), mode))
             error = err
 
         if error:

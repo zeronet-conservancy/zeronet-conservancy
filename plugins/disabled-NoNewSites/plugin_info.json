@@ -1,0 +1,5 @@
+{
+	"name": "NoNewSites",
+	"description": "disables adding new sites (e.g. for proxies)",
+	"default": "disabled"
+}
