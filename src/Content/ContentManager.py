@@ -749,7 +749,7 @@ class ContentManager:
 
         changed_files = [inner_path]
         files_node, files_optional_node = self.hashFiles(
-            helper.getDirname(inner_path), content.get("ignore"), content.get("optional")
+            Path(inner_path).parent, content.get("ignore"), content.get("optional")
         )
 
         if not remove_missing_optional:

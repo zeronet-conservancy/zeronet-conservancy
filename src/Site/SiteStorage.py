@@ -46,11 +46,11 @@ class SiteStorage(object):
 
     def getDbFile(self):
         if self.db:
-            return self.db.schema["db_file"]
+            return Path(self.db.schema['db_file'])
         else:
             if self.isFile("dbschema.json"):
                 schema = self.loadJson("dbschema.json")
-                return schema["db_file"]
+                return Path(schema['db_file'])
             else:
                 return False
 
