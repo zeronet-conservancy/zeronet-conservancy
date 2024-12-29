@@ -57,12 +57,6 @@ class UiRequest:
             self.log = server.log
         self.get = dict(urllib.parse.parse_qsl(env.get('QUERY_STRING', '')))
         self.env = env  # Enviroment settings
-        # ['CONTENT_LENGTH', 'CONTENT_TYPE', 'GATEWAY_INTERFACE', 'HTTP_ACCEPT', 'HTTP_ACCEPT_ENCODING', 'HTTP_ACCEPT_LANGUAGE',
-        #  'HTTP_COOKIE', 'HTTP_CACHE_CONTROL', 'HTTP_HOST', 'HTTP_HTTPS', 'HTTP_ORIGIN', 'HTTP_PROXY_CONNECTION', 'HTTP_REFERER',
-        #  'HTTP_USER_AGENT', 'PATH_INFO', 'QUERY_STRING', 'REMOTE_ADDR', 'REMOTE_PORT', 'REQUEST_METHOD', 'SCRIPT_NAME',
-        #  'SERVER_NAME', 'SERVER_PORT', 'SERVER_PROTOCOL', 'SERVER_SOFTWARE', 'werkzeug.request', 'wsgi.errors',
-        #  'wsgi.input', 'wsgi.multiprocess', 'wsgi.multithread', 'wsgi.run_once', 'wsgi.url_scheme', 'wsgi.version']
-
         self.start_response = start_response  # Start response function
         self.user = None
         if is_data_request:
@@ -78,6 +72,9 @@ class UiRequest:
         self.server.log.info("Added %s as allowed host" % host)
 
     def isHostAllowed(self, host):
+        if config.debug_unsafe:
+            return True
+
         if host in self.server.allowed_hosts:
             return True
 
@@ -223,7 +220,10 @@ class UiRequest:
             else:
                 content_type = self.getContentType(path)
 
-            extra_headers = {"Access-Control-Allow-Origin": "null"}
+            if config.debug_unsafe:
+                extra_headers = {'Access-Control-Allow-Origin': '*'}
+            else:
+                extra_headers = {'Access-Control-Allow-Origin': 'null'}
 
             self.sendHeader(content_type=content_type, extra_headers=extra_headers, noscript=True)
             return ""
@@ -380,6 +380,9 @@ class UiRequest:
         headers["Keep-Alive"] = "max=25, timeout=30"
         headers["Referrer-Policy"] = "same-origin"
 
+        if config.debug_unsafe:
+            headers['Access-Control-Allow-Origin'] = '*'
+
         if noscript:
             headers["Content-Security-Policy"] = "default-src 'none'; sandbox allow-top-navigation allow-forms; img-src *; font-src * data:; media-src *; style-src * 'unsafe-inline';"
         else:
@@ -398,10 +401,8 @@ class UiRequest:
                 script_src += f" 'nonce-{self.other_nonce}'"
             headers["Content-Security-Policy"] = f"default-src 'none'; script-src {script_src}; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src {frame_src} {host}:{other_port} ws://{host}:{other_port}; frame-src {frame_src}"
 
-        print(headers.get('Content-Security-Policy'))
-
-        if allow_ajax:
-            headers["Access-Control-Allow-Origin"] = "null"
+        if allow_ajax and not config.debug_unsafe:
+            headers['Access-Control-Allow-Origin'] = 'null'
 
         if self.env["REQUEST_METHOD"] == "OPTIONS":
             # Allow json access
@@ -915,7 +916,9 @@ class UiRequest:
         return block
 
     # Stream a file to client
-    def actionFile(self, file_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers={}, file_size=None, file_obj=None, path_parts=None):
+    def actionFile(self, file_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers=None, file_size=None, file_obj=None, path_parts=None):
+        if extra_headers is None:
+            extra_headers = {}
         file_name = os.path.basename(file_path)
 
         if file_size is None:
