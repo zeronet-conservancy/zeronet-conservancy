@@ -1,6 +1,5 @@
 import logging
 import json
-import time
 import binascii
 
 import gevent
@@ -30,7 +29,7 @@ class User:
         self.sites = self.loadSites(data)
         self.settings = data.get("settings", {})
         self.delayed_save_thread = None
-        self.log = logging.getLogger("User:%s" % self.master_address)
+        self.log = logging.getLogger(f"User:{self.master_address}")
 
     def loadSites(self, data):
         """Load sites together with their user settings"""
@@ -103,7 +102,6 @@ class User:
 
     @util.Noparallel()
     def generateAuthAddress(self, address):
-        s = time.time()
         address_id = self.getAddressAuthIndex(address)  # Convert site address to int
         auth_privatekey = CryptBitcoin.hdPrivatekey(self.master_seed, address_id)
         self.sites[address] = {
@@ -111,7 +109,6 @@ class User:
             "auth_privatekey": auth_privatekey
         }
         self.saveDelayed()
-        self.log.debug("Added new site: %s in %.3fs" % (address, time.time() - s))
         return self.sites[address]
 
     def getSiteData(self, address, create=True):
