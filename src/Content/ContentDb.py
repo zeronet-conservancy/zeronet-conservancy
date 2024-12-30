@@ -155,11 +155,16 @@ class ContentDb(Db):
         """Returns all known public public and whether they have related site and user profile"""
         query = '''
             SELECT
-                address,
-                COUNT(*) > 0 AS has_content_record,
-                EXISTS (SELECT 1 FROM content c1 WHERE c1.address = c.address AND c1.inner_path = 'profile/content.json') AS has_profile_content
-            FROM content c
-            GROUP BY address
+                owner_address as address,
+            MAX(CASE
+                WHEN owner_address = address THEN 1 ELSE 0
+            END) AS has_content_record,
+	    MAX(CASE
+                WHEN inner_path = "profile/content.json" THEN 1 ELSE 0
+            END) AS has_profile_content
+            FROM
+                content
+            GROUP BY owner_address;
         '''
 
         res = self.execute(query)
@@ -175,8 +180,14 @@ class ContentDb(Db):
 
     def getSizeLimitRules(self):
         """Get all size limit rules"""
-        query = '''SELECT * FROM size_limit'''
+        query = '''SELECT * FROM size_limit ORDER BY priority DESC'''
         res = self.execute(query)
+        return [dict(x) for x in res.fetchall()]
+
+    def getSizeLimitRulesFor(self, address):
+        """Get size limit rules for a user/site"""
+        query = '''SELECT * FROM size_limit WHERE address = '*' OR address = ? ORDER BY priority DESC'''
+        res = self.execute(query, [address])
         return [dict(x) for x in res.fetchall()]
 
     def addPrivateSizeLimitRule(self, address, rule, value, priority):
