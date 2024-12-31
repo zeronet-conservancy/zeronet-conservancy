@@ -944,8 +944,7 @@ class UiWebsocket:
 
         accounts.append(['', noauth_address, _["No certificate"], ''])
 
-        if not accepted_domains:  # Accept any if no filter defined
-            accept_any = True
+        accept_any = accept_any or not accepted_domains or config.nocert_everywhere
 
         # append every ok certs
         for acc in self.user.accounts:
