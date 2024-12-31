@@ -655,7 +655,7 @@ class ContentManager:
             return False
         elif relative_path.is_absolute():
             return False
-        elif relative_path.name[-1] == ' ':  # Ends with
+        elif relative_path.name == '' or relative_path.name[-1] == ' ':  # Ends with
             return False
         elif re.match(r".*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)", str(relative_path), re.IGNORECASE):  # Protected on Windows
             return False
@@ -676,6 +676,8 @@ class ContentManager:
 
         for file_relative_path in self.site.storage.walk(dir_inner_path, ignore_pattern):
             file_name = file_relative_path.name
+            if file_name == '':
+                continue
 
             ignored = optional = False
             if file_name == "content.json":
