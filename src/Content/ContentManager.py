@@ -687,7 +687,7 @@ class ContentManager:
                 self.log.error("- [ERROR] Invalid filename: %s" % file_relative_path)
             elif dir_inner_path == "" and db_inner_path and file_relative_path == db_inner_path:
                 ignored = True
-            elif optional_pattern and SafeRe.match(optional_pattern, file_relative_path):
+            elif optional_pattern and SafeRe.match(optional_pattern, str(file_relative_path)):
                 optional = True
 
             if ignored:  # Ignore content.json, defined regexp and files starting with .
@@ -744,7 +744,7 @@ class ContentManager:
                     self.log.info("Extending content.json with: %s" % key)
 
         directory = self.site.storage.getPath(inner_path).parent
-        inner_directory = helper.getDirname(inner_path)
+        inner_directory = Path(helper.getDirname(inner_path))
         self.log.info("Opening site data directory: %s..." % directory)
 
         changed_files = [inner_path]
@@ -764,7 +764,7 @@ class ContentManager:
             old_hash = content.get("files", {}).get(file_relative_path, {}).get("sha512")
             new_hash = files_merged[file_relative_path]["sha512"]
             if old_hash != new_hash:
-                changed_files.append(inner_directory / file_relative_path)
+                changed_files.append(inner_directory / Path(file_relative_path))
 
         self.log.debug("Changed files: %s" % changed_files)
         if update_changed_files:
