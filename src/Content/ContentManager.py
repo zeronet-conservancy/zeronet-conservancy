@@ -478,7 +478,7 @@ class ContentManager:
         """Get rules for a file"""
         siteRules = self.getSiteRules(inner_path, content)
         if config.nocert_everywhere:
-            if siteRules.get('cert_signers'):
+            if siteRules and siteRules.get('cert_signers'):
                 siteRules['cert_signers']['nocert'] = []
         return applyLimitRules(siteRules)
 

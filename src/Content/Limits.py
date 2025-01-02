@@ -8,7 +8,12 @@ from .ContentDb import getContentDb
 
 def applyLimitRules(rules):
     print("Rules before limits")
+    if not rules:
+        return rules
     print(rules)
+    if 'user_address' not in rules:
+        # TODO
+        return rules
     cdb = getContentDb()
     limits = cdb.getSizeLimitRulesFor(rules['user_address'])
     print(limits)
