@@ -399,6 +399,8 @@ class UiRequest:
                 script_src += f" 'nonce-{script_nonce}'"
             if self.other_nonce:
                 script_src += f" 'nonce-{self.other_nonce}'"
+            if config.unsafe_inlines_csp:
+                script_src = "* 'unsafe-inline'"
             headers["Content-Security-Policy"] = f"default-src 'none'; script-src {script_src}; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src {frame_src} {host}:{other_port} ws://{host}:{other_port}; frame-src {frame_src}"
 
         if allow_ajax and not config.debug_unsafe:

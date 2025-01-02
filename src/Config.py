@@ -1,4 +1,5 @@
 import argparse
+from argparse import BooleanOptionalAction
 import sys
 import os
 import platform
@@ -358,6 +359,7 @@ class Config:
         self.parser.add_argument('--verbose', help='More detailed logging', action='store_true')
         self.parser.add_argument('--debug', help='Debug mode', action='store_true')
         self.parser.add_argument('--debug-unsafe', help='Disable safety checks which impede debugging', action=argparse.BooleanOptionalAction, default=False)
+        self.parser.add_argument('--unsafe-inlines-csp', help="Disable CSPolicy breaking inline script", action=BooleanOptionalAction, default=False)
         self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
         self.parser.add_argument('--debug-socket', help='Debug socket connections', action='store_true')
         self.parser.add_argument('--merge-media', help='Merge all.js and all.css', action='store_true')
