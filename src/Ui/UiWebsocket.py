@@ -26,28 +26,6 @@ from util.Flag import flag
 from Content.ContentManager import VerifyError, SignError
 from Content import ContentDb
 
-def requires_permission(permission):
-    """Decorator for adding required permissions to API handlers"""
-    def wrapper(f):
-        if not hasattr(f, 'required_permissions'):
-            f.required_permissions = set()
-        f.required_permissions.add(permission)
-        return f
-    return wrapper
-
-def ws_api_call(name):
-    """Decorator for websocket API handler functions
-
-    Usage:
-    @ws_api_call('coolThing')
-    def myCoolApi(args):
-        pass
-    """
-    def wrapper(f):
-        UiWebsocket.registerApiCall(name, f)
-        return f
-    return wrapper
-
 # TODO: NOPLUGIN
 @PluginManager.acceptPlugins
 class UiWebsocket:

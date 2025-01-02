@@ -1,7 +1,7 @@
-from Ui.UiWebsocket import ws_api_call, requires_permission
+from .Util import ws_api_call, requires_permission
 from Content import ContentDb
 
-@ws_api_call('getSizeLimitRules')
+@ws_api_call
 @requires_permission('ADMIN')
 def getSizeLimitRules(ws, to):
     """Returns all size limit rules"""
@@ -11,7 +11,7 @@ def getSizeLimitRules(ws, to):
     print(res)
     ws.response(to, res)
 
-@ws_api_call('addPrivateSizeLimitRule')
+@ws_api_call
 @requires_permission('ADMIN')
 def addPrivateSizeLimitRule(ws, to, address, rule, value, priority):
     cdb = ContentDb.getContentDb()
