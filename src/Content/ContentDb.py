@@ -204,6 +204,13 @@ class ContentDb(Db):
             priority,
         ])
 
+    def removePrivateSizeLimitRule(self, rule_id):
+        """Remove private limit size rule"""
+        print(f'remove {rule_id}')
+        res = self.execute('DELETE FROM size_limit WHERE limit_id = ?', (rule_id,))
+        print('how so')
+        print(res)
+
     def listModified(self, site, after=None, before=None):
         params = { 'address': site.address }
         if after:

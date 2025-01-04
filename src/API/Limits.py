@@ -1,4 +1,4 @@
-from .Util import ws_api_call, requires_permission
+from .Util import ws_api_call, requires_permission, wrap_api_ok
 from Content import ContentDb
 
 @ws_api_call
@@ -13,16 +13,14 @@ def getSizeLimitRules(ws, to):
 
 @ws_api_call
 @requires_permission('ADMIN')
+@wrap_api_ok
 def addPrivateSizeLimitRule(ws, to, address, rule, value, priority):
     cdb = ContentDb.getContentDb()
-    try:
-        cdb.addPrivateSizeLimitRule(address, rule, value, priority)
-    except Exception as err:
-        res = {
-            'error': f"Error while adding: {err}",
-        }
-    else:
-        res = {
-            'ok': True,
-        }
-    ws.response(to, res)
+    cdb.addPrivateSizeLimitRule(address, rule, value, priority)
+
+@ws_api_call
+@requires_permission('ADMIN')
+@wrap_api_ok
+def removePrivateSizeLimitRule(ws, to, rule_id):
+    cdb = ContentDb.getContentDb()
+    cdb.removePrivateSizeLimitRule(rule_id)

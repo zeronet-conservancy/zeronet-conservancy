@@ -21,3 +21,20 @@ def ws_api_call(f):
     """
     UiWebsocket.registerApiCall(f.__name__, f)
     return f
+
+def wrap_api_ok(f):
+    def inner(ws, to, *args, **kwargs):
+        try:
+            f(ws, to, *args, **kwargs)
+        except Exception as err:
+            print(err)
+            res = {
+                'error': f"Error on API call `{f.__name__}`: {err}",
+            }
+        else:
+            res = {
+                'ok': True,
+            }
+        ws.response(to, res)
+    inner.__name__ = f.__name__
+    return inner
