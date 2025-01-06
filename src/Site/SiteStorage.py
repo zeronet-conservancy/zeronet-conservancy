@@ -268,7 +268,7 @@ class SiteStorage(object):
     def writeThread(self, inner_path, content):
         file_path = self.getPath(inner_path)
         # Create dir if not exist
-        self.ensureDir(os.path.dirname(inner_path))
+        self.ensureDir(os.path.dirname(file_path))
         # Write file
         if hasattr(content, 'read'):  # File-like object
 
