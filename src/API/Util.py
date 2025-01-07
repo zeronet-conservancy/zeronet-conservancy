@@ -1,3 +1,8 @@
+"""Utilities for writing API handlers
+
+See other files in this directory for implementation examples.
+"""
+
 from functools import wraps
 import Ui.UiWebsocket as UiWebsocket
 
