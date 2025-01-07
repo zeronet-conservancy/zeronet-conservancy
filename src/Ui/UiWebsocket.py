@@ -432,26 +432,6 @@ class UiWebsocket:
                 ret["event"] = ("file_done", file_status)
         self.response(to, ret)
 
-    @flag.admin
-    def actionSiteDetails(self, to, address):
-        """Details on specified site"""
-        print(f'actionSiteDetails(self, to, {address})')
-        site = self.server.sites.get(address)
-        if site is None:
-            res = {
-                'error': "Unknown site",
-            }
-        else:
-            cdb = ContentDb.getContentDb()
-            total_size, optional_size = cdb.getTotalSize(site)
-            owned_size = cdb.getTotalSignedSize(site.address)
-            res = {
-                'total_size': total_size,
-                'optional_size': optional_size,
-                'owned_size': owned_size,
-            }
-        self.response(to, res)
-
     def actionSiteBadFiles(self, to):
         """List files that haven't completed downloading (on this site)"""
         return list(self.site.bad_files.keys())
