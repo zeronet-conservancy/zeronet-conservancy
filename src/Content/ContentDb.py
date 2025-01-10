@@ -4,7 +4,7 @@ from Db.Db import Db, DbTableError
 from Config import config
 from Plugin import PluginManager
 from Debug import Debug
-
+from pathlib import Path
 
 @PluginManager.acceptPlugins
 class ContentDb(Db):
@@ -93,6 +93,20 @@ class ContentDb(Db):
         address = site.address
         self.execute('DELETE FROM content WHERE ?', {"address": address})
         del self.sites[address]
+
+    def getAllSiteOwnedContentPaths(self, site):
+        """"Get list of all content.json files owned by this site
+
+        Does not include user content on the site
+        """
+        res = self.execute(
+            'SELECT inner_path FROM content WHERE ?',
+            {
+                'address': site.address,
+                'owner_address': site.address,
+            }
+        )
+        return [Path(x['inner_path']) for x in res]
 
     def setContent(self, site, inner_path, content, size):
         """Record content.json data of a site into DB"""

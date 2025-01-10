@@ -25,6 +25,7 @@ from util import SafeRe
 from util.Flag import flag
 from Content.ContentManager import VerifyError, SignError
 from Content import ContentDb
+from Site.Sanity import checkSite
 
 # TODO: NOPLUGIN
 @PluginManager.acceptPlugins
@@ -65,6 +66,23 @@ class UiWebsocket:
                     self.addHomepageNotifications()
                 except Exception as err:
                     self.log.error("Uncaught Exception: " + Debug.formatException(err))
+
+        if self.site.settings['own']:
+            try:
+                check_results = checkSite(self.site)
+            except Exception:
+                from traceback import format_exc
+                check_results = None
+                self.site.notifications.append([
+                    'warning',
+                    f"Error while checking site: {format_exc()}"
+                ])
+            if check_results is not None and check_results.bad_user_permissions:
+                reasons = set(res[1] for res in check_results.bad_user_permissions)
+                self.site.notifications.append([
+                    'warning',
+                    f"Some user permissions are bad: {reasons}"
+                ])
 
         for notification in self.site.notifications:  # Send pending notification messages
             # send via WebSocket
