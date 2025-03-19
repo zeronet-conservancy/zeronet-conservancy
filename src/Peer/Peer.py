@@ -187,8 +187,8 @@ class Peer:
                     self.connect()
         return None  # Failed after 3 attempts
 
-    # Get a file content from peer
     def getFile(self, site, inner_path, file_size=None, pos_from=0, pos_to=None, streaming=False):
+        """Get a file content from peer"""
         if file_size and file_size > 5 * 1024 * 1024:
             max_read_size = 1024 * 1024
         else:
