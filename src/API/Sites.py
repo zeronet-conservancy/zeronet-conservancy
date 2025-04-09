@@ -4,6 +4,8 @@
 from .Exceptions import BadAddress
 from .Util import ws_api_call, requires_permission, wrap_api_reply
 from Content import ContentDb
+from Site.Sanity import checkSite
+import dataclasses
 
 @ws_api_call
 @requires_permission('ADMIN')
@@ -21,3 +23,14 @@ def siteDetails(ws, to, address):
         'optional_size': optional_size,
         'owned_size': owned_size,
     }
+
+@ws_api_call
+@requires_permission('ADMIN')
+@wrap_api_reply
+def siteDiagnose(ws, to, address):
+    """Diagnose sanity of a site"""
+    site = ws.server.sites.get(address)
+    if site is None:
+        raise BadAddress(address)
+    res = checkSite(site)
+    return dataclasses.asdict(res)

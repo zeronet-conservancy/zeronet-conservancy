@@ -54,10 +54,13 @@ def checkUserPermissionsAddresses(site) -> BadUserPermissionList:
     return res
 
 def checkAddress(address) -> CheckAddressResult:
-    if isValidAddress(address):
-        return CheckAddressResult(bad = False, user = address)
     if '@' in address:
         return CheckAddressResult(bad = True, error = "non-unique", user = address)
+    try:
+        if isValidAddress(address):
+            return CheckAddressResult(bad = False, user = address)
+    except Exception as exc:
+        return CheckAddressResult(bad = True, error = str(exc), user = address)
     return CheckAddressResult(bad = True, error = "not-a-key", user = address)
 
 def fixAddressesIn(site, content_path, addresses):
