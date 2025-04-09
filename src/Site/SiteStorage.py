@@ -350,8 +350,8 @@ class SiteStorage(object):
         directory = self.getPath(dir_inner_path)
         return os.listdir(directory)
 
-    # Site content updated
     def onUpdated(self, inner_path, file=None):
+        """Called when content has updated to possibly load data from FS into DB"""
         if not isinstance(inner_path, Path):
             inner_path = Path(inner_path)
         # Update Sql cache
@@ -407,6 +407,8 @@ class SiteStorage(object):
         if not isinstance(inner_path, Path):
             self.log.warning(f"{inner_path} was passed to getPath not as Path object")
             inner_path = Path(inner_path)
+        if inner_path.is_absolute():
+            inner_path = inner_path.relative_to(inner_path.anchor)
         if not inner_path:
             return self.directory
 
