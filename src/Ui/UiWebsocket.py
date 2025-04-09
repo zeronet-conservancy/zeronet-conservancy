@@ -78,10 +78,10 @@ class UiWebsocket:
                     f"Error while checking site: {format_exc()}"
                 ])
             if check_results is not None and check_results.bad_user_permissions:
-                reasons = set(res[1] for res in check_results.bad_user_permissions)
+                reasons = set(str(res) for res in check_results.bad_user_permissions)
                 self.site.notifications.append([
                     'warning',
-                    f"Some user permissions are bad: {reasons}"
+                    f"Some user permissions are bad: {reasons}."
                 ])
 
         for notification in self.site.notifications:  # Send pending notification messages
