@@ -30,12 +30,14 @@ class CheckSiteResult:
 
     Currently only check for bad user permission list is implemented.
     """
+    all_ok: bool
     bad_user_permissions: BadUserPermissionList
 
 def checkSite(site) -> CheckSiteResult:
     """Check for sanity of a site"""
     bad_user_permissions = checkUserPermissionsAddresses(site)
     return CheckSiteResult(
+        all_ok = not bad_user_permissions,
         bad_user_permissions = bad_user_permissions,
     )
 
