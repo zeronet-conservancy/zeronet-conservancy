@@ -66,6 +66,7 @@ def checkAddress(address) -> CheckAddressResult:
     return CheckAddressResult(bad = True, error = "not-a-key", user = address)
 
 def fixAddressesIn(site, content_path, addresses):
+    """Fixes user addresses in a given site/content_path"""
     replacements = getAddressReplacements(site, addresses)
     with site.storage.open(content_path) as f:
         contents = json.load(f)
@@ -74,6 +75,7 @@ def fixAddressesIn(site, content_path, addresses):
         json.dump(new_contents, f)
 
 def replaceAddressesIn(content, replaces):
+    """Replace address in dict structure"""
     def onDictElement(key, obj):
         if key == "permissions":
             res = {}
