@@ -27,7 +27,7 @@ class Config:
         try:
             from . import Build
         except ImportError:
-            from .util import Git
+            from util import Git
             self.build_type = 'source'
             self.branch = Git.branch() or 'unknown'
             self.commit = Git.commit() or 'unknown'
@@ -70,6 +70,8 @@ class Config:
         self.trackers_file = None
         self.createParser()
         self.createArguments()
+        self.parseCommandline('')
+        self.setAttributes()
 
     def createParser(self):
         # Create parser
@@ -80,9 +82,13 @@ class Config:
     def __str__(self):
         return str(self.arguments).replace("Namespace", "Config")  # Using argparse str output
 
-    # Convert string to bool
     def strToBool(self, v):
-        return v.lower() in ("yes", "true", "t", "1")
+        """Convert option string to bool"""
+        if v.lower() in ('y', 'yes', 'true', 't', '1', 'on'):
+            return True
+        if v.lower() in ('n', 'no', 'false', 'f', '0', 'off'):
+            return False
+        raise ValueError(f'Incorrect bool value "{v}"')
 
     def getStartDirOld(self):
         """Get directory that would have been used by older versions (pre v0.7.11)"""
@@ -652,9 +658,8 @@ class Config:
 
         return self.argv[argv_index + 1]
 
-    # Expose arguments as class attributes
     def setAttributes(self):
-        # Set attributes from arguments
+        """Expose arguments as class attributes"""
         if self.arguments:
             args = vars(self.arguments)
             for key, val in args.items():
