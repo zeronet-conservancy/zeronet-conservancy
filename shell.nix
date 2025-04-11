@@ -5,7 +5,7 @@ pkgs.mkShell {
     (pkgs.python312.withPackages (ps: with ps; [
       gevent msgpack base58 merkletools rsa pysocks pyasn1 websocket-client
       gevent-websocket rencode bitcoinlib maxminddb pyopenssl rich defusedxml
-      pyaes coincurve pytest
+      pyaes coincurve pytest typeguard
     ]))
   ];
 }
