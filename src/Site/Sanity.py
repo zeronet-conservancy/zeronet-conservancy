@@ -12,17 +12,21 @@ from Crypt.CryptBitcoin import isValidAddress
 
 @dataclass
 class CheckAddressResult:
-    bad: bool
+    is_ok: bool
     error: Optional[str] = None
     user: Optional[str] = None
 
     def __str__(self):
-        if not self.bad:
+        if self.is_ok:
             return 'ok'
         err = self.error or 'unknown-error'
         return f'{err}({self.user})'
 
-BadUserPermissionList = List[CheckAddressResult]
+@dataclass
+class CheckContentResult:
+    is_ok: bool
+    inner_path: str
+    user_addresses: List[CheckAddressResult]
 
 @dataclass
 class CheckSiteResult:
@@ -30,40 +34,50 @@ class CheckSiteResult:
 
     Currently only check for bad user permission list is implemented.
     """
-    all_ok: bool
-    bad_user_permissions: BadUserPermissionList
+    is_ok: bool
+    contents: List[CheckContentResult]
 
 def checkSite(site) -> CheckSiteResult:
     """Check for sanity of a site"""
-    bad_user_permissions = checkUserPermissionsAddresses(site)
+    contents = checkUserPermissionsAddresses(site)
     return CheckSiteResult(
-        all_ok = not bad_user_permissions,
-        bad_user_permissions = bad_user_permissions,
+        is_ok = all(c.is_ok for c in contents),
+        contents = contents,
     )
 
-def checkUserPermissionsAddresses(site) -> BadUserPermissionList:
+def checkUserPermissionsAddresses(site) -> List[CheckContentResult]:
     cdb = ContentDb.getContentDb()
     res = []
     for inner_path in cdb.getAllSiteOwnedContentPaths(site):
+        user_addresses = []
         with site.storage.open(inner_path) as content_f:
             contents = json.load(content_f)
         user_permissions = contents.get('user_contents', {}).get('permissions')
         if user_permissions:
             for user_address in user_permissions:
                 address_result = checkAddress(user_address)
-                if address_result.bad:
-                    res.append(address_result)
+                if not address_result.is_ok:
+                    user_addresses.append(address_result)
+        res.append(CheckContentResult(
+            is_ok = all(x.is_ok for x in user_addresses),
+            inner_path = str(inner_path),
+            user_addresses = user_addresses
+        ))
     return res
 
 def checkAddress(address) -> CheckAddressResult:
     if '@' in address:
-        return CheckAddressResult(bad = True, error = "non-unique", user = address)
+        return CheckAddressResult(is_ok = False, error = "non-unique", user = address)
     try:
         if isValidAddress(address):
-            return CheckAddressResult(bad = False, user = address)
+            return CheckAddressResult(is_ok = True, user = address)
     except Exception as exc:
-        return CheckAddressResult(bad = True, error = str(exc), user = address)
-    return CheckAddressResult(bad = True, error = "not-a-key", user = address)
+        return CheckAddressResult(is_ok = False, error = str(exc), user = address)
+    return CheckAddressResult(
+        is_ok = False,
+        error = "not-a-key",
+        user = address
+    )
 
 def fixAddressesIn(site, content_path, addresses):
     """Fixes user addresses in a given site/content_path"""

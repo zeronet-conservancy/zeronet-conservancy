@@ -6,6 +6,8 @@ from .Util import ws_api_call, requires_permission, wrap_api_reply
 from Content import ContentDb
 from Site.Sanity import checkSite
 import dataclasses
+from typeguard import typechecked
+from typing import List
 
 @ws_api_call
 @requires_permission('ADMIN')
@@ -27,7 +29,8 @@ def siteDetails(ws, to, address):
 @ws_api_call
 @requires_permission('ADMIN')
 @wrap_api_reply
-def siteDiagnose(ws, to, address):
+@typechecked
+def siteDiagnose(ws, to, address: str):
     """Diagnose sanity of a site"""
     site = ws.server.sites.get(address)
     if site is None:
