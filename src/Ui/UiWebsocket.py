@@ -214,7 +214,7 @@ class UiWebsocket:
                 self.ws.send(json.dumps(message))
                 self.state["sending"] = False
         except Exception as err:
-            self.log.debug("Websocket send error: %s" % Debug.formatException(err))
+            self.log.warning(f"Websocket send error: {Debug.formatException(err)}")
             self.state["sending"] = False
 
     def getPermissions(self, req_id):
