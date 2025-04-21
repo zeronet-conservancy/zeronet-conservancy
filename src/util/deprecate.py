@@ -16,3 +16,16 @@ def wip(f):
             raise NotImplementedError(f"Calling WIP function {f.__name__} in production mode")
         return f(*args, **kwargs)
     return inner
+
+class DeprecatedError(RuntimeError):
+    pass
+
+def deprecated(f):
+    """Decorator that marks function as deprecated"""
+    @wraps(f)
+    def inner(*args, **kwargs):
+        if not config.deprecated:
+            raise DeprecatedError(f"Function {f.__name__} is no longer supported")
+        # logging.warn(f"Deprecated call to {f.__name__}")
+        return f(*args, **kwargs)
+    return inner
