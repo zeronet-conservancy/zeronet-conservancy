@@ -8,6 +8,7 @@ import warnings
 import base64
 import binascii
 import json
+from pathlib import Path
 
 import gevent
 import gevent.lock
@@ -329,7 +330,11 @@ class ContentManagerPlugin(object):
         }
 
     def hashFile(self, dir_inner_path, file_relative_path, optional=False):
-        inner_path = dir_inner_path + file_relative_path
+        if not isinstance(dir_inner_path, Path):
+            dir_inner_path = Path(dir_inner_path)
+        if not isinstance(file_relative_path, Path):
+            file_relative_path = Path(file_relative_path)
+        inner_path = dir_inner_path / file_relative_path
 
         file_size = self.site.storage.getSize(inner_path)
         # Only care about optional files >1MB
