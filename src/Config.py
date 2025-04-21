@@ -368,7 +368,6 @@ class Config:
         self.parser.add_argument('--unsafe-inlines-csp', help="Disable CSPolicy breaking inline script", action=BooleanOptionalAction, default=False)
         self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
         self.parser.add_argument('--debug-socket', help='Debug socket connections', action='store_true')
-        self.parser.add_argument('--merge-media', help='Merge all.js and all.css', action='store_true')
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 

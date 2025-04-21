@@ -815,13 +815,6 @@ class UiRequest:
 
         file_path = config.data_dir / address / path_parts['inner_path']
 
-        if (config.debug or config.merge_media) and file_path.split("/")[-1].startswith("all."):
-            # If debugging merge *.css to all.css and *.js to all.js
-            site = self.server.sites.get(address)
-            if site and site.settings["own"]:
-                from Debug import DebugMedia
-                DebugMedia.merge(file_path)
-
         if not address or address == ".":
             return self.error403(path_parts["inner_path"])
 
@@ -871,10 +864,6 @@ class UiRequest:
                 # File not in allowed path
                 return self.error403()
             else:
-                if (config.debug or config.merge_media) and match.group("inner_path").startswith("all."):
-                    # If debugging merge *.css to all.css and *.js to all.js
-                    from Debug import DebugMedia
-                    DebugMedia.merge(file_path)
                 return self.actionFile(file_path, header_length=False)  # Dont's send site to allow plugins append content
 
         else:  # Bad url
