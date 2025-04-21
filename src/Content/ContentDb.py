@@ -94,6 +94,14 @@ class ContentDb(Db):
         self.execute('DELETE FROM content WHERE ?', {"address": address})
         del self.sites[address]
 
+    def getAllSiteContentPaths(self, site):
+        """Get list of all content.json files on this site"""
+        res = self.execute(
+            'SELECT inner_path FROM content'
+        )
+        print(res)
+        return [Path(x['inner_path']) for x in res]
+
     def getAllSiteOwnedContentPaths(self, site):
         """"Get list of all content.json files owned by this site
 
