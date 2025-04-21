@@ -362,12 +362,14 @@ class Config:
         # self.test_parser.add_argument('--benchmark', help='Run the tests multiple times to measure the performance', action='store_true')
 
         # Config parameters
-        self.parser.add_argument('--verbose', help='More detailed logging', action='store_true')
-        self.parser.add_argument('--debug', help='Debug mode', action='store_true')
+        self.parser.add_argument('--silent', help="Only log errors to terminal output", action='store_true')
+        self.parser.add_argument('--verbose', help="More detailed logging", action='store_true')
+        self.parser.add_argument('--debug', help="Debug mode", action='store_true')
         self.parser.add_argument('--debug-unsafe', help="Disable safety checks which impede debugging", action=BooleanOptionalAction, default=False)
         self.parser.add_argument('--unsafe-inlines-csp', help="Disable CSPolicy breaking inline script", action=BooleanOptionalAction, default=False)
-        self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
-        self.parser.add_argument('--debug-socket', help='Debug socket connections', action='store_true')
+        self.parser.add_argument('--debug-socket', help="Debug socket connections", action='store_true')
+        self.parser.add_argument('--wip', help="Enable WIP features", action=BooleanOptionalAction, default=False)
+        self.parser.add_argument('--deprecated', help="Enable deprecated features", action=BooleanOptionalAction, default=True)
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
