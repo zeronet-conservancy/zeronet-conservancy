@@ -84,7 +84,6 @@ class ConnectionServer:
         return len(self._connections)
 
     def addConnection(self, connection):
-        print('***'*33, connection)
         self._connections[connection.id] = connection
 
     def start(self, check_connections=True):
