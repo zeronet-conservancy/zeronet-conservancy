@@ -20,7 +20,7 @@ class Connection:
         "handshake", "crypt", "connected", "event_connected", "closed", "start_time", "handshake_time", "last_recv_time", "is_private_ip", "is_tracker_connection",
         "last_message_time", "last_send_time", "last_sent_time", "incomplete_buff_recv", "bytes_recv", "bytes_sent", "cpu_time", "send_lock",
         "last_ping_delay", "last_req_time", "last_cmd_sent", "last_cmd_recv", "bad_actions", "sites", "name", "waiting_requests", "waiting_streams",
-        'peer',
+        'peers',
     )
 
     def __init__(self, server, ip, port, sock=None, target_onion=None, is_tracker_connection=False):
@@ -80,7 +80,7 @@ class Connection:
         self.waiting_requests = {}  # Waiting sent requests
         self.waiting_streams = {}  # Waiting response file streams
 
-        self.peer = None
+        self.peers = []
 
     def setIp(self, ip):
         self.ip = ip

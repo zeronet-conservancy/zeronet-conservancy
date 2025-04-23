@@ -80,6 +80,9 @@ class ConnectionServer:
     def connections(self):
         return list(self._connections.values())
 
+    def getConnectionById(self, conn_id):
+        return self._connections[conn_id]
+
     def numConnections(self):
         return len(self._connections)
 
