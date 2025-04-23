@@ -78,7 +78,7 @@ class ConnectionServer:
             self.handleRequest = request_handler
 
     def connections(self):
-        return self._connections.values()
+        return list(self._connections.values())
 
     def numConnections(self):
         return len(self._connections)
