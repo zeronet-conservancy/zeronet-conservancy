@@ -138,6 +138,14 @@ class ConnectionServer:
             connection.close("Close all connections")
 
     def handleIncomingConnection(self, sock, addr):
+        try:
+            self._handleIncomingConnection(sock, addr)
+        except Exception as exc:
+            import traceback
+            self.log.log('Exception in ConnectionServer.handleIncomingConnection:')
+            self.log.log(traceback.format_exc())
+
+    def _handleIncomingConnection(self, sock, addr):
         if config.offline:
             sock.close()
             return False
