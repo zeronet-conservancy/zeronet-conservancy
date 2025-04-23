@@ -961,7 +961,7 @@ class Site:
             return []
 
         tor_manager = self.connection_server.tor_manager
-        for connection in self.connection_server.connections:
+        for connection in self.connection_server.connections():
             if not connection.connected and time.time() - connection.start_time > 20:  # Still not connected after 20s
                 continue
             peer = self.peers.get("%s:%s" % (connection.ip, connection.port))

@@ -102,6 +102,8 @@ class Peer:
                 self.log("Getting connection error: %s (connection_error: %s, hash_failed: %s)" %
                          (Debug.formatException(err), self.connection_error, self.hash_failed))
                 self.connection = None
+        if self.connection:
+            self.connection.peer = self
         return self.connection
 
     # Check if we have connection to peer

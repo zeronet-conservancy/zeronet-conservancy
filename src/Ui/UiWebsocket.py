@@ -1450,7 +1450,7 @@ class UiWebsocket:
     def actionConnectionList(self, to):
         import main
         result = []
-        for connection in main.file_server.connections:
+        for connection in main.file_server.connections():
             # rewritten from StatsPlugin
             if "cipher" in dir(connection.sock):
                 cipher = connection.sock.cipher()[0]

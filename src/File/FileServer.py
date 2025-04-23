@@ -277,7 +277,7 @@ class FileServer(ConnectionServer):
             # Sites health care every 20 min
             self.log.debug(
                 "Running site cleanup, connections: %s, internet: %s, protected peers: %s" %
-                (len(self.connections), self.has_internet, len(peers_protected))
+                (self.numConnections(), self.has_internet, len(peers_protected))
             )
 
             for address, site in list(self.sites.items()):
