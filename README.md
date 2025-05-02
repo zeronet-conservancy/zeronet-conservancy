@@ -146,12 +146,12 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 
 #### (alternatively) Linux one-liner installation and updating
 
-After installing [System dependencies](#system-dependencies):
+After installing [System dependencies](#system-dependencies) you can run following command for installation and update:
 
 > zndir="$HOME/zeronetc" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin main; fi; cd "$zndir" && /usr/bin/python3 -m venv venv && source venv/bin/activate && python3 -m pip install -r requirements.txt && echo -e ""$zndir"/venv/bin/python3 "$zndir"/zeronet.py \\"\\$@\\"" > zeronet.sh && chmod +x zeronet.sh && echo -e "\nRun on a desktop PC: $(pwd)/zeronet.sh --no-migrate\nRun on a headless http://server:8081 : $(pwd)/zeronet.sh --ui-ip \\"*\\" --ui-port 8081 --no-migrate\nShow command help using parameter --help"
 
 To keep Zeronet always running on a desktop PC, run following command being in a Zeronet directory:
-> echo -e "$(crontab -l 2>/dev/null)\n* * * * * pgrep -if 'eronet\.(py|sh)' && $(pwd)/zeronet.sh --no-migrate &" | crontab -
+> echo -e "$(crontab -l 2>/dev/null)\n* * * * * $(whoami) pgrep -if 'eronet\.(py|sh)' || $(pwd)/zeronet.sh --no-migrate &" | crontab -
 
 On a headless server, you can add parameters like `--ui-ip "*" --ui-port 8081` to access UI via http://server:8081. Zeronet should automatically start every minute in case it is not running. To edit the task, run `crontab -e`.
 
