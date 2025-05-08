@@ -33,26 +33,26 @@ class ChartCollector(object):
         content_db = list(sites.values())[0].content_manager.contents.db
 
         # Connection stats
-        collectors["connection"] = lambda: len(file_server.connections)
+        collectors["connection"] = lambda: file_server.numConnections()
         collectors["connection_in"] = (
-            lambda: len([1 for connection in file_server.connections if connection.type == "in"])
+            lambda: len([1 for connection in file_server.connections() if connection.type == "in"])
         )
         collectors["connection_onion"] = (
-            lambda: len([1 for connection in file_server.connections if connection.ip.endswith(".onion")])
+            lambda: len([1 for connection in file_server.connections() if connection.ip.endswith(".onion")])
         )
         collectors["connection_ping_avg"] = (
             lambda: round(1000 * helper.avg(
-                [connection.last_ping_delay for connection in file_server.connections if connection.last_ping_delay]
+                [connection.last_ping_delay for connection in file_server.connections() if connection.last_ping_delay]
             ))
         )
         collectors["connection_ping_min"] = (
             lambda: round(1000 * min(
-                [connection.last_ping_delay for connection in file_server.connections if connection.last_ping_delay]
+                [connection.last_ping_delay for connection in file_server.connections() if connection.last_ping_delay]
             ))
         )
         collectors["connection_rev_avg"] = (
             lambda: helper.avg(
-                [connection.handshake["rev"] for connection in file_server.connections if connection.handshake]
+                [connection.handshake["rev"] for connection in file_server.connections() if connection.handshake]
             )
         )
 

@@ -1,4 +1,5 @@
 import argparse
+from argparse import BooleanOptionalAction
 import sys
 import os
 import platform
@@ -11,7 +12,7 @@ import stat
 import time
 from pathlib import Path
 
-VERSION = "0.7.10+"
+VERSION = "0.8-alpha"
 
 class StartupError(RuntimeError):
     pass
@@ -26,7 +27,7 @@ class Config:
         try:
             from . import Build
         except ImportError:
-            from .util import Git
+            from util import Git
             self.build_type = 'source'
             self.branch = Git.branch() or 'unknown'
             self.commit = Git.commit() or 'unknown'
@@ -69,6 +70,8 @@ class Config:
         self.trackers_file = None
         self.createParser()
         self.createArguments()
+        self.parseCommandline('')
+        self.setAttributes()
 
     def createParser(self):
         # Create parser
@@ -79,9 +82,13 @@ class Config:
     def __str__(self):
         return str(self.arguments).replace("Namespace", "Config")  # Using argparse str output
 
-    # Convert string to bool
     def strToBool(self, v):
-        return v.lower() in ("yes", "true", "t", "1")
+        """Convert option string to bool"""
+        if v.lower() in ('y', 'yes', 'true', 't', '1', 'on'):
+            return True
+        if v.lower() in ('n', 'no', 'false', 'f', '0', 'off'):
+            return False
+        raise ValueError(f'Incorrect bool value "{v}"')
 
     def getStartDirOld(self):
         """Get directory that would have been used by older versions (pre v0.7.11)"""
@@ -167,7 +174,7 @@ class Config:
             f.write('# zeronet-conervancy config file')
 
     def maybeMigrate(self, old_dir, new_dir, no_migrate, silent_migrate):
-        if old_dir.exists() and new_dir.exists():
+        if (old_dir / 'zeronet.conf').exists() and new_dir.exists():
             if old_dir == new_dir:
                 if self.checkDir(new_dir):
                     return new_dir
@@ -182,7 +189,7 @@ class Config:
                     return new_dir
                 else:
                     raise StartupError('Bad startup directory')
-        elif old_dir.exists():
+        elif (old_dir / 'zeronet.conf').exists():
             if no_migrate:
                 self.createNewConfig(new_dir)
                 return new_dir
@@ -355,19 +362,24 @@ class Config:
         # self.test_parser.add_argument('--benchmark', help='Run the tests multiple times to measure the performance', action='store_true')
 
         # Config parameters
-        self.parser.add_argument('--verbose', help='More detailed logging', action='store_true')
-        self.parser.add_argument('--debug', help='Debug mode', action='store_true')
-        self.parser.add_argument('--silent', help='Only log errors to terminal output', action='store_true')
-        self.parser.add_argument('--debug-socket', help='Debug socket connections', action='store_true')
-        self.parser.add_argument('--merge-media', help='Merge all.js and all.css', action='store_true')
+        self.parser.add_argument('--silent', help="Only log errors to terminal output", action='store_true')
+        self.parser.add_argument('--verbose', help="More detailed logging", action='store_true')
+        self.parser.add_argument('--debug', help="Debug mode", action='store_true')
+        self.parser.add_argument('--debug-unsafe', help="Disable safety checks which impede debugging", action=BooleanOptionalAction, default=False)
+        self.parser.add_argument('--unsafe-inlines-csp', help="Disable CSPolicy breaking inline script", action=BooleanOptionalAction, default=False)
+        self.parser.add_argument('--debug-socket', help="Debug socket connections", action='store_true')
+        self.parser.add_argument('--wip', help="Enable WIP features", action=BooleanOptionalAction, default=False)
+        self.parser.add_argument('--deprecated', help="Enable deprecated features", action=BooleanOptionalAction, default=True)
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
-        self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
+        self.parser.add_argument('--no-plugins', help="Disable all plugins", action='store_true')
+
+        self.parser.add_argument('--portable', action=BooleanOptionalAction)
         self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, config)', default=self.start_dir, metavar="path")
         self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
         self.parser.add_argument('--data-dir', help='Path of data directory', default=data_dir, metavar="path")
-        self.parser.add_argument('--no-migrate', help='Ignore data directories from old 0net versions', action=argparse.BooleanOptionalAction, default=False)
+        self.parser.add_argument('--no-migrate', help="Ignore data directories from old 0net versions", action=BooleanOptionalAction, default=False)
 
         self.parser.add_argument('--console-log-level', help='Level of logging to console', default="default", choices=["default", "DEBUG", "INFO", "ERROR", "off"])
 
@@ -408,12 +420,14 @@ class Config:
         self.parser.add_argument('--ip-external', help='Set reported external ip (tested on start if None)', metavar='ip', nargs='*')
         self.parser.add_argument('--offline', help='Disable network communication', action='store_true')
         self.parser.add_argument('--disable-port-check', help='Disable checking port', action='store_true')
+        self.parser.add_argument('--dht', help="Use DHT for peer discovery (experimental)", action=BooleanOptionalAction, default=True)
+        self.parser.add_argument('--use-trackers', help="Use classic trackers for peer discovery", action=BooleanOptionalAction, default=True)
 
         self.parser.add_argument('--disable-udp', help='Disable UDP connections', action='store_true')
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
         self.parser.add_argument('--bootstrap-url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
-        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=argparse.BooleanOptionalAction, default=True)
+        self.parser.add_argument('--bootstrap', help="Enable downloading bootstrap information from clearnet", action=BooleanOptionalAction, default=True)
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers-file', help='Load torrent trackers dynamically from a file (using Syncronite by default)', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers-proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
@@ -447,7 +461,8 @@ class Config:
 
         self.parser.add_argument('--download-optional', choices=["manual", "auto"], default="manual")
 
-        self.parser.add_argument('--lax-cert-check', action=argparse.BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
+        self.parser.add_argument('--lax-cert-check', action=BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
+        self.parser.add_argument('--nocert-everywhere', action=BooleanOptionalAction, default=False, help="Allow user content signed by locally whitelisted users (NOTE: when enabled you may see user content not visible in earlier versions (pre-v0.8))")
 
         self.parser.add_argument('--tor', help='enable: Use only for Tor peers, always: Use Tor for every connection', choices=["disable", "enable", "always"], default='enable')
         self.parser.add_argument('--tor-controller', help='Tor controller address', metavar='ip:port', default='127.0.0.1:9051')
@@ -644,9 +659,8 @@ class Config:
 
         return self.argv[argv_index + 1]
 
-    # Expose arguments as class attributes
     def setAttributes(self):
-        # Set attributes from arguments
+        """Expose arguments as class attributes"""
         if self.arguments:
             args = vars(self.arguments)
             for key, val in args.items():
