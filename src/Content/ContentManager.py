@@ -105,7 +105,7 @@ class ContentManager:
         content_inner_dir = helper.getDirname(content_inner_path)
 
         if not content_path.is_file():
-            self.log.warning(f'Content.json not exist: {content_path}')
+            self.log.warning(f"loadContent: content.json doesn't exist: {content_path}")
             return [], []
 
         try:
