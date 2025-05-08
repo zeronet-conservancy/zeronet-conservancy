@@ -7,7 +7,10 @@ from functools import wraps
 import Ui.UiWebsocket as UiWebsocket
 
 def requires_permission(permission):
-    """Decorator for adding required permissions to API handlers"""
+    """Decorator for adding required permissions to API handlers
+
+    NOTE: this decorator should be placed immediately after @ws_api_call
+    """
     def wrapper(f):
         if not hasattr(f, 'required_permissions'):
             f.required_permissions = set()

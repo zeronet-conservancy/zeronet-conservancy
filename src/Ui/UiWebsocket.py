@@ -30,7 +30,12 @@ from Site.Sanity import checkSite
 # TODO: NOPLUGIN
 @PluginManager.acceptPlugins
 class UiWebsocket:
-    """Handle websocket communication with a specific site"""
+    """Handle websocket communication with a specific site
+
+    Note that this class also historically includes part of API
+    (methods starting with "action") while newer API should be placed
+    into src/API/*.py files
+    """
     apiHandlers = {}
 
     @classmethod
@@ -1025,13 +1030,6 @@ class UiWebsocket:
                 continue  # Incomplete site
             ret.append(self.formatSiteInfo(site, create_user=False))  # Dont generate the auth_address on listing
         self.response(to, ret)
-
-    @flag.admin
-    def actionSignerList(self, to):
-        """List all known public keys/addresses"""
-        cdb = ContentDb.getContentDb()
-        res = cdb.getAllSigners()
-        self.response(to, res)
 
     @flag.admin
     def actionRegisterNewUser(self, to):
