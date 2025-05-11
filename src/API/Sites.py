@@ -13,7 +13,8 @@ from util.deprecate import wip
 @ws_api_call
 @requires_permission('ADMIN')
 @wrap_api_reply
-def siteDetails(ws, to, address):
+@typechecked
+def siteDetails(ws, to, address: str):
     """Details on specified site"""
     site = ws.server.sites.get(address)
     if site is None:
@@ -21,11 +22,40 @@ def siteDetails(ws, to, address):
     cdb = ContentDb.getContentDb()
     total_size, optional_size = cdb.getTotalSize(site)
     owned_size = cdb.getTotalSignedSize(site.address)
+    favorite = site.settings.get('favorite')
+    use_limit_priority = site.settings.get('use_limit_priority')
     return {
         'total_size': total_size,
         'optional_size': optional_size,
         'owned_size': owned_size,
+        'favorite': favorite,
+        'use_limit_priority': use_limit_priority,
     }
+
+def setSiteSetting(ws, address, name, value) -> str:
+    site = ws.server.sites.get(address)
+    if site is None:
+        raise BadAddress(address)
+    site.settings[name] = value
+    site.saveSettings()
+    return 'ok'
+
+@ws_api_call
+@requires_permission('ADMIN')
+@wrap_api_reply
+@typechecked
+def siteFavorite(ws, to, address: str) -> str:
+    return setSiteSetting(ws, address, 'favorite', True)
+
+@ws_api_call
+@requires_permission('ADMIN')
+@wrap_api_reply
+@typechecked
+def siteUnfavorite(ws, to, address: str) -> str:
+    return setSiteSetting(ws, address, 'favorite', False)
+
+siteFavourite = siteFavorite
+siteUnfavourite = siteUnfavorite
 
 @ws_api_call
 @requires_permission('ADMIN')

@@ -1099,35 +1099,6 @@ class UiWebsocket:
         else:
             self.response(to, {"error": "Unknown site: %s" % address})
 
-    def siteFavUnfav(self, to, address, action, response):
-        dashboard = config.homepage
-        dsite = self.user.sites.get(dashboard, None)
-        if not dsite:
-            raise RuntimeError(f'No dashboard {dashboard} found to add site to favourites')
-        if 'settings' not in dsite:
-            dsite['settings'] = {}
-        dsettings = dsite['settings']
-        if 'favorite_sites' not in dsettings:
-            dsettings['favorite_sites'] = {}
-        favs = dsettings['favorite_sites']
-        action(favs)
-        self.user.setSiteSettings(dashboard, dsettings)
-        self.response(to, response)
-
-    @flag.admin
-    @flag.no_multiuser
-    def actionSiteFavourite(self, to, address):
-        def do_add(favs):
-            favs[address] = True
-        self.siteFavUnfav(to, address, do_add, "Added to favourites")
-
-    @flag.admin
-    @flag.no_multiuser
-    def actionSiteUnfavourite(self, to, address):
-        def do_del(favs):
-            del favs[address]
-        self.siteFavUnfav(to, address, do_del, "Removed from favourites")
-
     @flag.admin
     @flag.no_multiuser
     def actionSiteDelete(self, to, address):
