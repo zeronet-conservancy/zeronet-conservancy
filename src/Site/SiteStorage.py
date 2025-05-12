@@ -405,7 +405,7 @@ class SiteStorage(object):
     def getPath(self, inner_path):
         """Security check and return path of site's file"""
         if not isinstance(inner_path, Path):
-            self.log.warning(f"{inner_path} was passed to getPath not as Path object")
+            # self.log.warning(f"{inner_path} was passed to getPath not as Path object")
             inner_path = Path(inner_path)
         if inner_path.is_absolute():
             inner_path = inner_path.relative_to(inner_path.anchor)
