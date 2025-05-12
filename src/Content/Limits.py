@@ -78,7 +78,7 @@ def updateLimitData(site, inner_path, content):
         cdb.execute('INSERT INTO size_limit ?', {
             'address': target,
             'source': address,
-            'is_private': True,
+            'is_private': False,
             'priority': priority,
             **limit_rule
         })
