@@ -61,6 +61,20 @@ siteUnfavourite = siteUnfavorite
 @requires_permission('ADMIN')
 @wrap_api_reply
 @typechecked
+def siteLimitsUnsubscribe(ws, to, address: str) -> str:
+    return setSiteSetting(ws, address, 'use_limit_priority', None)
+
+@ws_api_call
+@requires_permission('ADMIN')
+@wrap_api_reply
+@typechecked
+def siteLimitsSubscribe(ws, to, address: str, priority: int) -> str:
+    return setSiteSetting(ws, address, 'use_limit_priority', priority)
+
+@ws_api_call
+@requires_permission('ADMIN')
+@wrap_api_reply
+@typechecked
 def siteDiagnose(ws, to, address: str):
     """Diagnose sanity of a site"""
     site = ws.server.sites.get(address)
