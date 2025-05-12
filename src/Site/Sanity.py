@@ -10,6 +10,13 @@ from util.JSONWalk import walkJSON
 from Content import ContentDb
 from Crypt.CryptBitcoin import isValidAddress
 
+class DuplicateIdentity(Exception):
+    def __init__(self, address, a, b):
+        self.address = address
+        self.a = a
+        self.b = b
+        super().__init__(f"Duplicate identity for {address}: '{a}', '{b}'")
+
 @dataclass
 class CheckAddressResult:
     is_ok: bool
@@ -81,12 +88,14 @@ def checkAddress(address) -> CheckAddressResult:
 
 def fixAddressesIn(site, content_path, addresses):
     """Fixes user addresses in a given site/content_path"""
+    print('fixADDDR_IN', content_path, addresses)
     replacements = getAddressReplacements(site, addresses)
+    print(replacements)
     with site.storage.open(content_path) as f:
         contents = json.load(f)
     new_contents = replaceAddressesIn(contents, replacements)
     with site.storage.open(content_path, 'w') as f:
-        json.dump(new_contents, f)
+        json.dump(new_contents, f, indent=1)
 
 def replaceAddressesIn(content, replaces):
     """Replace address in dict structure"""
@@ -104,16 +113,30 @@ def replaceAddressesIn(content, replaces):
         onDictElement = onDictElement,
     )
 
+# TODO: look for ID sites if address not found on site
+
 def getAddressReplacements(site, addresses):
+    """Find replacements
+
+    Looks for users that have already posted to this site using their address
+    """
     cdb = ContentDb.getContentDb()
     res = {}
-    for inner_path in cdb.getAllContentPaths(site):
-        if inner_path.parent:
+    for inner_path in cdb.getAllSiteContentPaths(site):
+        print('GAR:', inner_path)
+        if inner_path.parent and inner_path.parent.name:
             maybe_address = inner_path.parent.name
+            print(maybe_address)
             if isValidAddress(maybe_address):
-                with site.storage.open(inner_path) as content_f:
-                    contents = json.load(content_f)
-                    user_id = contents.get('cert_user_id')
-                    if user_id and user_id in addresses:
-                        res[user_id] = maybe_address
+                try:
+                    with site.storage.open(inner_path) as content_f:
+                        contents = json.load(content_f)
+                except Exception as exc:
+                    print('issue with file', exc)
+                    continue
+                user_id = contents.get('cert_user_id')
+                if user_id and user_id in addresses:
+                    if user_id in res and res[user_id] != maybe_address:
+                        raise DuplicateIdentity(user_id, res[user_id], maybe_address)
+                    res[user_id] = maybe_address
     return res
