@@ -379,7 +379,6 @@ class Actions:
 
     def sitePublishFallback(self, site, peer_ip, peer_port, inner_paths, err):
         import main
-        import time
         if err is not None:
             logging.info(f"Can't connect to local websocket client: {err}")
         logging.info("Publish using fallback mechanism. "
