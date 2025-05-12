@@ -4,6 +4,7 @@
 from .Exceptions import BadAddress
 from .Util import ws_api_call, requires_permission, wrap_api_reply
 from Content import ContentDb
+from Content.Limits import updateLimitDataForSite, removeAllSiteLimits
 from Site.Sanity import checkSite, fixAddressesIn
 import dataclasses
 from typeguard import typechecked
@@ -62,14 +63,24 @@ siteUnfavourite = siteUnfavorite
 @wrap_api_reply
 @typechecked
 def siteLimitsUnsubscribe(ws, to, address: str) -> str:
-    return setSiteSetting(ws, address, 'use_limit_priority', None)
+    res = setSiteSetting(ws, address, 'use_limit_priority', None)
+    site = ws.server.sites.get(address)
+    if site is None:
+        raise BadAddress(address)
+    removeAllSiteLimits(site)
+    return res
 
 @ws_api_call
 @requires_permission('ADMIN')
 @wrap_api_reply
 @typechecked
 def siteLimitsSubscribe(ws, to, address: str, priority: int) -> str:
-    return setSiteSetting(ws, address, 'use_limit_priority', priority)
+    res = setSiteSetting(ws, address, 'use_limit_priority', priority)
+    site = ws.server.sites.get(address)
+    if site is None:
+        raise BadAddress(address)
+    updateLimitDataForSite(site)
+    return res
 
 @ws_api_call
 @requires_permission('ADMIN')

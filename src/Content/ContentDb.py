@@ -75,13 +75,14 @@ class ContentDb(Db):
                 ['limit_id', 'INTEGER PRIMARY KEY UNIQUE NOT NULL'],
                 ['address', 'TEXT NOT NULL'],
                 ['source', 'TEXT NOT NULL'],
+                ['inner_path', 'TEXT'],
                 ['is_private', 'INTEGER'],
                 ['rule', 'TEXT NOT NULL'],
                 ['value', 'INTEGER'],
                 ['priority', 'INTEGER'],
             ],
             'indexes': [],
-            'schema_changed': 3,
+            'schema_changed': 4,
         }
 
         return schema

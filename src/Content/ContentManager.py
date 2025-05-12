@@ -96,6 +96,8 @@ class ContentManager:
     def loadContent(self, content_inner_path="content.json", add_bad_files=True, delete_removed_files=True, load_includes=True, force=False):
         """Load content.json to self.content
 
+        Called on site load and updates
+
         Returns: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
         """
         content_inner_path = content_inner_path.strip('/')
@@ -110,7 +112,7 @@ class ContentManager:
 
         try:
             new_content = self.site.storage.loadJson(content_inner_path)
-            updateLimitData(self.site, new_content)
+            updateLimitData(self.site, content_inner_path, new_content)
             # Check if file is newer than what we have
             if not force and old_content and not self.site.settings.get("own"):
                 new_ts = int(float(new_content.get('modified', 0)))
