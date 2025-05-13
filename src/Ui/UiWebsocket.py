@@ -740,7 +740,7 @@ class UiWebsocket:
     def actionFileQuery(self, to, dir_inner_path, query=None):
         """Find data in json files"""
         dir_path = self.site.storage.getPath(dir_inner_path)
-        rows = list(QueryJson.query(dir_path, query or ""))
+        rows = list(QueryJson.query(str(dir_path), query or ""))
         return self.response(to, rows)
 
     # List files in directory
