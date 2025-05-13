@@ -28,7 +28,7 @@ class Config:
         try:
             from . import Build
         except ImportError:
-            from util import Git
+            from .util import Git
             self.build_type = 'source'
             self.branch = Git.branch() or 'unknown'
             self.commit = Git.commit() or 'unknown'
