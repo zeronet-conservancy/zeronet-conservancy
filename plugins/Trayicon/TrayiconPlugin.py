@@ -95,7 +95,7 @@ class ActionsPlugin(object):
         return title
 
     def titleConnections(self):
-        title = _["Connections: %s"] % len(self.main.file_server.connections)
+        title = _["Connections: %s"] % self.main.file_server.numConnections()
         return title
 
     def titleTransfer(self):
