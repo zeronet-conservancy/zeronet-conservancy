@@ -11,6 +11,7 @@ import logging.handlers
 import stat
 import time
 from pathlib import Path
+from rich import print
 
 VERSION = "0.8-alpha"
 
