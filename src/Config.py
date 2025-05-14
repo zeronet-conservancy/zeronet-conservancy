@@ -1,4 +1,5 @@
 import argparse
+from argparse import BooleanOptionalAction
 import sys
 import os
 import platform
@@ -369,7 +370,7 @@ class Config:
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
-        self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
+        self.parser.add_argument('--portable', action=BooleanOptionalAction)
         self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, config)', default=self.start_dir, metavar="path")
         self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
         self.parser.add_argument('--data-dir', help='Path of data directory', default=data_dir, metavar="path")
@@ -419,7 +420,7 @@ class Config:
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
         self.parser.add_argument('--bootstrap-url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
-        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=argparse.BooleanOptionalAction, default=True)
+        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=BooleanOptionalAction, default=True)
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers-file', help='Load torrent trackers dynamically from a file (using Syncronite by default)', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers-proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
@@ -453,7 +454,7 @@ class Config:
 
         self.parser.add_argument('--download-optional', choices=["manual", "auto"], default="manual")
 
-        self.parser.add_argument('--lax-cert-check', action=argparse.BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
+        self.parser.add_argument('--lax-cert-check', action=BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
 
         self.parser.add_argument('--tor', help='enable: Use only for Tor peers, always: Use Tor for every connection', choices=["disable", "enable", "always"], default='enable')
         self.parser.add_argument('--tor-controller', help='Tor controller address', metavar='ip:port', default='127.0.0.1:9051')
