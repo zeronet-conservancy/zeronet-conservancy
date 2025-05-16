@@ -7,7 +7,7 @@ for new style user-based moderation.
 """
 
 from rich import print
-from .ContentDb import getContentDb
+from .ContentDb import getContentDb, ContentDb
 
 def applyLimitRules(rules):
     print("Rules before limits")
@@ -55,33 +55,69 @@ def removeAllSiteLimits(site):
     cdb.execute('DELETE FROM size_limit WHERE source = ?', (site.address,))
 
 def updateLimitData(site, inner_path, content):
-    address = site.address
     priority = site.settings.get('use_limit_priority')
+
     if priority is None:
         removeAllSiteLimits(site)
         return
 
-    if 'user_contents' not in content:
-        return
-    permission_rules = content['user_contents'].get('permissions')
-    if permission_rules is None:
-        return
     cdb = getContentDb()
+
+    # Clean previous entries from this file
     # TODO: make updating more effecient maybe?
     cdb.execute(
         'DELETE FROM size_limit WHERE source = ? AND inner_path = ?',
-        (address, inner_path,),
+        (site.address, inner_path,),
     )
+
+    if 'user_limits' in content:
+        for target, limit_rule in content['user_limits'].items():
+            addLimitRule(
+                target,
+                site.address,
+                inner_path,
+                False,
+                priority,
+                **limit_rule,
+            )
+    if 'user_contents' not in content:
+        return
+
+    permission_rules = content['user_contents'].get('permissions')
+    if permission_rules is None:
+        return
+
     for target, rules in permission_rules.items():
         limit_rule = convertRules(rules)
-        print(limit_rule)
-        cdb.execute('INSERT INTO size_limit ?', {
-            'address': target,
-            'source': address,
-            'is_private': False,
-            'priority': priority,
-            **limit_rule
-        })
+        addLimitRule(
+            cdb,
+            target,
+            site.address,
+            inner_path,
+            False,
+            priority,
+            **limit_rule,
+        )
+
+def addLimitRule(
+        cdb: ContentDb,
+        target: str,
+        source: str,
+        inner_path: str,
+        is_private: bool,
+        priority: int,
+        rule: str,
+        value: int
+):
+    cdb.execute('INSERT INTO size_limit ?', {
+        'address': target,
+        'source': source,
+        'innert_path': inner_path,
+        'is_private': is_private,
+        'priority': priority,
+        'rule': rule,
+        'value': value,
+    })
 
 def convertRules(rules):
     if not rules or 'max_size' not in rules:
