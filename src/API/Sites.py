@@ -20,17 +20,21 @@ def siteDetails(ws, to, address: str):
     site = ws.server.sites.get(address)
     if site is None:
         raise BadAddress(address)
+    content = site.content_manager.contents.get("content.json", {})
     cdb = ContentDb.getContentDb()
     total_size, optional_size = cdb.getTotalSize(site)
     owned_size = cdb.getTotalSignedSize(site.address)
-    favorite = site.settings.get('favorite')
+    favorite = site.settings.get('favorite', False)
     use_limit_priority = site.settings.get('use_limit_priority')
+    permissions = site.settings.get('permissions', [])
     return {
+        'title': content.get('title', ''),
         'total_size': total_size,
         'optional_size': optional_size,
         'owned_size': owned_size,
         'favorite': favorite,
         'use_limit_priority': use_limit_priority,
+        'permissions': permissions,
     }
 
 def setSiteSetting(ws, address, name, value) -> str:
