@@ -996,9 +996,11 @@ class ContentManager:
 
         return True  # All good
 
-    # Verify file validity
-    # Return: None = Same as before, False = Invalid, True = Valid
     def verifyFile(self, inner_path, file, ignore_same=True):
+        """Verify file validity
+
+        Returns: None = file haven't changed, False = Invalid, True = Valid
+        """
         if inner_path.endswith("content.json"):  # content.json: Check using sign
             try:
                 if type(file) is dict:
