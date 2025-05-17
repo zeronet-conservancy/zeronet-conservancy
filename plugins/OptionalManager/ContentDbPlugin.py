@@ -351,9 +351,9 @@ class ContentDbPlugin:
         # Don't delete optional files from owned sites
         my_sites = [address for address, site in self.sites.items() if site.settings['own']]
 
-        if my_sites:
-            raise NotImplementedError("owned site exclusion not implemented normally yet")
-            query += " AND address NOT IN (%s)" % ", ".join(my_sites)
+        # if my_sites:
+            # raise NotImplementedError("owned site exclusion not implemented normally yet")
+            # query += " AND address NOT IN (%s)" % ", ".join(my_sites)
         return query
 
     def getOptionalUsedBytes(self):
