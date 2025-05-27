@@ -1465,6 +1465,4 @@ class UiWebsocket:
 
     def message(self, params):
         """Triggered when message arrived from a peer (used for debug atm)"""
-        from rich import print
-        print(params)
         self.cmd('newMessage', params)
