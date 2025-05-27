@@ -1,6 +1,6 @@
 from numbers import Number
 
-from .JSONWalk import walkJSON, Delete
+from .JSON import walkJSON, Delete
 
 def test_sanity():
     pass

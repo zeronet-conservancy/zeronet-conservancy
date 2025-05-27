@@ -5,7 +5,7 @@ from typing import List, Tuple, Optional
 from enum import Enum
 import json
 
-from util.JSONWalk import walkJSON
+from util.JSON import walkJSON
 
 from Content import ContentDb
 from Crypt.CryptBitcoin import isValidAddress

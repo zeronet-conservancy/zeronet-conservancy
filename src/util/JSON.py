@@ -1,3 +1,42 @@
+"""Various utils related to JSON handling"""
+
+class ToJSONError(TypeError):
+    def __init__(self, obj, reason):
+        self.obj = obj
+        super().__init__(f"Object `{obj}` has incorrect/unknown type ({type(obj)}) to {reason}")
+
+def toJSONKey(key) -> str:
+    """Converts key-like object to json key (aka str)"""
+    if type(key) is str:
+        return key
+    if type(key) is Path:
+        return str(key)
+    raise ToJSONError(key, "convert to JSON key")
+
+def toJSONValue(x):
+    if type(x) is dict:
+        return toJSONDict(x)
+    if type(x) in (list, tuple):
+        return toJSONList(x)
+    if type(x) in (str, int, float, bool, type(None)):
+        return x
+    if type(x) is bytes:
+        return '0x' + x.hex()
+    raise ToJSONError(x, "convert to JSON value")
+
+def toJSONList(xs: list | tuple) -> list:
+    return [
+        toJSONValue(x)
+        for x in xs
+    ]
+
+def toJSONDict(d: dict) -> dict:
+    """Converts arbitrary dict to JSON-compatible one"""
+    return {
+        toJSONKey(key): toJSONValue(value)
+        for key, value in d.items()
+    }
+
 class Delete:
     pass
 

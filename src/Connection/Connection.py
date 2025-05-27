@@ -208,8 +208,8 @@ class Connection:
         else:  # Backward compatibility for <0.7.0
             return Msgpack.getUnpacker(fallback=True, decode=True)
 
-    # Message loop for connection
     def messageLoop(self):
+        """Message loop for connection"""
         if not self.sock:
             self.log("Socket error: No socket found")
             return False
@@ -441,8 +441,11 @@ class Connection:
         self.event_connected = None
         self.handshake_time = time.time()
 
-    # Handle incoming message
     def handleMessage(self, message):
+        """Handle incoming message"""
+        for listener in self.server.listeners:
+            listener.message(message)
+
         cmd = message["cmd"]
 
         self.last_message_time = time.time()

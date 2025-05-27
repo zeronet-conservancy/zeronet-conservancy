@@ -77,6 +77,11 @@ class ConnectionServer:
         if request_handler:
             self.handleRequest = request_handler
 
+        self.listeners = []
+
+    def addListener(self, listener):
+        self.listeners.append(listener)
+
     def connections(self):
         return list(self._connections.values())
 

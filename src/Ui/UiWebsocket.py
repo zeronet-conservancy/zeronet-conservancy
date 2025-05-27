@@ -23,6 +23,7 @@ from Translate import translate as _
 from util import helper
 from util import SafeRe
 from util.Flag import flag
+from util.JSON import toJSONValue
 from Content.ContentManager import VerifyError, SignError
 from Content import ContentDb
 from Site.Sanity import checkSite
@@ -216,7 +217,7 @@ class UiWebsocket:
             while self.send_queue:
                 self.state["sending"] = True
                 message = self.send_queue.pop(0)
-                self.ws.send(json.dumps(message))
+                self.ws.send(json.dumps(toJSONValue(message)))
                 self.state["sending"] = False
         except Exception as err:
             self.log.warning(f"Websocket send error: {Debug.formatException(err)}")
