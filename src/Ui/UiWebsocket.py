@@ -869,13 +869,15 @@ class UiWebsocket(object):
         # More available  providers
         more_domains = [domain for domain in accepted_domains if domain not in self.user.certs]  # Domains we not displayed yet
         if more_domains:
-            # body+= "<small style='margin-top: 10px; display: block'>Accepted authorization providers by the site:</small>"
-            content = self.site.content_manager.contents.get("data/users/content.json")
             cert_signers = {}
-            if content:
-                user_contents = content.get("user_contents")
-                if user_contents:
-                    cert_signers = user_contents.get("cert_signers")
+            for content_path in self.site.content_manager.listContents():
+                content = self.site.content_manager.contents.get(content_path)
+                if content:
+                    user_contents = content.get("user_contents")
+                    if user_contents:
+                        cert_signers = user_contents.get("cert_signers")
+                        if cert_signers: break;
+
             body += "<div style='background-color: #F7F7F7; margin-right: -30px'>"
             for domain in more_domains:
                 if not domain.endswith(".bit") and domain in cert_signers:
