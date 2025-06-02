@@ -85,6 +85,16 @@ class ContentDb(Db):
             'schema_changed': 4,
         }
 
+        schema['tables']['users'] = {
+            'cols': [
+                ['address', 'TEXT NOT NULL PRIMARY KEY UNIQUE'],
+                ['username', 'TEXT'],
+                ['comment', 'TEXT'],
+            ],
+            'indexes': [],
+            'schema_changed': 3,
+        }
+
         return schema
 
     def initSite(self, site):
@@ -175,19 +185,25 @@ class ContentDb(Db):
         return row["size"], row["size_optional"]
 
     def getAllSigners(self):
-        """Returns all known public public and whether they have related site and user profile"""
+        """Returns all known public keys and asscociated user info"""
         query = '''
-            SELECT
-                owner_address as address,
-            MAX(CASE
+          SELECT
+            a.address, has_content_record, has_profile_content, username, comment
+          FROM
+            (SELECT
+              owner_address as address,
+              MAX(CASE
                 WHEN owner_address = address THEN 1 ELSE 0
-            END) AS has_content_record,
-	    MAX(CASE
+              END) AS has_content_record,
+	      MAX(CASE
                 WHEN inner_path = "profile/content.json" THEN 1 ELSE 0
-            END) AS has_profile_content
+              END) AS has_profile_content
             FROM
-                content
-            GROUP BY owner_address;
+              content
+	    GROUP BY owner_address)
+            as a
+	  LEFT JOIN users as b
+	    ON a.address = b.address
         '''
 
         res = self.execute(query)
@@ -231,8 +247,6 @@ class ContentDb(Db):
         """Remove private limit size rule"""
         print(f'remove {rule_id}')
         res = self.execute('DELETE FROM size_limit WHERE limit_id = ?', (rule_id,))
-        print('how so')
-        print(res)
 
     def listModified(self, site, after=None, before=None):
         params = { 'address': site.address }
