@@ -654,8 +654,6 @@ class ContentManager:
     def isValidRelativePath(self, relative_path):
         if '..' in relative_path.parts:
             return False
-        elif len(str(relative_path)) > 255: # ???
-            return False
         elif relative_path.is_absolute():
             return False
         elif relative_path.name == '' or relative_path.name[-1] == ' ':  # Ends with
