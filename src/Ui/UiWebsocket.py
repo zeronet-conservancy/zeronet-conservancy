@@ -951,11 +951,23 @@ class UiWebsocket:
         # More available  providers
         more_domains = accepted_domains
         if more_domains:
-            # body+= "<small style='margin-top: 10px; display: block'>Accepted authorization providers by the site:</small>"
+            cert_signers = {}
+            for content_path in self.site.content_manager.listContents():
+                content = self.site.content_manager.contents.get(content_path)
+                if content:
+                    user_contents = content.get("user_contents")
+                    if user_contents:
+                        cert_signers = user_contents.get("cert_signers")
+                        if cert_signers: break;
+
             body += "<div style='background-color: #F7F7F7; margin-right: -30px'>"
             for domain in more_domains:
+                if not domain.endswith(".bit") and domain in cert_signers:
+                    provider_url_path = cert_signers[domain][0]
+                else:
+                    provider_url_path = domain
                 body += _("""
-                 <a href='/{domain}' target='_top' class='select'>
+                 <a href='/{provider_url_path}' target='_top' class='select'>
                   <small style='float: right; margin-right: 40px; margin-top: -1px'>{_[Register]} &raquo;</small>{domain}
                  </a>
                 """)
