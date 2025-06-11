@@ -21,12 +21,23 @@ class Actions:
         IPython.embed()
         self.gevent_quit.set()
 
+    def initDHT(self):
+        import main
+        if config.dht:
+            from DHT import DHTServer
+            main.dht_server = DHTServer()
+        else:
+            main.dht_server = None
+
     # Default action: Start serving UiServer and FileServer
     def main(self):
         import main
         from File import FileServer
         from Ui import UiServer
-        logging.info("Creating FileServer....")
+
+        import API
+        self.initDHT()
+
         main.file_server = FileServer()
         logging.info("Creating UiServer....")
         main.ui_server = UiServer()
@@ -43,7 +54,13 @@ class Actions:
 
         import threading
         self.gevent_quit = threading.Event()
-        launched_greenlets = [gevent.spawn(main.ui_server.start), gevent.spawn(main.file_server.start), gevent.spawn(main.ui_server.startSiteServer)]
+        launched_greenlets = [
+            gevent.spawn(main.ui_server.start),
+            gevent.spawn(main.ui_server.startSiteServer),
+            gevent.spawn(main.file_server.start),
+        ]
+        if main.dht_server is not None:
+            launched_greenlets.append(gevent.spawn(main.dht_server.start))
 
         # if --repl, start ipython thread
         # FIXME: Unfortunately this leads to exceptions on exit so use with care
@@ -218,6 +235,8 @@ class Actions:
 
     def siteAnnounce(self, address):
         import main
+        self.initDHT()
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -237,6 +256,8 @@ class Actions:
 
     def siteDownload(self, address):
         import main
+        self.initDHT()
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -244,7 +265,12 @@ class Actions:
         logging.info("Opening a simple connection server")
         from File import FileServer
         main.file_server = FileServer("127.0.0.1", 1234)
-        file_server_thread = gevent.spawn(main.file_server.start, check_sites=False)
+
+        launched_greenlets = [
+            gevent.spawn(main.file_server.start, check_sites=False),
+        ]
+        if main.dht_server is not None:
+            launched_greenlets.append(gevent.spawn(main.dht_server.start))
 
         site = Site(address)
 
@@ -265,6 +291,8 @@ class Actions:
 
     def siteNeedFile(self, address, inner_path):
         import main
+        self.initDHT()
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
