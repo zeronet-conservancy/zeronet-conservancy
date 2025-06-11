@@ -112,7 +112,7 @@ def addLimitRule(
     cdb.execute('INSERT INTO size_limit ?', {
         'address': target,
         'source': source,
-        'innert_path': inner_path,
+        'inner_path': inner_path,
         'is_private': is_private,
         'priority': priority,
         'rule': rule,
