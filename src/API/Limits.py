@@ -8,7 +8,6 @@ def getSizeLimitRules(ws, to):
     cdb = ContentDb.getContentDb()
     res = cdb.getSizeLimitRules()
     from rich import print
-    print(res)
     ws.response(to, res)
 
 @ws_api_call
