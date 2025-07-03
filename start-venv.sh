@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+SAMEDIR="$(dirname $(realpath $0))"; cd "$SAMEDIR" || exit # directory where this .sh file is located
 VENVPATH="venv/bin/activate"
 
 if [ ! -f "$VENVPATH" ]; then
