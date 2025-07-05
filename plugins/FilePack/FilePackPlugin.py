@@ -41,12 +41,19 @@ def openArchiveFile(archive_path, path_within, file_obj=None):
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):
     def actionSiteMedia(self, path, **kwargs):
+        print("FilePackPlugin: actionSiteMedia called with path:", path)
         if ".zip/" in path or ".tar.gz/" in path:
             file_obj = None
             path_parts = self.parsePath(path)
             file_path = config.data_dir / path_parts["address"] / path_parts["inner_path"]
-            match = re.match(r"^(.*\.(?:tar.gz|zip))/(.*)", file_path)
-            archive_path, path_within = match.groups()
+            file_path_str = str(file_path)
+            print("FilePackPlugin: file_path =", file_path_str, type(file_path))
+            try:
+                match = re.match(r"^(.*\.(?:tar.gz|zip))/(.*)", file_path_str)
+                archive_path, path_within = match.groups()
+            except Exception as e:
+                print("FilePackPlugin: regex failed for file_path:", file_path_str, "error:", e)
+                return self.error404(file_path_str)
             if archive_path not in archive_cache:
                 site = self.server.site_manager.get(path_parts["address"])
                 if not site:
@@ -72,11 +79,19 @@ class UiRequestPlugin(object):
                     return self.error403("Invalid ajax_key")
 
             try:
-                file = openArchiveFile(archive_path, path_within, file_obj=file_obj)
-                content_type = self.getContentType(file_path)
+                print("FilePackPlugin: archive_path =", archive_path)
+                print("FilePackPlugin: path_within =", path_within)
+                try:
+                    file = openArchiveFile(archive_path, path_within, file_obj=file_obj)
+                except Exception as e:
+                    print("FilePackPlugin: failed to open file in archive:", archive_path, path_within, "error:", e)
+                    return self.error404(path)
+                print("FilePackPlugin: file object =", file)
+                content_type = self.getContentType(str(file_path))
                 self.sendHeader(200, content_type=content_type, noscript=kwargs.get("header_noscript", False), allow_ajax=header_allow_ajax)
                 return self.streamFile(file)
             except Exception as err:
+                print("FilePackPlugin: outer exception:", err)
                 self.log.debug("Error opening archive file: %s" % Debug.formatException(err))
                 return self.error404(path)
 
@@ -190,4 +205,3 @@ class SiteStoragePlugin(object):
 
         else:
             return super(SiteStoragePlugin, self).read(inner_path, mode, **kwargs)
-
