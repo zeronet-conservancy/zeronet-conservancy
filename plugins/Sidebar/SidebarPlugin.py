@@ -695,7 +695,7 @@ class UiWebsocketPlugin(object):
                 return path
 
         self.log.info("GeoIP database not found at [%s]. Downloading to: %s",
-                " ".join(db_paths), data_dir_db_path)
+            " ".join(str(p) for p in db_paths), data_dir_db_path)
         if self.downloadGeoLiteDb(data_dir_db_path):
             return data_dir_db_path
         return None
