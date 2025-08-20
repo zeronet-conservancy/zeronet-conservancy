@@ -14,12 +14,13 @@ from Crypt import CryptConnection
 from util import helper
 
 
-class Connection(object):
+class Connection:
     __slots__ = (
         "sock", "sock_wrapped", "ip", "port", "cert_pin", "target_onion", "id", "protocol", "type", "server", "unpacker", "unpacker_bytes", "req_id", "ip_type",
         "handshake", "crypt", "connected", "event_connected", "closed", "start_time", "handshake_time", "last_recv_time", "is_private_ip", "is_tracker_connection",
         "last_message_time", "last_send_time", "last_sent_time", "incomplete_buff_recv", "bytes_recv", "bytes_sent", "cpu_time", "send_lock",
-        "last_ping_delay", "last_req_time", "last_cmd_sent", "last_cmd_recv", "bad_actions", "sites", "name", "waiting_requests", "waiting_streams"
+        "last_ping_delay", "last_req_time", "last_cmd_sent", "last_cmd_recv", "bad_actions", "sites", "name", "waiting_requests", "waiting_streams",
+        'peers',
     )
 
     def __init__(self, server, ip, port, sock=None, target_onion=None, is_tracker_connection=False):
@@ -78,6 +79,8 @@ class Connection(object):
 
         self.waiting_requests = {}  # Waiting sent requests
         self.waiting_streams = {}  # Waiting response file streams
+
+        self.peers = []
 
     def setIp(self, ip):
         self.ip = ip
@@ -205,8 +208,8 @@ class Connection(object):
         else:  # Backward compatibility for <0.7.0
             return Msgpack.getUnpacker(fallback=True, decode=True)
 
-    # Message loop for connection
     def messageLoop(self):
+        """Message loop for connection"""
         if not self.sock:
             self.log("Socket error: No socket found")
             return False
@@ -438,8 +441,11 @@ class Connection(object):
         self.event_connected = None
         self.handshake_time = time.time()
 
-    # Handle incoming message
     def handleMessage(self, message):
+        """Handle incoming message"""
+        for listener in self.server.listeners:
+            listener.message(message)
+
         cmd = message["cmd"]
 
         self.last_message_time = time.time()

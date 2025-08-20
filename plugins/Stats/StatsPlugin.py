@@ -74,13 +74,13 @@ class UiRequestPlugin(object):
 
         # Connections
         yield "<b>Connections</b> (%s, total made: %s, in: %s, out: %s):<br>" % (
-            len(main.file_server.connections), main.file_server.last_connection_id,
+            main.file_server.numConnections(), main.file_server.last_connection_id,
             main.file_server.num_incoming, main.file_server.num_outgoing
         )
         yield "<table class='connections'><tr> <th>id</th> <th>type</th> <th>ip</th> <th>open</th> <th>crypt</th> <th>ping</th>"
         yield "<th>buff</th> <th>bad</th> <th>idle</th> <th>open</th> <th>delay</th> <th>cpu</th> <th>out</th> <th>in</th> <th>last sent</th>"
         yield "<th>wait</th> <th>version</th> <th>time</th> <th>sites</th> </tr>"
-        for connection in main.file_server.connections:
+        for connection in main.file_server.connections():
             if "cipher" in dir(connection.sock):
                 cipher = connection.sock.cipher()[0]
                 tls_version = connection.sock.version()
