@@ -23,9 +23,9 @@ class RequestError(Exception):
     pass
 
 
-# Incoming requests
 @PluginManager.acceptPlugins
-class FileRequest(object):
+class FileRequest:
+    """Incoming requests"""
     __slots__ = ("server", "connection", "req_id", "sites", "log", "responded")
 
     def __init__(self, server, connection):

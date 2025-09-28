@@ -21,7 +21,7 @@ from Site import SiteManager
 
 
 class ConnectionServer:
-    def __init__(self, ip=None, port=None, request_handler=None):
+    def __init__(self, ip=None, port=None):
         if not ip:
             if config.fileserver_ip_type == "ipv6":
                 ip = "::1"
@@ -73,9 +73,6 @@ class ConnectionServer:
                 str(msgpack.version)
             )
             sys.exit(0)
-
-        if request_handler:
-            self.handleRequest = request_handler
 
         self.listeners = []
 
