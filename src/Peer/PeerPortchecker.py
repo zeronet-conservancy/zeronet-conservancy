@@ -13,7 +13,7 @@ class PeerPortcheckerError(Exception):
 
 class PeerPortchecker:
     checker_functions = {
-        "ipv4": ["checkIpfingerprints", "checkCanyouseeme"],
+        "ipv4": ["checkCanyouseeme"],
         "ipv6": ["checkMyaddr", "checkIpv6scanner"]
     }
     def __init__(self, file_server):
@@ -84,26 +84,6 @@ class PeerPortchecker:
         if "Success" in message:
             return {"ip": ip, "opened": True}
         elif "Error" in message:
-            return {"ip": ip, "opened": False}
-        else:
-            raise PeerPortcheckerError(message)
-
-    def checkIpfingerprints(self, port):
-        data = self.requestUrl("https://www.ipfingerprints.com/portscan.php").read().decode("utf8")
-        ip_match = re.match(r'.*name="remoteHost".*?value="(.*?)"', data, re.DOTALL)
-        if ip_match is None:
-            raise PeerPortcheckerError(data)
-        ip = ip_match.group(1)
-
-        post_data = {
-            "remoteHost": ip, "start_port": port, "end_port": port,
-            "normalScan": "Yes", "scan_type": "connect2", "ping_type": "none"
-        }
-        message = self.requestUrl("https://www.ipfingerprints.com/scripts/getPortsInfo.php", post_data).read().decode("utf8")
-
-        if "open" in message:
-            return {"ip": ip, "opened": True}
-        elif "filtered" in message or "closed" in message:
             return {"ip": ip, "opened": False}
         else:
             raise PeerPortcheckerError(message)
