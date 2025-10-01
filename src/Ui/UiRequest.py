@@ -891,7 +891,9 @@ class UiRequest:
         return block
 
     # Stream a file to client
-    def actionFile(self, file_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers={}, file_size=None, file_obj=None, path_parts=None):
+    def actionFile(self, file_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers=None, file_size=None, file_obj=None, path_parts=None):
+        if extra_headers is None:
+            extra_headers = {}
         file_name = os.path.basename(file_path)
 
         if file_size is None:
