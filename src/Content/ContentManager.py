@@ -20,6 +20,7 @@ from util import SafeRe
 from Peer import PeerHashfield
 from .ContentDbDict import ContentDbDict
 from .Limits import applyLimitRules, updateLimitData
+from .User import updateUserData
 from Plugin import PluginManager
 
 class VerifyError(Exception):
@@ -113,6 +114,7 @@ class ContentManager:
         try:
             new_content = self.site.storage.loadJson(content_inner_path)
             updateLimitData(self.site, content_inner_path, new_content)
+            updateUserData(self.site, content_inner_path, new_content)
             # Check if file is newer than what we have
             if not force and old_content and not self.site.settings.get("own"):
                 new_ts = int(float(new_content.get('modified', 0)))
