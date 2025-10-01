@@ -73,7 +73,7 @@ class UiRequestPlugin(object):
 
             try:
                 file = openArchiveFile(archive_path, path_within, file_obj=file_obj)
-                content_type = self.getContentType(file_path)
+                content_type = self.guessContentType(file_path)
                 self.sendHeader(200, content_type=content_type, noscript=kwargs.get("header_noscript", False), allow_ajax=header_allow_ajax)
                 return self.streamFile(file)
             except Exception as err:
