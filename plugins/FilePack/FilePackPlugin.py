@@ -45,7 +45,7 @@ class UiRequestPlugin(object):
             file_obj = None
             path_parts = self.parsePath(path)
             file_path = config.data_dir / path_parts["address"] / path_parts["inner_path"]
-            match = re.match(r"^(.*\.(?:tar.gz|zip))/(.*)", file_path)
+            match = re.match(r"^(.*\.(?:tar.gz|zip))/(.*)", str(file_path))
             archive_path, path_within = match.groups()
             if archive_path not in archive_cache:
                 site = self.server.site_manager.get(path_parts["address"])
@@ -73,7 +73,7 @@ class UiRequestPlugin(object):
 
             try:
                 file = openArchiveFile(archive_path, path_within, file_obj=file_obj)
-                content_type = self.guessContentType(file_path)
+                content_type = self.guessContentType(file_path.name)
                 self.sendHeader(200, content_type=content_type, noscript=kwargs.get("header_noscript", False), allow_ajax=header_allow_ajax)
                 return self.streamFile(file)
             except Exception as err:
