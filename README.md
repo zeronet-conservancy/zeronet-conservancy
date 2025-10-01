@@ -4,25 +4,23 @@
 
 (NOTE THAT TRANSLATIONS ARE USUALLY BEHIND THIS FILE)
 
-[по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md)
+[по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md) | [日本語](README-ja.md)
 
 `zeronet-conservancy` is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
 (that has been abandoned by its creator) that is dedicated to sustaining existing p2p network and developing
 its values of decentralization and freedom, while gradually switching to a better designed network
 
-## No active maintainer warning
-
-This fork was created and maintained by @caryoscelus, but due to vanishing interest and in order to avoid having
-another one-person project, the development is limitted.
-
-## Why fork?
+## State of the fork
 
 During onion-v3 switch crisis, we needed a fork that worked with onion-v3 and didn't depend on trust to one or
 two people. This fork started from fulfilling that mission, implementing minimal changes to
-[ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3) branch which are easy to audit by anyone. While
-you can still use the early releases of the fork to get onion-v3 working, the goal of this fork has since shifted
-and we're dedicated to solving more problems and improving user experience and security all over, until the
-brand new, completely transparent and audited network is ready and this project can be put to rest
+[ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3) branch which are easy to audit by anyone.
+
+Now 0net is in deeper crisis than ever before and this fork seems to
+be the last one standing.  Development is sparse and slow, but some of
+the work is being done behind the scenes. If you're completely new to
+0net, don't have anybody to guide you there and are not a developer,
+we recommend waiting until v0.8 is out.
 
 ## Why 0net?
 

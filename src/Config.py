@@ -1,4 +1,5 @@
 import argparse
+from argparse import BooleanOptionalAction
 import sys
 import os
 import platform
@@ -10,11 +11,13 @@ import logging.handlers
 import stat
 import time
 from pathlib import Path
+from rich import print
 
 VERSION = "0.7.10+"
 
 class StartupError(RuntimeError):
-    pass
+    def __init__(self, message, *paths):
+        super().__init__(self, f"Startup error: {message}, paths: {paths}")
 
 class Config:
     """Class responsible for storing and loading config.
@@ -118,10 +121,12 @@ class Config:
             self.config_file = argv[argv.index('--config-file') + 1]
         old_dir = Path(self.getStartDirOld())
         new_dir = Path(self.getStartDir())
-        no_migrate = '--no-migrate' in argv
-        silent_migrate = '--portable' in argv or '--migrate' in argv
+        # Disable migration by default
+        do_migrate = '--migrate' in argv
+        no_migrate = not do_migrate
+        silent = '--no-migrate' in argv
         try:
-            self.start_dir = self.maybeMigrate(old_dir, new_dir, no_migrate, silent_migrate)
+            self.start_dir = self.maybeMigrate(old_dir, new_dir, no_migrate, silent)
         except Exception as ex:
             raise ex
 
@@ -149,15 +154,15 @@ class Config:
         return (root / 'znc.conf').is_file()
 
     def doMigrate(self, old_dir, new_dir):
-        raise RuntimeError('Migration not implemented yet')
+        raise StartupError('Migration not implemented yet')
 
     def askMigrate(self, old_dir, new_dir, silent):
         if not sys.stdin.isatty():
-            raise StartupError('Migration refused: non-interactive shell')
+            raise StartupError("Migration refused: non-interactive shell, can't ask")
         while True:
             r = input(f'You have old data in `{old_dir}`. Migrate to new format to `{new_dir}`? [Y/n]')
             if r.lower().startswith('n'):
-                raise StartupError('Migration refused')
+                raise StartupError('Migration refused (start with --no-migrate to avoid migration altogether)')
             if r.lower().startswith('y'):
                 return self.doMigrate(old_dir, new_dir)
 
@@ -166,24 +171,26 @@ class Config:
         with (new_dir / 'znc.conf').open('w') as f:
             f.write('# zeronet-conervancy config file')
 
-    def maybeMigrate(self, old_dir, new_dir, no_migrate, silent_migrate):
+    def maybeMigrate(self, old_dir, new_dir, no_migrate, silent):
         if (old_dir / 'zeronet.conf').exists() and new_dir.exists():
             if old_dir == new_dir:
                 if self.checkDir(new_dir):
                     return new_dir
                 elif no_migrate:
-                    return StartError('Migration refused, but new directory should be migrated')
+                    return StartupError("Migration refused, but new directory should be migrated (old_dir == new_dir)", old_dir)
                 else:
                     return askMigrate(old_dir, new_dir, silent_migrate)
             else:
                 if self.checkDir(new_dir):
                     if not no_migrate:
-                        print("There's an old starting directory")
+                        print("[bold red]WARNING: There's an old starting directory, ignoring[/bold red]")
                     return new_dir
                 else:
                     raise StartupError('Bad startup directory')
         elif (old_dir / 'zeronet.conf').exists():
             if no_migrate:
+                if not silent:
+                    print("[bold red]WARNING: There's an old starting directory, ignoring[/bold red]")
                 self.createNewConfig(new_dir)
                 return new_dir
             else:
@@ -192,7 +199,7 @@ class Config:
             if self.checkDir(new_dir):
                 return new_dir
             else:
-                return StartupError('Bad startup directory')
+                return StartupError("Bad startup directory", new_dir)
         else:
             self.createNewConfig(new_dir)
             return new_dir
@@ -363,11 +370,11 @@ class Config:
 
         self.parser.add_argument('--batch', help="Batch mode (No interactive input for commands)", action='store_true')
 
-        self.parser.add_argument('--portable', action=argparse.BooleanOptionalAction)
+        self.parser.add_argument('--portable', action=BooleanOptionalAction)
         self.parser.add_argument('--start-dir', help='Path of working dir for variable content (data, log, config)', default=self.start_dir, metavar="path")
         self.parser.add_argument('--config-file', help='Path of config file', default=config_file, metavar="path")
         self.parser.add_argument('--data-dir', help='Path of data directory', default=data_dir, metavar="path")
-        self.parser.add_argument('--no-migrate', help='Ignore data directories from old 0net versions', action=argparse.BooleanOptionalAction, default=False)
+        self.parser.add_argument('--migrate', help="Try to migrate data from old 0net versions (not implemented yet)", action=BooleanOptionalAction, default=False)
 
         self.parser.add_argument('--console-log-level', help='Level of logging to console', default="default", choices=["default", "DEBUG", "INFO", "ERROR", "off"])
 
@@ -415,7 +422,7 @@ class Config:
         self.parser.add_argument('--proxy', help='Socks proxy address', metavar='ip:port')
         self.parser.add_argument('--bind', help='Bind outgoing sockets to this address', metavar='ip')
         self.parser.add_argument('--bootstrap-url', help='URL of file with link to bootstrap bundle', default='https://raw.githubusercontent.com/zeronet-conservancy/zeronet-conservancy/master/bootstrap.url', type=str)
-        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=argparse.BooleanOptionalAction, default=True)
+        self.parser.add_argument('--bootstrap', help='Enable downloading bootstrap information from clearnet', action=BooleanOptionalAction, default=True)
         self.parser.add_argument('--trackers', help='Bootstraping torrent trackers', default=[], metavar='protocol://address', nargs='*')
         self.parser.add_argument('--trackers-file', help='Load torrent trackers dynamically from a file (using Syncronite by default)', default=['{data_dir}/15CEFKBRHFfAP9rmL6hhLmHoXrrgmw4B5o/cache/1/Syncronite.html'], metavar='path', nargs='*')
         self.parser.add_argument('--trackers-proxy', help='Force use proxy to connect to trackers (disable, tor, ip:port)', default="disable")
@@ -449,7 +456,7 @@ class Config:
 
         self.parser.add_argument('--download-optional', choices=["manual", "auto"], default="manual")
 
-        self.parser.add_argument('--lax-cert-check', action=argparse.BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
+        self.parser.add_argument('--lax-cert-check', action=BooleanOptionalAction, default=True, help="Enabling lax cert check allows users getting site writing priviledges by employing compromized (i.e. with leaked private keys) cert issuer. Disable for spam protection")
 
         self.parser.add_argument('--tor', help='enable: Use only for Tor peers, always: Use Tor for every connection', choices=["disable", "enable", "always"], default='enable')
         self.parser.add_argument('--tor-controller', help='Tor controller address', metavar='ip:port', default='127.0.0.1:9051')
