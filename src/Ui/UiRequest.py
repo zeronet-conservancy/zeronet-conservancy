@@ -216,9 +216,9 @@ class UiRequest:
 
         if self.env["REQUEST_METHOD"] == "OPTIONS":
             if "/" not in path.strip("/"):
-                content_type = self.getContentType("index.html")
+                content_type = self.guessContentType('index.html')
             else:
-                content_type = self.getContentType(path)
+                content_type = self.guessContentType(path)
 
             if config.debug_unsafe:
                 extra_headers = {'Access-Control-Allow-Origin': '*'}
@@ -292,8 +292,8 @@ class UiRequest:
     def isAjaxRequest(self):
         return self.env.get("HTTP_X_REQUESTED_WITH") == "XMLHttpRequest"
 
-    # Get mime by filename
-    def getContentType(self, file_name):
+    def guessContentType(self, file_name):
+        """Guess mime type by filename"""
         file_name = file_name.lower()
         ext = file_name.rsplit(".", 1)[-1]
 
@@ -454,9 +454,9 @@ class UiRequest:
 
         inner_path = match.group("inner_path").lstrip("/")
         if not inner_path or path.endswith("/"):  # It's a directory
-            content_type = self.getContentType("index.html")
+            content_type = self.guessContentType('index.html')
         else:  # It's a file
-            content_type = self.getContentType(inner_path)
+            content_type = self.guessContentType(inner_path)
 
         is_html_file = "html" in content_type or "xhtml" in content_type
 
@@ -906,8 +906,8 @@ class UiRequest:
 
         return block
 
-    # Stream a file to client
     def actionFile(self, file_path, block_size=64 * 1024, send_header=True, header_length=True, header_noscript=False, header_allow_ajax=False, extra_headers=None, file_size=None, file_obj=None, path_parts=None):
+        """Stream a file to client"""
         if extra_headers is None:
             extra_headers = {}
         file_name = os.path.basename(file_path)
@@ -916,8 +916,7 @@ class UiRequest:
             file_size = helper.getFilesize(file_path)
 
         if file_size is not None:
-            # Try to figure out content type by extension
-            content_type = self.getContentType(file_name)
+            content_type = self.guessContentType(file_name)
 
             range = self.env.get("HTTP_RANGE")
             range_start = None
