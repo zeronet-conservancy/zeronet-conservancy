@@ -38,6 +38,7 @@ else:
         root = up(up(up(__file__)))
         _repo = git.Repo(root)
     except Exception as exc:
+        import traceback
         print("Caught exception while trying to detect git repo.")
         traceback.print_exc()
         git = None
@@ -49,6 +50,7 @@ def _gitted(f):
             try:
                 return f(*args, **kwargs)
             except Exception as exc:
+                import traceback
                 print("Caught exception while trying to get git info.")
                 traceback.print_exc()
                 return None
