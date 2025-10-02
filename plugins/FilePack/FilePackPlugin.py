@@ -126,8 +126,8 @@ class SiteStoragePlugin(object):
         return archive
 
     def walk(self, inner_path, *args, **kwags):
-        if ".zip" in inner_path or ".tar.gz" in inner_path:
-            match = re.match(r"^(.*\.(?:tar.gz|zip))(.*)", inner_path)
+        if ".zip" in inner_path.name or ".tar.gz" in inner_path.name:
+            match = re.match(r"^(.*\.(?:tar.gz|zip))(.*)", str(inner_path))
             archive_inner_path, path_within = match.groups()
             archive = self.openArchive(archive_inner_path)
             path_within = path_within.lstrip("/")
