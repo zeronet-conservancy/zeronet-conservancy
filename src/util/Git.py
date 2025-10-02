@@ -1,4 +1,4 @@
-##  Copyright (c) 2023 caryoscelus
+##  Copyright (c) 2023-2025 caryoscelus
 ##
 ##  zeronet-conservancy is free software: you can redistribute it and/or modify it under the
 ##  terms of the GNU General Public License as published by the Free Software
@@ -22,6 +22,7 @@ also want to use it for updates.
 import os
 
 from typing import Optional
+from functools import wraps
 
 global git
 
@@ -33,8 +34,8 @@ else:
     try:
         global _repo
         up = os.path.dirname
+        # ugh
         root = up(up(up(__file__)))
-        print(root)
         _repo = git.Repo(root)
     except Exception as exc:
         print("Caught exception while trying to detect git repo.")
@@ -43,7 +44,15 @@ else:
 
 def _gitted(f):
     if git:
-        return f
+        @wraps(f)
+        def wrapped(*args, **kwargs):
+            try:
+                return f(*args, **kwargs)
+            except Exception as exc:
+                print("Caught exception while trying to get git info.")
+                traceback.print_exc()
+                return None
+        return wrapped
     else:
         return lambda *args, **kwargs: None
 
