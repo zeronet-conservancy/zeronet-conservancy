@@ -16,7 +16,7 @@ def startupError(msg):
 # Third party modules
 import gevent
 import gevent.monkey
-gevent.monkey.patch_all(thread=False, subprocess=False)
+gevent.monkey.patch_all(thread=False)
 
 update_after_shutdown = False  # If set True then update and restart zeronet after main loop ended
 restart_after_shutdown = False  # If set True then restart zeronet after main loop ended
