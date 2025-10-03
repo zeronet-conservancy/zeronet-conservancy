@@ -39,4 +39,4 @@ plugins/StemPort
 plugins/UiPassword
 
 # Build files
-src/Build.py
+src/BuildInfo.py

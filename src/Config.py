@@ -27,7 +27,7 @@ class Config:
 
     def __init__(self, argv):
         try:
-            from . import Build
+            from . import BuildInfo
         except ImportError:
             from .util import Git
             self.build_type = 'source'
@@ -36,11 +36,11 @@ class Config:
             self.version = VERSION
             self.platform = 'source'
         else:
-            self.build_type = Build.build_type
-            self.branch = Build.branch
-            self.commit = Build.commit
-            self.version = Build.version or VERSION
-            self.platform = Build.platform
+            self.build_type = BuildInfo.build_type
+            self.branch = BuildInfo.branch
+            self.commit = BuildInfo.commit
+            self.version = BuildInfo.version or VERSION
+            self.platform = BuildInfo.platform
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"
         # for compatibility
