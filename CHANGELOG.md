@@ -1,4 +1,9 @@
-### zeronet-conservancy 0.7.10+
+### zeronet-conservancy 0.8-alpha
+maintainers: none -> @caryoscelus
+- new moderation system based on user coordination (WIP)
+- new home page (WIP)
+- new API library (WIP)
+- multiuser plugin removed (new multiuser capabilities to be implemented)
 - disable site-installed plugins for security reasons (@caryoscelus)
 - fix downloading geoip db (@caryoscelus)
 - python <3.8 is officially unsupported
@@ -15,7 +20,9 @@
 - changes in directory structure (split data and config, use user directories by default)
 - use version information from git if available
 - different build types (portable vs package)
-- various improvements
+- codebase improvements (using Path objects more instead of raw strings, better API definitions, etc)
+- more command-line options for development (--debug-unsafe, --no-plugins)
+- various improvements & fixes
 
 ### zeronet-conservancy 0.7.10 (2023-07-26) (18d35d3bed4f0683e99)
 prepared by @caryoscelus

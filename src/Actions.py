@@ -35,8 +35,7 @@ class Actions:
         from File import FileServer
         from Ui import UiServer
 
-        global file_server, ui_server
-
+        import API
         self.initDHT()
 
         main.file_server = FileServer()

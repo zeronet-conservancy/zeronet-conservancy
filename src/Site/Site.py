@@ -30,8 +30,8 @@ from . import SiteManager
 
 
 @PluginManager.acceptPlugins
-class Site(object):
-
+class Site:
+    """Representation of a 0net site"""
     def __init__(self, address, allow_create=True, settings=None):
         self.address = str(re.sub("[^A-Za-z0-9]", "", address))  # Make sure its correct address
         self.address_hash = hashlib.sha256(self.address.encode("ascii")).digest()
@@ -782,8 +782,8 @@ class Site(object):
             file_info = self.content_manager.getFileInfo(inner_path)
         return file_info
 
-    # Check and download if file not exist
     def needFile(self, inner_path, update=False, blocking=True, peer=None, priority=0):
+        """Check and download if file not exist"""
         if self.worker_manager.tasks.findTask(inner_path):
             task = self.worker_manager.addTask(inner_path, peer, priority=priority)
             if blocking:
@@ -961,7 +961,7 @@ class Site(object):
             return []
 
         tor_manager = self.connection_server.tor_manager
-        for connection in self.connection_server.connections:
+        for connection in self.connection_server.connections():
             if not connection.connected and time.time() - connection.start_time > 20:  # Still not connected after 20s
                 continue
             peer = self.peers.get("%s:%s" % (connection.ip, connection.port))

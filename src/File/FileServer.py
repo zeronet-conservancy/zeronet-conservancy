@@ -51,7 +51,7 @@ class FileServer(ConnectionServer):
                 config.saveValue("fileserver_port", port)  # Save random port value for next restart
                 config.arguments.fileserver_port = port
 
-        ConnectionServer.__init__(self, ip, port, self.handleRequest)
+        ConnectionServer.__init__(self, ip, port)
         self.log.debug("Supported IP types: %s" % self.supported_ip_types)
 
         if ip_type == "dual" and ip == "::":
@@ -273,7 +273,7 @@ class FileServer(ConnectionServer):
             # Sites health care every 20 min
             self.log.debug(
                 "Running site cleanup, connections: %s, internet: %s, protected peers: %s" %
-                (len(self.connections), self.has_internet, len(peers_protected))
+                (self.numConnections(), self.has_internet, len(peers_protected))
             )
 
             for address, site in list(self.sites.items()):

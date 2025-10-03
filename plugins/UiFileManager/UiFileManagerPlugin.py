@@ -48,11 +48,6 @@ class UiFileManagerPlugin(object):
     def actionUiMedia(self, path, *args, **kwargs):
         if path.startswith("/uimedia/plugins/uifilemanager/"):
             file_path = path.replace("/uimedia/plugins/uifilemanager/", plugin_dir + "/media/")
-            if config.debug and (file_path.endswith("all.js") or file_path.endswith("all.css")):
-                # If debugging merge *.css to all.css and *.js to all.js
-                from Debug import DebugMedia
-                DebugMedia.merge(file_path)
-
             if file_path.endswith("js"):
                 data = _.translateData(open(file_path).read(), mode="js").encode("utf8")
             elif file_path.endswith("html"):
