@@ -10,7 +10,7 @@ from pathlib import Path
 import sqlite3
 import gevent.event
 
-import util
+from util.Noparallel import Noparallel
 from util import SafeRe
 from Db.Db import Db
 from Debug import Debug
@@ -100,7 +100,7 @@ class SiteStorage(object):
                 pass
 
     # Return db class
-    @util.Noparallel()
+    @Noparallel()
     def getDb(self):
         if self.event_db_busy:  # Db not ready for queries
             self.log.debug("Wating for db...")
@@ -143,7 +143,7 @@ class SiteStorage(object):
                     time.sleep(0.001)  # Context switch to avoid UI block
 
     # Rebuild sql cache
-    @util.Noparallel()
+    @Noparallel()
     @thread_pool_fs_batch.wrap
     def rebuildDb(self, delete_db=True, reason="Unknown"):
         self.log.info("Rebuilding db (reason: %s)..." % reason)

@@ -7,13 +7,13 @@ import atexit
 
 import gevent
 
-import util
+from util.Noparallel import Noparallel
 from Plugin import PluginManager
 from Content import ContentDb
 from Config import config
 from util import helper
 from util import RateLimit
-from util import Cached
+from util.Cached import Cached
 from Debug import Debug
 
 @PluginManager.acceptPlugins
@@ -28,7 +28,7 @@ class SiteManager(object):
         atexit.register(lambda: self.save(recalculate_size=True))
 
     # Load all sites from data/sites.json
-    @util.Noparallel()
+    @Noparallel()
     def load(self, cleanup=True, startup=False):
         from .Site import Site
         self.log.info(f'Loading sites... ({cleanup=}, {startup=})')

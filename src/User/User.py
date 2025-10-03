@@ -9,6 +9,7 @@ from Crypt import CryptBitcoin
 from Plugin import PluginManager
 from Config import config
 from util import helper
+from util.Noparallel import Noparallel
 from Debug import Debug
 
 
@@ -75,7 +76,7 @@ class User:
             ]
         return accounts
 
-    @util.Noparallel(queue=True, ignore_class=True)
+    @Noparallel(queue=True, ignore_class=True)
     def save(self):
         """Save to data/private/users.json"""
         users_json = config.private_dir / 'users.json'
@@ -100,7 +101,7 @@ class User:
     def getAddressAuthIndex(self, address):
         return int(binascii.hexlify(address.encode()), 16)
 
-    @util.Noparallel()
+    @Noparallel()
     def generateAuthAddress(self, address):
         address_id = self.getAddressAuthIndex(address)  # Convert site address to int
         auth_privatekey = CryptBitcoin.hdPrivatekey(self.master_seed, address_id)

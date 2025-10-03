@@ -9,8 +9,8 @@ import msgpack
 from gevent.server import StreamServer
 from gevent.pool import Pool
 
-import util
 from util import helper
+from util.Noparallel import Noparallel
 from Debug import Debug
 from .Connection import Connection
 from Config import config
@@ -353,7 +353,7 @@ class ConnectionServer:
             time.sleep(15)
         self.log.debug("Checkconnections ended")
 
-    @util.Noparallel(blocking=False)
+    @Noparallel(blocking=False)
     def checkMaxConnections(self):
         if self.numConnections() < config.global_connected_limit:
             return 0

@@ -18,6 +18,7 @@ from Plugin import PluginManager
 from Debug import Debug
 from Translate import Translate
 from util import helper
+from util.Noparallel import Noparallel
 from util.Flag import flag
 from .ZipStream import ZipStream
 
@@ -670,7 +671,7 @@ class UiWebsocketPlugin(object):
             loc_cache[ip] = loc
             return loc
 
-    @util.Noparallel()
+    @Noparallel()
     def getGeoipDb(self):
         db_name = 'GeoLite2-City.mmdb'
 

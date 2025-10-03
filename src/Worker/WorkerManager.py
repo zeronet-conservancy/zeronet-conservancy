@@ -10,7 +10,7 @@ from Config import config
 from util import helper
 from Plugin import PluginManager
 from Debug.DebugLock import DebugLock
-import util
+from util.Noparallel import Noparallel
 
 
 @PluginManager.acceptPlugins
@@ -273,7 +273,7 @@ class WorkerManager(object):
         return found
 
     # Start find peers for optional files
-    @util.Noparallel(blocking=False, ignore_args=True)
+    @Noparallel(blocking=False, ignore_args=True)
     def startFindOptional(self, reset_task=False, find_more=False, high_priority=False):
         # Wait for more file requests
         if len(self.tasks) < 20 or high_priority:

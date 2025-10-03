@@ -10,6 +10,7 @@ from gevent.server import StreamServer
 
 import util
 from util import helper
+from util.Noparallel import Noparallel
 from Config import config
 from .FileRequest import FileRequest
 from Peer import PeerPortchecker
@@ -236,7 +237,7 @@ class FileServer(ConnectionServer):
             site.updateHashfield()
 
     # Check sites integrity
-    @util.Noparallel()
+    @Noparallel()
     def checkSites(self, check_files=False, force_port_check=False):
         self.log.debug("Checking sites...")
         s = time.time()

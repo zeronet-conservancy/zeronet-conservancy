@@ -22,8 +22,9 @@ with warnings.catch_warnings():
 
 from util import helper
 from util import Msgpack
+from util.Pooled import Pooled
+from util.Noparallel import Noparallel
 from util.Flag import flag
-import util
 from .BigfilePiecefield import BigfilePiecefield, BigfilePiecefieldPacked
 
 
@@ -733,7 +734,7 @@ class PeerPlugin(object):
         else:
             return super(PeerPlugin, self).__getattr__(key)
 
-    @util.Noparallel(ignore_args=True)
+    @Noparallel(ignore_args=True)
     def updatePiecefields(self, force=False):
         if self.connection and self.connection.handshake.get("rev", 0) < 2190:
             return False  # Not supported
@@ -801,7 +802,7 @@ class SitePlugin(object):
 
     def needFile(self, inner_path, *args, **kwargs):
         if inner_path.endswith("|all"):
-            @util.Pooled(20)
+            @Pooled(20)
             def pooledNeedBigfile(inner_path, *args, **kwargs):
                 if inner_path not in self.bad_files:
                     self.log.debug("Cancelled piece, skipping %s" % inner_path)
