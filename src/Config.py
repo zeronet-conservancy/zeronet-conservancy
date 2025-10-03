@@ -204,6 +204,9 @@ class Config:
         elif new_dir.exists():
             if self.checkDir(new_dir):
                 return new_dir
+            elif not any(new_dir.iterdir()):
+                self.createNewConfig(new_dir)
+                return new_dir
             else:
                 raise StartupError("Bad startup directory", new_dir)
         else:
