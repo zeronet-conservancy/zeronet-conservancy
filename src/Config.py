@@ -205,7 +205,7 @@ class Config:
             if self.checkDir(new_dir):
                 return new_dir
             else:
-                return StartupError("Bad startup directory", new_dir)
+                raise StartupError("Bad startup directory", new_dir)
         else:
             self.createNewConfig(new_dir)
             return new_dir
