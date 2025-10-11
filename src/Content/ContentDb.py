@@ -40,7 +40,7 @@ class ContentDb(Db):
     def getSchema(self):
         schema = {}
         schema["db_name"] = "ContentDb"
-        schema["version"] = 3
+        schema["version"] = 4
         schema["tables"] = {}
 
         if not self.getTableVersion("site"):
@@ -51,6 +51,7 @@ class ContentDb(Db):
                 self.execute("INSERT INTO keyvalue ?", {"json_id": 0, "key": "table.site.version", "value": 1})
                 self.execute("INSERT INTO keyvalue ?", {"json_id": 0, "key": "table.content.version", "value": 1})
                 self.execute('INSERT INTO keyvalue ?', {'json_id': 0, 'key': 'table.size_limit.version', 'value': 1})
+                self.execute('INSERT INTO keyvalue ?', {'json_id': 0, 'key': 'table.user.version', 'value': 1})
 
         schema["tables"]["content"] = {
             "cols": [
@@ -85,7 +86,7 @@ class ContentDb(Db):
             'schema_changed': 4,
         }
 
-        schema['tables']['users'] = {
+        schema['tables']['user'] = {
             'cols': [
                 ['address', 'TEXT NOT NULL PRIMARY KEY UNIQUE'],
                 ['username', 'TEXT'],
