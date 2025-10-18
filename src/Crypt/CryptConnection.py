@@ -17,6 +17,9 @@ class CryptConnectionManager:
             self.openssl_bin = "tools\\openssl\\openssl.exe"
         elif config.dist_type.startswith("bundle_linux"):
             self.openssl_bin = "../runtime/bin/openssl"
+        elif config.is_android:
+            # assuming termux, TODO: android build, android-nix
+            self.openssl_bin = '/data/data/com.termux/files/usr/bin/openssl'
         else:
             self.openssl_bin = "openssl"
 

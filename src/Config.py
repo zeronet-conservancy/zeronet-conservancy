@@ -41,6 +41,7 @@ class Config:
             self.commit = Build.commit
             self.version = Build.version or VERSION
             self.platform = Build.platform
+        self.is_android = hasattr(sys, 'getandroidapilevel')
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"
         # for compatibility
