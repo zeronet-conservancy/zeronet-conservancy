@@ -4,6 +4,7 @@ import logging
 import collections
 import time
 import hashlib
+from pathlib import Path
 
 from Debug import Debug
 from Plugin import PluginManager
@@ -156,7 +157,7 @@ class ContentFilterStorage(object):
             if not site:
                 continue
             dir_inner_path = helper.getDirname(row["inner_path"])
-            for file_name in site.storage.walk(dir_inner_path):
+            for file_name in site.storage.walk(Path(dir_inner_path)):
                 if action == "remove":
                     site.storage.delete(dir_inner_path + file_name)
                 else:

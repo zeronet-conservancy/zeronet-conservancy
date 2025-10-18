@@ -5,6 +5,7 @@ import os
 import copy
 import base64
 import sys
+from pathlib import Path
 
 import gevent
 
@@ -650,7 +651,7 @@ class ContentManager:
             ignored = True
             self.log.error("- [ERROR] Only ascii encoded directories allowed: %s" % dir_inner_path)
 
-        for file_relative_path in self.site.storage.walk(dir_inner_path, ignore_pattern):
+        for file_relative_path in self.site.storage.walk(Path(dir_inner_path), ignore_pattern):
             file_name = helper.getFilename(file_relative_path)
 
             ignored = optional = False

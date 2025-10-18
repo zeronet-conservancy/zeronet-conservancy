@@ -7,6 +7,7 @@ import re
 import copy
 import logging
 import stat
+from pathlib import Path
 
 import gevent
 
@@ -700,7 +701,7 @@ class UiWebsocket(object):
     @flag.async_run
     def actionFileList(self, to, inner_path):
         try:
-            return list(self.site.storage.walk(inner_path))
+            return list(self.site.storage.walk(Path(inner_path)))
         except Exception as err:
             self.log.error("fileList %s error: %s" % (inner_path, Debug.formatException(err)))
             return {"error": Debug.formatExceptionMessage(err)}
@@ -711,7 +712,7 @@ class UiWebsocket(object):
         try:
             if stats:
                 back = []
-                for file_name in self.site.storage.list(inner_path):
+                for file_name in self.site.storage.list(Path(inner_path)):
                     file_stats = os.stat(self.site.storage.getPath(inner_path + "/" + file_name))
                     is_dir = stat.S_ISDIR(file_stats.st_mode)
                     back.append(
@@ -719,7 +720,7 @@ class UiWebsocket(object):
                     )
                 return back
             else:
-                return list(self.site.storage.list(inner_path))
+                return list(self.site.storage.list(Path(inner_path)))
         except Exception as err:
             self.log.error("dirList %s error: %s" % (inner_path, Debug.formatException(err)))
             return {"error": Debug.formatExceptionMessage(err)}
