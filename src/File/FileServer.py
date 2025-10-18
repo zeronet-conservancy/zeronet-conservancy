@@ -10,6 +10,7 @@ from gevent.server import StreamServer
 
 import util
 from util import helper
+from util.Noparallel import Noparallel
 from Config import config
 from .FileRequest import FileRequest
 from Peer import PeerPortchecker
@@ -51,7 +52,7 @@ class FileServer(ConnectionServer):
                 config.saveValue("fileserver_port", port)  # Save random port value for next restart
                 config.arguments.fileserver_port = port
 
-        ConnectionServer.__init__(self, ip, port, self.handleRequest)
+        ConnectionServer.__init__(self, ip, port)
         self.log.debug("Supported IP types: %s" % self.supported_ip_types)
 
         if ip_type == "dual" and ip == "::":
@@ -236,7 +237,7 @@ class FileServer(ConnectionServer):
             site.updateHashfield()
 
     # Check sites integrity
-    @util.Noparallel()
+    @Noparallel()
     def checkSites(self, check_files=False, force_port_check=False):
         self.log.debug("Checking sites...")
         s = time.time()
@@ -273,7 +274,7 @@ class FileServer(ConnectionServer):
             # Sites health care every 20 min
             self.log.debug(
                 "Running site cleanup, connections: %s, internet: %s, protected peers: %s" %
-                (len(self.connections), self.has_internet, len(peers_protected))
+                (self.numConnections(), self.has_internet, len(peers_protected))
             )
 
             for address, site in list(self.sites.items()):

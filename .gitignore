@@ -16,6 +16,7 @@ __pycache__/
 # Temporary files
 *.bak
 *~
+\#*\#
 
 # Data dir
 data/*
@@ -25,15 +26,6 @@ docker/data/
 # Virtualenv
 env/*
 venv/*
-
-# Tor data
-tools/tor/data
-
-# PhantomJS, downloaded manually for unit tests
-tools/phantomjs
-
-# ZeroNet config file
-zeronet.conf
 
 # ZeroNet log files
 log/*
@@ -47,4 +39,4 @@ plugins/StemPort
 plugins/UiPassword
 
 # Build files
-src/Build.py
+src/BuildInfo.py

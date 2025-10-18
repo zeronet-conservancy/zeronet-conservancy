@@ -6,69 +6,38 @@
 
 [по-русски](README-ru.md) | [em português](README-ptbr.md) | [简体中文](README-zh-cn.md) | [日本語](README-ja.md)
 
-`zeronet-conservancy` is a fork/continuation of [ZeroNet](https://github.com/HelloZeroNet/ZeroNet) project
-(that has been abandoned by its creator) that is dedicated to sustaining existing p2p network and developing
-its values of decentralization and freedom, while gradually switching to a better designed network
+`zeronet-conservancy` is a modern client of
+[ZeroNet](https://github.com/HelloZeroNet/ZeroNet) network, aimed at
+creating peer-to-peer distributed web for people.
 
-## State of the fork
+## v0.8 status
 
-During onion-v3 switch crisis, we needed a fork that worked with onion-v3 and didn't depend on trust to one or
-two people. This fork started from fulfilling that mission, implementing minimal changes to
-[ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3) branch which are easy to audit by anyone.
+For a few years `zeronet-conservancy` was maintained as mainly status
+quo fork of original client. With v0.8 that is changing — here's
+overview of new stuff (some already implemented, some in development):
 
-Now 0net is in deeper crisis than ever before and this fork seems to
-be the last one standing.  Development is sparse and slow, but some of
-the work is being done behind the scenes. If you're completely new to
-0net, don't have anybody to guide you there and are not a developer,
-we recommend waiting until v0.8 is out.
+- user limits/spam protection are handled on per-node basis. i.e. part
+  of network may propagate some content and another consider it spam
+  and keep it out
+- interactive content without ZeroID registration
+- apps are switching to using user data in user-controlled location
+- DHT allows using even less hard-coded servers (in particular in the
+  best scenario it should be possible to only have to initialize once
+  using particular server)
+- switch to new UI, control panel/start page
+- local full-text and p2p search
+- more native builds and browser bundle option
 
-## Why 0net?
+When to expect v0.8 release? We don't know, when it's ready.
 
-* We believe in open, free, and uncensored networks and communication.
-* No single point of failure: Site remains online so long as at least 1 peer is
-  serving it.
-* No hosting costs: Sites are served by visitors.
-* Impossible to shut down: It's nowhere because it's everywhere.
-* Fast and works offline: You can access the site even if Internet is
-  unavailable.
+## What is this?
 
-
-## Features
- * Real-time updated sites
- * Clone websites in one click
- * Password-less authorization using private/public keys
- * Built-in SQL server with P2P data synchronization: allows easier dynamic site development
- * Anonymity: Tor network support with .onion hidden services (including onion-v3 support)
- * TLS encrypted connections (through clearnet)
- * Automatic uPnP port opening (if opted in)
- * Plugin for multiuser (openproxy) support
- * Works with any modern browser/OS
- * Works offline and can be synced via alternative transports (or when connection is back)
-
-
-## How does it work?
-
-* After starting `zeronet.py` you will be able to visit zeronet sites using
-  `http://127.0.0.1:43110/{zeronet_address}` (eg.
-  `http://127.0.0.1:43110/1MCoA8rQHhwu4LY2t2aabqcGSRqrL8uf2X/`).
-* When you visit a new zeronet site, it tries to find peers using the BitTorrent
-  network so it can download the site files (html, css, js...) from them.
-* Each visited site is also served by you.
-* Every site contains a `content.json` file which holds all other files in a sha512 hash
-  and a signature generated using the site's private key.
-* If the site owner (who has the private key for the site address) modifies the
-  site, then he/she signs the new `content.json` and publishes it to the peers.
-  Afterwards, the peers verify the `content.json` integrity (using the
-  signature), they download the modified files and publish the new content to
-  other peers.
-
-Following links relate to original ZeroNet:
-
-- [Slideshow about ZeroNet cryptography, site updates, multi-user sites »](https://docs.google.com/presentation/d/1_2qK1IuOKJ51pgBvllZ9Yu7Au2l551t3XBgyTSvilew/pub?start=false&loop=false&delayms=3000)
-- [Frequently asked questions »](https://zeronet.io/docs/faq/)
-- [ZeroNet Developer Documentation »](https://zeronet.io/docs/site_development/getting_started/) (getting outdated)
-
-## How to join
+- decentralized
+- locally hosted
+- censorship-resistant
+- real-time updated web
+- that gives you control over your data
+- without blockchain
 
 ### Install from your distribution repository
 
@@ -136,9 +105,10 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - `./zeronet.py`
 
 #### (alternatively) Build Docker image
-- build 0net image: `docker build -t 0net-conservancy:latest . -f Dockerfile`
-- or build 0net image with integrated tor: `docker build -t 0net-conservancy:latest . -f Dockerfile.integrated_tor`
-- and run it: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net-conservancy:latest`
+(instructions & dockerfiles to be upgraded)
+- build 0net image: `docker build -t 0net-conservancy:latest . -f docker/Dockerfile`
+- or build 0net image with integrated tor: `docker build -t 0net-conservancy:latest . -f docker/Dockerfile.integrated_tor`
+- and run it: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 43111:43111 -p 26552:26552 0net-conservancy:latest`
 - /path/to/0n/data/directory - directory, where all data will be saved, including your secret certificates. If you run it with production mode, do not remove this folder!
 - or you can run it with docker-compose: `docker compose up -d 0net-conservancy` up two containers - 0net and tor separately.
 - or: `docker compose up -d 0net-tor` for run 0net and tor in one container.

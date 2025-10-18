@@ -12,7 +12,9 @@ import base64
 import gevent
 import gevent.pool
 
-import util
+from util.Noparallel import Noparallel
+from util.Pooled import Pooled
+from util.Event import Event
 from Config import config
 from Peer import Peer
 from Worker import WorkerManager
@@ -30,8 +32,8 @@ from . import SiteManager
 
 
 @PluginManager.acceptPlugins
-class Site(object):
-
+class Site:
+    """Representation of a 0net site"""
     def __init__(self, address, allow_create=True, settings=None):
         self.address = str(re.sub("[^A-Za-z0-9]", "", address))  # Make sure its correct address
         self.address_hash = hashlib.sha256(self.address.encode("ascii")).digest()
@@ -330,7 +332,7 @@ class Site(object):
                     self.log.debug("No info or size for file: %s, removing from bad_files" % bad_file)
 
     # Download all files of the site
-    @util.Noparallel(blocking=False)
+    @Noparallel(blocking=False)
     def download(self, check_size=False, blind_includes=False, retry_bad_files=True):
         if not self.connection_server:
             self.log.debug("No connection server found, skipping download")
@@ -488,7 +490,7 @@ class Site(object):
 
     # Update content.json from peers and download changed files
     # Return: None
-    @util.Noparallel()
+    @Noparallel()
     def update(self, announce=False, check_files=False, since=None):
         self.content_manager.loadContent("content.json", load_includes=False)  # Reload content.json
         self.content_updated = None  # Reset content updated time
@@ -585,7 +587,7 @@ class Site(object):
             time.sleep(0.01)
 
     # Update content.json on peers
-    @util.Noparallel()
+    @Noparallel()
     def publish(self, limit="default", inner_path="content.json", diffs={}, cb_progress=None):
         published = []  # Successfully published (Peer)
         publishers = []  # Publisher threads
@@ -640,7 +642,7 @@ class Site(object):
         return len(published)
 
     # Copy this site
-    @util.Noparallel()
+    @Noparallel()
     def clone(self, address, privatekey=None, address_index=None, root_inner_path="", overwrite=False):
         import shutil
         new_site = SiteManager.site_manager.need(address, all_file=False)
@@ -753,7 +755,7 @@ class Site(object):
 
         return new_site
 
-    @util.Pooled(100)
+    @Pooled(100)
     def pooledNeedFile(self, *args, **kwargs):
         return self.needFile(*args, **kwargs)
 
@@ -782,8 +784,8 @@ class Site(object):
             file_info = self.content_manager.getFileInfo(inner_path)
         return file_info
 
-    # Check and download if file not exist
     def needFile(self, inner_path, update=False, blocking=True, peer=None, priority=0):
+        """Check and download if file not exist"""
         if self.worker_manager.tasks.findTask(inner_path):
             task = self.worker_manager.addTask(inner_path, peer, priority=priority)
             if blocking:
@@ -961,7 +963,7 @@ class Site(object):
             return []
 
         tor_manager = self.connection_server.tor_manager
-        for connection in self.connection_server.connections:
+        for connection in self.connection_server.connections():
             if not connection.connected and time.time() - connection.start_time > 20:  # Still not connected after 20s
                 continue
             peer = self.peers.get("%s:%s" % (connection.ip, connection.port))
@@ -1087,10 +1089,10 @@ class Site(object):
 
     # Add event listeners
     def addEventListeners(self):
-        self.onFileStart = util.Event()  # If WorkerManager added new task
-        self.onFileDone = util.Event()  # If WorkerManager successfully downloaded a file
-        self.onFileFail = util.Event()  # If WorkerManager failed to download a file
-        self.onComplete = util.Event()  # All file finished
+        self.onFileStart = Event()  # If WorkerManager added new task
+        self.onFileDone = Event()  # If WorkerManager successfully downloaded a file
+        self.onFileFail = Event()  # If WorkerManager failed to download a file
+        self.onComplete = Event()  # All file finished
 
         self.onFileStart.append(lambda inner_path: self.fileStarted())  # No parameters to make Noparallel batching working
         self.onFileDone.append(lambda inner_path: self.fileDone(inner_path))
@@ -1113,7 +1115,7 @@ class Site(object):
                 ws.cmd("progress", [type, message, progress])
 
     # File download started
-    @util.Noparallel(blocking=False)
+    @Noparallel(blocking=False)
     def fileStarted(self):
         time.sleep(0.001)  # Wait for other files adds
         self.updateWebsocket(file_started=True)

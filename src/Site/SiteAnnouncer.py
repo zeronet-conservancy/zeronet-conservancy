@@ -11,7 +11,7 @@ from Config import config
 from Debug import Debug
 from util import helper
 from greenlet import GreenletExit
-import util
+from util.Noparallel import Noparallel
 
 
 class AnnounceError(Exception):
@@ -70,7 +70,7 @@ class SiteAnnouncer:
             back.append("onion")
         return back
 
-    @util.Noparallel(blocking=False)
+    @Noparallel(blocking=False)
     def announce(self, force=False, mode="start", pex=True):
         if time.time() - self.time_last_announce < 30 and not force:
             return  # No reannouncing within 30 secs
@@ -276,7 +276,7 @@ class SiteAnnouncer:
             )
         return time.time() - s
 
-    @util.Noparallel(blocking=False)
+    @Noparallel(blocking=False)
     def announcePex(self, query_num=2, need_num=5):
         peers = self.site.getConnectedPeers()
         if len(peers) == 0:  # Wait 3s for connections

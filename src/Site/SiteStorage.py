@@ -5,11 +5,12 @@ import json
 import time
 import errno
 from collections import defaultdict
+from pathlib import Path
 
 import sqlite3
 import gevent.event
 
-import util
+from util.Noparallel import Noparallel
 from util import SafeRe
 from Db.Db import Db
 from Debug import Debug
@@ -45,11 +46,11 @@ class SiteStorage(object):
 
     def getDbFile(self):
         if self.db:
-            return self.db.schema["db_file"]
+            return Path(self.db.schema['db_file'])
         else:
             if self.isFile("dbschema.json"):
                 schema = self.loadJson("dbschema.json")
-                return schema["db_file"]
+                return Path(schema['db_file'])
             else:
                 return False
 
@@ -99,7 +100,7 @@ class SiteStorage(object):
                 pass
 
     # Return db class
-    @util.Noparallel()
+    @Noparallel()
     def getDb(self):
         if self.event_db_busy:  # Db not ready for queries
             self.log.debug("Wating for db...")
@@ -142,7 +143,7 @@ class SiteStorage(object):
                     time.sleep(0.001)  # Context switch to avoid UI block
 
     # Rebuild sql cache
-    @util.Noparallel()
+    @Noparallel()
     @thread_pool_fs_batch.wrap
     def rebuildDb(self, delete_db=True, reason="Unknown"):
         self.log.info("Rebuilding db (reason: %s)..." % reason)
@@ -257,10 +258,11 @@ class SiteStorage(object):
             self.ensureDir(file_inner_dir)
         return open(file_path, mode, **kwargs)
 
-    # Open file object
     @thread_pool_fs_read.wrap
     def read(self, inner_path, mode="rb"):
-        return open(self.getPath(inner_path), mode).read()
+        """Read whole file (w/o sanity checks)"""
+        with open(self.getPath(inner_path), mode) as f:
+            return f.read()
 
     @thread_pool_fs_write.wrap
     def writeThread(self, inner_path, content):
@@ -308,20 +310,21 @@ class SiteStorage(object):
         if rename_err:
             raise rename_err
 
-    # List files from a directory
     @thread_pool_fs_read.wrap
     def walk(self, dir_inner_path, ignore=None):
+        """List files from a directory"""
         directory = self.getPath(dir_inner_path)
-        for root, dirs, files in os.walk(directory):
-            root = root.replace("\\", "/")
-            root_relative_path = re.sub(f'^{re.escape(str(directory))}', '', root).lstrip('/')
+        for root, dirs, files in directory.walk():
+            print(root, dirs, files)
+            # root_relative_path = re.sub(f'^{re.escape(str(directory))}', '', root).lstrip('/')
+            root_relative_path = root.relative_to(directory)
             for file_name in files:
                 if root_relative_path:  # Not root dir
-                    file_relative_path = root_relative_path + "/" + file_name
+                    file_relative_path = root_relative_path / file_name
                 else:
                     file_relative_path = file_name
 
-                if ignore and SafeRe.match(ignore, file_relative_path):
+                if ignore and SafeRe.match(ignore, str(file_relative_path)):
                     continue
 
                 yield file_relative_path
@@ -331,11 +334,11 @@ class SiteStorage(object):
                 dirs_filtered = []
                 for dir_name in dirs:
                     if root_relative_path:
-                        dir_relative_path = root_relative_path + "/" + dir_name
+                        dir_relative_path = root_relative_path / dir_name
                     else:
                         dir_relative_path = dir_name
 
-                    if ignore == ".*" or re.match(".*([|(]|^)%s([|)]|$)" % re.escape(dir_relative_path + "/.*"), ignore):
+                    if ignore == ".*" or re.match('.*([|(]|^)' + re.escape(str(dir_relative_path) + "/.*") + '([|)]|$)', ignore):
                         continue
 
                     dirs_filtered.append(dir_name)
@@ -347,11 +350,13 @@ class SiteStorage(object):
         directory = self.getPath(dir_inner_path)
         return os.listdir(directory)
 
-    # Site content updated
     def onUpdated(self, inner_path, file=None):
+        """Called when content has updated to possibly load data from FS into DB"""
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
         # Update Sql cache
-        should_load_to_db = inner_path.endswith(".json") or inner_path.endswith(".json.gz")
-        if inner_path == "dbschema.json":
+        should_load_to_db = inner_path.name.endswith(".json") or inner_path.name.endswith(".json.gz")
+        if inner_path.parent == Path() and inner_path.name == 'dbschema.json':
             self.has_db = self.isFile("dbschema.json")
             # Reopen DB to check changes
             if self.has_db:
@@ -397,27 +402,31 @@ class SiteStorage(object):
     def isDir(self, inner_path):
         return os.path.isdir(self.getPath(inner_path))
 
-    # Security check and return path of site's file
     def getPath(self, inner_path):
-        inner_path = inner_path.replace("\\", "/")  # Windows separator fix
+        """Security check and return path of site's file"""
+        if not isinstance(inner_path, Path):
+            # self.log.warning(f"{inner_path} was passed to getPath not as Path object")
+            inner_path = Path(inner_path)
+        if inner_path.is_absolute():
+            inner_path = inner_path.relative_to(inner_path.anchor)
         if not inner_path:
             return self.directory
 
-        if "../" in inner_path:
-            raise Exception("File not allowed: %s" % inner_path)
+        if '..' in inner_path.parts:
+            raise ValueError(f"File not allowed: {inner_path}")
 
-        return "%s/%s" % (self.directory, inner_path)
+        return self.directory / inner_path
 
-    # Get site dir relative path
     def getInnerPath(self, path):
-        if path == self.directory:
-            inner_path = ""
-        else:
-            if str(path).startswith(str(self.directory)):
-                inner_path = path[len(str(self.directory)) + 1:]
-            else:
-                raise Exception("File not allowed: %s" % path)
-        return inner_path
+        """Get site dir relative path"""
+        if not isinstance(path, Path):
+            self.log.warning(f"{path} was not presented as Path object")
+            path = Path(path)
+        try:
+            return path.relative_to(self.directory)
+        except ValueError as err:
+            self.log.warning(f"{path} is not relative to {self.directory} and thus not allowed")
+            raise err
 
     # Verify all files sha512sum using content.json
     def verifyFiles(self, quick_check=False, add_optional=False, add_changed=True):

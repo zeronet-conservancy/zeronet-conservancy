@@ -7,10 +7,13 @@ import time
 from Debug import Debug
 from util import UpnpPunch
 
+class PeerPortcheckerError(Exception):
+    def __init__(self, message):
+        super().__init__(f"Invalid response: {message}")
 
-class PeerPortchecker(object):
+class PeerPortchecker:
     checker_functions = {
-        "ipv4": ["checkIpfingerprints", "checkCanyouseeme"],
+        "ipv4": ["checkCanyouseeme"],
         "ipv6": ["checkMyaddr", "checkIpv6scanner"]
     }
     def __init__(self, file_server):
@@ -57,7 +60,7 @@ class PeerPortchecker(object):
                         res["opened"] = False
                         self.log.warning("Port %s:%s looks opened, but no incoming connection" % (res["ip"], port))
                     break
-            except Exception as err:
+            except PeerPortcheckerError as err:
                 self.log.warning(
                     "%s check error: %s in %.3fs" %
                     (func_name, Debug.formatException(err), time.time() - s)
@@ -76,31 +79,14 @@ class PeerPortchecker(object):
         if match:
             ip = match.group(1)
         else:
-            raise Exception("Invalid response: %s" % message)
+            raise PeerPortcheckerError(message)
 
         if "Success" in message:
             return {"ip": ip, "opened": True}
         elif "Error" in message:
             return {"ip": ip, "opened": False}
         else:
-            raise Exception("Invalid response: %s" % message)
-
-    def checkIpfingerprints(self, port):
-        data = self.requestUrl("https://www.ipfingerprints.com/portscan.php").read().decode("utf8")
-        ip = re.match(r'.*name="remoteHost".*?value="(.*?)"', data, re.DOTALL).group(1)
-
-        post_data = {
-            "remoteHost": ip, "start_port": port, "end_port": port,
-            "normalScan": "Yes", "scan_type": "connect2", "ping_type": "none"
-        }
-        message = self.requestUrl("https://www.ipfingerprints.com/scripts/getPortsInfo.php", post_data).read().decode("utf8")
-
-        if "open" in message:
-            return {"ip": ip, "opened": True}
-        elif "filtered" in message or "closed" in message:
-            return {"ip": ip, "opened": False}
-        else:
-            raise Exception("Invalid response: %s" % message)
+            raise PeerPortcheckerError(message)
 
     def checkMyaddr(self, port):
         url = "http://ipv6.my-addr.com/online-ipv6-port-scan.php"
@@ -119,7 +105,7 @@ class PeerPortchecker(object):
         elif "fail.png" in message:
             return {"ip": ip, "opened": False}
         else:
-            raise Exception("Invalid response: %s" % message)
+            raise PeerPortcheckerError(message)
 
     def checkIpv6scanner(self, port):
         url = "http://www.ipv6scanner.com/cgi-bin/main.py"
@@ -139,7 +125,7 @@ class PeerPortchecker(object):
         elif "CLOSED" in message_text or "FILTERED" in message_text:
             return {"ip": ip, "opened": False}
         else:
-            raise Exception("Invalid response: %s" % message_text)
+            raise PeerPortcheckerError(message_text)
 
     def checkPortchecker(self, port):  # Not working: Forbidden
         data = self.requestUrl("https://portchecker.co").read().decode("utf8")
@@ -153,14 +139,14 @@ class PeerPortchecker(object):
         if match:
             ip = match.group(1)
         else:
-            raise Exception("Invalid response: %s" % message)
+            raise PeerPortcheckerError(message)
 
         if "open" in message:
             return {"ip": ip, "opened": True}
         elif "closed" in message:
             return {"ip": ip, "opened": False}
         else:
-            raise Exception("Invalid response: %s" % message)
+            raise PeerPortcheckerError(message)
 
     def checkSubnetonline(self, port):  # Not working: Invalid response
         url = "https://www.subnetonline.com/pages/ipv6-network-tools/online-ipv6-port-scanner.php"
@@ -183,4 +169,4 @@ class PeerPortchecker(object):
         elif "closed" in message:
             return {"ip": ip, "opened": False}
         else:
-            raise Exception("Invalid response: %s" % message)
+            raise PeerPortcheckerError(message)

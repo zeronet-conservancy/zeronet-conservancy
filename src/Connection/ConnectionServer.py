@@ -9,8 +9,8 @@ import msgpack
 from gevent.server import StreamServer
 from gevent.pool import Pool
 
-import util
 from util import helper
+from util.Noparallel import Noparallel
 from Debug import Debug
 from .Connection import Connection
 from Config import config
@@ -20,8 +20,8 @@ from Tor import TorManager
 from Site import SiteManager
 
 
-class ConnectionServer(object):
-    def __init__(self, ip=None, port=None, request_handler=None):
+class ConnectionServer:
+    def __init__(self, ip=None, port=None):
         if not ip:
             if config.fileserver_ip_type == "ipv6":
                 ip = "::1"
@@ -36,7 +36,7 @@ class ConnectionServer(object):
         self.peer_blacklist = SiteManager.peer_blacklist
 
         self.tor_manager = TorManager(self.ip, self.port)
-        self.connections = []  # Connections
+        self._connections = {}
         self.whitelist = config.ip_local  # No flood protection on this ips
         self.ip_incoming = {}  # Incoming connections from ip in the last minute to avoid connection flood
         self.broken_ssl_ips = {}  # Peerids of broken ssl connections
@@ -74,8 +74,22 @@ class ConnectionServer(object):
             )
             sys.exit(0)
 
-        if request_handler:
-            self.handleRequest = request_handler
+        self.listeners = []
+
+    def addListener(self, listener):
+        self.listeners.append(listener)
+
+    def connections(self):
+        return list(self._connections.values())
+
+    def getConnectionById(self, conn_id):
+        return self._connections[conn_id]
+
+    def numConnections(self):
+        return len(self._connections)
+
+    def addConnection(self, connection):
+        self._connections[connection.id] = connection
 
     def start(self, check_connections=True):
         if self.stopping:
@@ -124,11 +138,19 @@ class ConnectionServer(object):
             self.stream_server.stop()
 
     def closeConnections(self):
-        self.log.debug("Closing all connection: %s" % len(self.connections))
-        for connection in self.connections[:]:
+        self.log.debug(f"Closing all {self.numConnections()} connections")
+        for connection in self.connections():
             connection.close("Close all connections")
 
     def handleIncomingConnection(self, sock, addr):
+        try:
+            self._handleIncomingConnection(sock, addr)
+        except Exception as exc:
+            import traceback
+            self.log.log('Exception in ConnectionServer.handleIncomingConnection:')
+            self.log.log(traceback.format_exc())
+
+    def _handleIncomingConnection(self, sock, addr):
         if config.offline:
             sock.close()
             return False
@@ -154,7 +176,7 @@ class ConnectionServer(object):
             self.ip_incoming[ip] = 1
 
         connection = Connection(self, ip, port, sock)
-        self.connections.append(connection)
+        self.addConnection(connection)
         if ip not in config.ip_local:
             self.ips[ip] = connection
         connection.handleIncomingConnection(sock)
@@ -185,7 +207,7 @@ class ConnectionServer(object):
                 return connection
 
             # Recover from connection pool
-            for connection in self.connections:
+            for connection in self.connections():
                 if connection.ip == ip:
                     if peer_id and connection.handshake.get("peer_id") != peer_id:  # Does not match
                         continue
@@ -213,7 +235,7 @@ class ConnectionServer(object):
                     connection = Connection(self, ip, port, is_tracker_connection=is_tracker_connection)
                 self.num_outgoing += 1
                 self.ips[key] = connection
-                self.connections.append(connection)
+                self.addConnection(connection)
                 connection.log("Connecting... (site: %s)" % site)
                 succ = connection.connect()
                 if not succ:
@@ -224,7 +246,7 @@ class ConnectionServer(object):
                 connection.close("%s Connect error: %s" % (ip, Debug.formatException(err)))
                 raise err
 
-            if len(self.connections) > config.global_connected_limit:
+            if self.numConnections() > config.global_connected_limit:
                 gevent.spawn(self.checkMaxConnections)
 
             return connection
@@ -243,8 +265,8 @@ class ConnectionServer(object):
         if connection.cert_pin and self.ips.get(connection.ip + "#" + connection.cert_pin) == connection:
             del self.ips[connection.ip + "#" + connection.cert_pin]
 
-        if connection in self.connections:
-            self.connections.remove(connection)
+        if connection.id in self._connections:
+            del self._connections[connection.id]
 
     def checkConnections(self):
         run_i = 0
@@ -254,7 +276,7 @@ class ConnectionServer(object):
             self.ip_incoming = {}  # Reset connected ips counter
             last_message_time = 0
             s = time.time()
-            for connection in self.connections[:]:  # Make a copy
+            for connection in self.connections():
                 if connection.ip.endswith(".onion") or config.tor == "always":
                     timeout_multipler = 2
                 else:
@@ -312,7 +334,7 @@ class ConnectionServer(object):
                     connection.bad_actions = 0
 
             # Internet outage detection
-            if time.time() - last_message_time > max(60, 60 * 10 / max(1, float(len(self.connections)) / 50)):
+            if time.time() - last_message_time > max(60, 60 * 10 / max(1, float(self.numConnections()) / 50)):
                 # Offline: Last message more than 60-600sec depending on connection number
                 if self.has_internet and last_message_time:
                     self.has_internet = False
@@ -331,16 +353,16 @@ class ConnectionServer(object):
             time.sleep(15)
         self.log.debug("Checkconnections ended")
 
-    @util.Noparallel(blocking=False)
+    @Noparallel(blocking=False)
     def checkMaxConnections(self):
-        if len(self.connections) < config.global_connected_limit:
+        if self.numConnections() < config.global_connected_limit:
             return 0
 
         s = time.time()
-        num_connected_before = len(self.connections)
-        self.connections.sort(key=lambda connection: connection.sites)
+        num_connected_before = self.numConnections()
+        conns = self.connections().sorted(key=lambda connection: connection.sites)
         num_closed = 0
-        for connection in self.connections:
+        for connection in conns:
             idle = time.time() - max(connection.last_recv_time, connection.start_time, connection.last_message_time)
             if idle > 60:
                 connection.close("Connection limit reached")
@@ -363,7 +385,7 @@ class ConnectionServer(object):
     def getTimecorrection(self):
         corrections = sorted([
             connection.handshake.get("time") - connection.handshake_time + connection.last_ping_delay
-            for connection in self.connections
+            for connection in self.connections()
             if connection.handshake.get("time") and connection.last_ping_delay
         ])
         if len(corrections) < 9:

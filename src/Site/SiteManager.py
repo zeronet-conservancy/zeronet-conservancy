@@ -7,13 +7,13 @@ import atexit
 
 import gevent
 
-import util
+from util.Noparallel import Noparallel
 from Plugin import PluginManager
 from Content import ContentDb
 from Config import config
 from util import helper
 from util import RateLimit
-from util import Cached
+from util.Cached import Cached
 from Debug import Debug
 
 @PluginManager.acceptPlugins
@@ -28,7 +28,7 @@ class SiteManager(object):
         atexit.register(lambda: self.save(recalculate_size=True))
 
     # Load all sites from data/sites.json
-    @util.Noparallel()
+    @Noparallel()
     def load(self, cleanup=True, startup=False):
         from .Site import Site
         self.log.info(f'Loading sites... ({cleanup=}, {startup=})')
@@ -75,22 +75,7 @@ class SiteManager(object):
                     del(self.sites[address])
                     self.log.debug("Removed site: %s" % address)
 
-            # Remove orpan sites from contentdb
-            content_db = ContentDb.getContentDb()
-            for row in content_db.execute("SELECT * FROM site").fetchall():
-                address = row["address"]
-                if address not in self.sites and address not in address_found:
-                    self.log.info("Deleting orphan site from content.db: %s" % address)
-
-                    try:
-                        content_db.execute("DELETE FROM site WHERE ?", {"address": address})
-                    except Exception as err:
-                        self.log.error("Can't delete site %s from content_db: %s" % (address, err))
-
-                    if address in content_db.site_ids:
-                        del content_db.site_ids[address]
-                    if address in content_db.sites:
-                        del content_db.sites[address]
+            # TODO
 
         self.loaded = True
         for address, settings in sites_need:

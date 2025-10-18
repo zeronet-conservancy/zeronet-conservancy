@@ -18,6 +18,7 @@ from Plugin import PluginManager
 from Debug import Debug
 from Translate import Translate
 from util import helper
+from util.Noparallel import Noparallel
 from util.Flag import flag
 from .ZipStream import ZipStream
 
@@ -42,10 +43,6 @@ class UiRequestPlugin(object):
             # Append our media file to the end
             ext = re.match(".*(js|css)$", path).group(1)
             plugin_media_file = "%s/all.%s" % (media_dir, ext)
-            if config.debug:
-                # If debugging merge *.css to all.css and *.js to all.js
-                from Debug import DebugMedia
-                DebugMedia.merge(plugin_media_file)
             if ext == "js":
                 yield _.translateData(open(plugin_media_file).read()).encode("utf8")
             else:
@@ -54,10 +51,6 @@ class UiRequestPlugin(object):
         elif path.startswith("/uimedia/globe/"):  # Serve WebGL globe files
             file_name = re.match(".*/(.*)", path).group(1)
             plugin_media_file = "%s_globe/%s" % (media_dir, file_name)
-            if config.debug and path.endswith("all.js"):
-                # If debugging merge *.css to all.css and *.js to all.js
-                from Debug import DebugMedia
-                DebugMedia.merge(plugin_media_file)
             for part in self.actionFile(plugin_media_file):
                 yield part
         else:
@@ -678,7 +671,7 @@ class UiWebsocketPlugin(object):
             loc_cache[ip] = loc
             return loc
 
-    @util.Noparallel()
+    @Noparallel()
     def getGeoipDb(self):
         db_name = 'GeoLite2-City.mmdb'
 

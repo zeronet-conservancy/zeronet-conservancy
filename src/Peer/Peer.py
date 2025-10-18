@@ -17,9 +17,9 @@ if config.use_tempfiles:
     import tempfile
 
 
-# Communicate remote peers
 @PluginManager.acceptPlugins
-class Peer(object):
+class Peer:
+    """Represents remote peer"""
     __slots__ = (
         "ip", "port", "site", "key", "connection", "connection_server", "time_found", "time_response", "time_hashfield",
         "time_added", "has_hashfield", "is_tracker_connection", "time_my_hashfield_sent", "last_ping", "reputation",
@@ -102,6 +102,8 @@ class Peer(object):
                 self.log("Getting connection error: %s (connection_error: %s, hash_failed: %s)" %
                          (Debug.formatException(err), self.connection_error, self.hash_failed))
                 self.connection = None
+        if self.connection:
+            self.connection.peers.append(self)
         return self.connection
 
     # Check if we have connection to peer
@@ -187,8 +189,8 @@ class Peer(object):
                     self.connect()
         return None  # Failed after 3 attempts
 
-    # Get a file content from peer
     def getFile(self, site, inner_path, file_size=None, pos_from=0, pos_to=None, streaming=False):
+        """Get a file content from peer"""
         if file_size and file_size > 5 * 1024 * 1024:
             max_read_size = 1024 * 1024
         else:
