@@ -399,7 +399,7 @@ class SiteStorage(object):
 
     # Security check and return path of site's file
     def getPath(self, inner_path):
-        inner_path = inner_path.replace("\\", "/")  # Windows separator fix
+        inner_path = str(inner_path).replace("\\", "/")  # Windows separator fix
         if not inner_path:
             return self.directory
 
