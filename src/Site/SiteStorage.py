@@ -5,6 +5,7 @@ import json
 import time
 import errno
 from collections import defaultdict
+from pathlib import Path
 
 import sqlite3
 import gevent.event
@@ -24,6 +25,8 @@ thread_pool_fs_read = ThreadPool.ThreadPool(config.threads_fs_read, name="FS rea
 thread_pool_fs_write = ThreadPool.ThreadPool(config.threads_fs_write, name="FS write")
 thread_pool_fs_batch = ThreadPool.ThreadPool(1, name="FS batch")
 
+class AccessError(Exception):
+    pass
 
 @PluginManager.acceptPlugins
 class SiteStorage(object):
@@ -397,27 +400,23 @@ class SiteStorage(object):
     def isDir(self, inner_path):
         return os.path.isdir(self.getPath(inner_path))
 
-    # Security check and return path of site's file
-    def getPath(self, inner_path):
-        inner_path = inner_path.replace("\\", "/")  # Windows separator fix
-        if not inner_path:
-            return self.directory
+    def getPath(self, inner_path: Path):
+        """Security check and return path of site's file"""
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
+        if '..' in inner_path.parts:
+            raise AccessError(f"Paths with '..' are not allowed: {inner_path}")
+        if inner_path.is_absolute():
+            raise AccessError(f"Paths shouldn't be absolute: {inner_path}")
 
-        if "../" in inner_path:
-            raise Exception("File not allowed: %s" % inner_path)
+        return self.directory / inner_path
 
-        return "%s/%s" % (self.directory, inner_path)
-
-    # Get site dir relative path
     def getInnerPath(self, path):
-        if path == self.directory:
-            inner_path = ""
-        else:
-            if str(path).startswith(str(self.directory)):
-                inner_path = path[len(str(self.directory)) + 1:]
-            else:
-                raise Exception("File not allowed: %s" % path)
-        return inner_path
+        """Get site dir relative path"""
+        try:
+            return path.relative_to(self.directory)
+        except ValueError:
+            raise AccessError(f"File path not allowed: {path}")
 
     # Verify all files sha512sum using content.json
     def verifyFiles(self, quick_check=False, add_optional=False, add_changed=True):
