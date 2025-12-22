@@ -1,11 +1,14 @@
 import hashlib
 import os
 import base64
+from pathlib import Path
 
 
 def sha512sum(file, blocksize=65536, format="hexdigest"):
-    if type(file) is str:  # Filename specified
-        file = open(file, "rb")
+    if isinstance(file, str):
+        file = open(file, 'rb')
+    if isinstance(file, Path):
+        file = file.open('rb')
     hash = hashlib.sha512()
     for block in iter(lambda: file.read(blocksize), b""):
         hash.update(block)

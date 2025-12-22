@@ -8,6 +8,7 @@ import sys
 import hashlib
 import collections
 import base64
+from pathlib import Path
 
 import gevent
 import gevent.pool
@@ -641,33 +642,39 @@ class Site(object):
 
     # Copy this site
     @util.Noparallel()
-    def clone(self, address, privatekey=None, address_index=None, root_inner_path="", overwrite=False):
+    def clone(self, address, privatekey=None, address_index=None, root_inner_path=None, overwrite=False):
+        if root_inner_path is None:
+            root_inner_path = Path()
+        elif not isinstance(root_inner_path, Path):
+            root_inner_path = Path(root_inner_path)
+
         import shutil
         new_site = SiteManager.site_manager.need(address, all_file=False)
         default_dirs = []  # Dont copy these directories (has -default version)
-        for dir_name in os.listdir(self.storage.directory):
-            if "-default" in dir_name:
-                default_dirs.append(dir_name.replace("-default", ""))
+        for dir_path in self.storage.directory.iterdir():
+            if '-default' in dir_path.name:
+                default_dirs.append(dir_path.name.replace('-default', ''))
 
-        self.log.debug("Cloning to %s, ignore dirs: %s, root: %s" % (address, default_dirs, root_inner_path))
+        self.log.debug(f"Cloning to {address}, ignore dirs: {default_dirs}, root: {root_inner_path}")
 
         # Copy root content.json
         if not new_site.storage.isFile("content.json") and not overwrite:
-            # New site: Content.json not exist yet, create a new one from source site
+            # New site: content.json doesn't exist yet, create a new one from source site
             if "size_limit" in self.settings:
                 new_site.settings["size_limit"] = self.settings["size_limit"]
 
             # Use content.json-default is specified
-            if self.storage.isFile(root_inner_path + "/content.json-default"):
-                content_json = self.storage.loadJson(root_inner_path + "/content.json-default")
+            if self.storage.isFile(root_inner_path / 'content.json-default'):
+                content_json = self.storage.loadJson(root_inner_path / 'content.json-default')
             else:
+                # why not root_inner_path / 'content.json' ?..
                 content_json = self.storage.loadJson("content.json")
 
             if "domain" in content_json:
                 del content_json["domain"]
             content_json["title"] = "my" + content_json["title"]
             content_json["cloned_from"] = self.address
-            content_json["clone_root"] = root_inner_path
+            content_json["clone_root"] = str(root_inner_path)
             content_json["files"] = {}
             if address_index:
                 content_json["address_index"] = address_index  # Site owner's BIP32 index
@@ -677,7 +684,8 @@ class Site(object):
             )
 
         # Copy files
-        for content_inner_path, content in list(self.content_manager.contents.items()):
+        for content_inner_path_str, content in self.content_manager.contents.iteritems():
+            content_inner_path = Path(content_inner_path_str)
             file_relative_paths = list(content.get("files", {}).keys())
 
             # Sign content.json at the end to make sure every file is included
@@ -685,60 +693,56 @@ class Site(object):
             file_relative_paths.sort(key=lambda key: key.replace("-default", "").endswith("content.json"))
 
             for file_relative_path in file_relative_paths:
-                file_inner_path = helper.getDirname(content_inner_path) + file_relative_path  # Relative to content.json
-                file_inner_path = file_inner_path.strip("/")  # Strip leading /
-                if not file_inner_path.startswith(root_inner_path):
-                    self.log.debug("[SKIP] %s (not in clone root)" % file_inner_path)
+                file_inner_path = content_inner_path.parent / file_relative_path  # Relative to content.json
+                if not file_inner_path.is_relative_to(root_inner_path):
+                    self.log.warning(f"[SKIP] {file_inner_path} (not in clone root)")
                     continue
-                if file_inner_path.split("/")[0] in default_dirs:  # Dont copy directories that has -default postfixed alternative
-                    self.log.debug("[SKIP] %s (has default alternative)" % file_inner_path)
+                if file_inner_path.parts[0] in default_dirs:  # Dont copy directories that has -default postfixed alternative
+                    self.log.debug(f"[SKIP] {file_inner_path} (has default alternative)")
                     continue
                 file_path = self.storage.getPath(file_inner_path)
 
                 # Copy the file normally to keep the -default postfixed dir and file to allow cloning later
-                if root_inner_path:
-                    file_inner_path_dest = re.sub("^%s/" % re.escape(root_inner_path), "", file_inner_path)
-                    file_path_dest = new_site.storage.getPath(file_inner_path_dest)
-                else:
-                    file_inner_path_dest = file_inner_path
-                    file_path_dest = new_site.storage.getPath(file_inner_path)
+                file_inner_path_dest = file_inner_path.relative_to(root_inner_path)
+                file_path_dest = new_site.storage.getPath(file_inner_path)
 
                 self.log.debug("[COPY] %s to %s..." % (file_inner_path, file_path_dest))
-                dest_dir = os.path.dirname(file_path_dest)
-                if not os.path.isdir(dest_dir):
-                    os.makedirs(dest_dir)
-                if file_inner_path_dest.replace("-default", "") == "content.json":  # Don't copy root content.json-default
+                dest_dir = file_path_dest.parent
+                if not dest_dir.is_dir():
+                    dest_dir.mkdir(parents=True)
+                if file_inner_path_dest == Path('content.json-default'):  # Don't copy root content.json-default (WHY?)
                     continue
 
                 shutil.copy(file_path, file_path_dest)
 
                 # If -default in path, create a -default less copy of the file
-                if "-default" in file_inner_path_dest:
-                    file_path_dest = new_site.storage.getPath(file_inner_path_dest.replace("-default", ""))
-                    if new_site.storage.isFile(file_inner_path_dest.replace("-default", "")) and not overwrite:
+                if file_inner_path_dest.name.endswith('-default'):
+                    non_default_inner_path_dest = file_inner_path_dest.parent / file_inner_path_dest.name.replace('-default', '')
+                    file_path_dest = new_site.storage.getPath(non_default_inner_path_dest)
+                    if new_site.storage.isFile(non_default_inner_path_dest) and not overwrite:
                         # Don't overwrite site files with default ones
                         self.log.debug("[SKIP] Default file: %s (already exist)" % file_inner_path)
                         continue
                     self.log.debug("[COPY] Default file: %s to %s..." % (file_inner_path, file_path_dest))
-                    dest_dir = os.path.dirname(file_path_dest)
-                    if not os.path.isdir(dest_dir):
-                        os.makedirs(dest_dir)
+                    dest_dir = file_path_dest.parent
+                    if not dest_dir.is_dir():
+                        dest_dir.mkdir(parents=True)
                     shutil.copy(file_path, file_path_dest)
                     # Sign if content json
-                    if file_path_dest.endswith("/content.json"):
-                        new_site.storage.onUpdated(file_inner_path_dest.replace("-default", ""))
+                    if file_path_dest.name == 'content.json':
+                        new_site.storage.onUpdated(non_default_inner_path_dest)
                         new_site.content_manager.loadContent(
-                            file_inner_path_dest.replace("-default", ""), add_bad_files=False,
+                            non_default_inner_path_dest, add_bad_files=False,
                             delete_removed_files=False, load_includes=False
                         )
                         if privatekey:
-                            new_site.content_manager.sign(file_inner_path_dest.replace("-default", ""), privatekey, remove_missing_optional=True)
+                            new_site.content_manager.sign(non_default_inner_path_dest, privatekey, remove_missing_optional=True)
                             new_site.content_manager.loadContent(
                                 file_inner_path_dest, add_bad_files=False, delete_removed_files=False, load_includes=False
                             )
 
         if privatekey:
-            new_site.content_manager.sign("content.json", privatekey, remove_missing_optional=True)
+            new_site.content_manager.sign('content.json', privatekey, remove_missing_optional=True)
             new_site.content_manager.loadContent(
                 "content.json", add_bad_files=False, delete_removed_files=False, load_includes=False
             )

@@ -11,6 +11,7 @@ import threading
 import sys
 import weakref
 import errno
+from pathlib import Path
 
 import gevent
 
@@ -351,6 +352,8 @@ class Db(object):
 
         Return: True if matched, False otherwise
         """
+        if not isinstance(file_path, Path):
+            file_path = Path(file_path)
         if not file_path.is_relative_to(self.db_dir):
             return False  # Not from the db dir: Skipping
         relative_path = file_path.relative_to(self.db_dir)

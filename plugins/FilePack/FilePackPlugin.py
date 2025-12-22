@@ -1,5 +1,7 @@
 import os
 import re
+from functools import reduce
+from pathlib import Path
 
 import gevent
 
@@ -96,11 +98,17 @@ class UiRequestPlugin(object):
 
 
 @PluginManager.registerTo("SiteStorage")
-class SiteStoragePlugin(object):
+class SiteStoragePlugin:
     def isFile(self, inner_path):
-        if ".zip/" in inner_path or ".tar.gz/" in inner_path:
-            match = re.match(r"^(.*\.(?:tar.gz|zip))/(.*)", inner_path)
-            archive_inner_path, path_within = match.groups()
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
+        compressed = list(filter(
+            (lambda ixname: ixname[1].endswith('.zip') or ixname[1].endswith('.tar.gz')),
+            enumerate(inner_path.parts),
+        ))
+        if compressed:
+            ix, _ = compressed[0]
+            archive_inner_path = reduce((lambda x, y: Path(x) / y), inner_path.parts[:ix+1])
             return super(SiteStoragePlugin, self).isFile(archive_inner_path)
         else:
             return super(SiteStoragePlugin, self).isFile(inner_path)
@@ -109,7 +117,7 @@ class SiteStoragePlugin(object):
         archive_path = self.getPath(inner_path)
         file_obj = None
         if archive_path not in archive_cache:
-            if not os.path.isfile(archive_path):
+            if not archive_path.is_file():
                 result = self.site.needFile(inner_path, priority=10)
                 self.site.updateWebsocket(file_done=inner_path)
                 if not result:

@@ -6,6 +6,7 @@ import copy
 import base64
 import sys
 from pathlib import Path
+from functools import reduce
 
 import gevent
 
@@ -469,29 +470,34 @@ class ContentManager:
         # Not found
         return False
 
-    # Get rules for the file
-    # Return: The rules for the file or False if not allowed
     def getRules(self, inner_path, content=None):
-        if not inner_path.endswith("content.json"):  # Find the files content.json first
+        """Get rules for the file
+
+        Return: The rules for the file or False if not allowed"""
+
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
+        if not inner_path.name.endswith('content.json'):  # Find the files content.json first
             file_info = self.getFileInfo(inner_path)
             if not file_info:
                 return False  # File not found
             inner_path = file_info["content_inner_path"]
 
-        if inner_path == "content.json":  # Root content.json
+        if inner_path == Path('content.json'):  # Root content.json
             rules = {}
             rules["signers"] = self.getValidSigners(inner_path, content)
             return rules
 
-        dirs = inner_path.split("/")  # Parent dirs of content.json
+        dirs = inner_path.parts  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
         # Dont check in self dir
         while dirs:
             inner_path_parts.insert(0, dirs.pop())
-            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
+            now_dir = reduce((lambda a, b: Path(a) / b), dirs)
+            content_inner_path = now_dir / 'content.json'
             parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
-                return parent_content["includes"].get("/".join(inner_path_parts))
+                return parent_content["includes"].get(now_dir)
             elif parent_content and "user_contents" in parent_content:
                 return self.getUserContentRules(parent_content, inner_path, content)
         return False
@@ -614,7 +620,7 @@ class ContentManager:
 
     def hashFile(self, dir_inner_path, file_relative_path, optional=False):
         back = {}
-        file_inner_path = dir_inner_path + "/" + file_relative_path
+        file_inner_path = dir_inner_path / file_relative_path
 
         file_path = self.site.storage.getPath(file_inner_path)
         file_size = os.path.getsize(file_path)
@@ -626,21 +632,23 @@ class ContentManager:
         return back
 
     def isValidRelativePath(self, relative_path):
-        if ".." in relative_path.replace("\\", "/").split("/"):
+        if not isinstance(relative_path, Path):
+            relative_path = Path(relative_path)
+        if '..' in relative_path.parts:
             return False
-        elif len(relative_path) > 255:
+        elif relative_path.is_absolute():
             return False
-        elif relative_path[0] in ("/", "\\"):  # Starts with
+        elif relative_path.name and relative_path.name[-1] in ('.', ' '):  # would bug out on Windows OS
             return False
-        elif relative_path[-1] in (".", " "):  # Ends with
-            return False
-        elif re.match(r".*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)", relative_path, re.IGNORECASE):  # Protected on Windows
+        # ugh, can we please have better exps here? also check if this actually respects
+        # common file systems
+        elif re.match(r'.*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)', str(relative_path)):  # Protected on Windows
             return False
         else:
-            return re.match(r"^[^\x00-\x1F\"*:<>?\\|]+$", relative_path)
+            return re.match(r'^[^\x00-\x1F\"*:<>?\\|]+$', str(relative_path))
 
     def sanitizePath(self, inner_path):
-        return re.sub("[\x00-\x1F\"*:<>?\\|]", "", inner_path)
+        return Path(re.sub("[\x00-\x1F\"*:<>?\\|]", "", str(inner_path)))
 
     # Hash files in directory
     def hashFiles(self, dir_inner_path, ignore_pattern=None, optional_pattern=None):
@@ -682,10 +690,14 @@ class ContentManager:
                     )
         return files_node, files_optional_node
 
-    # Create and sign a content.json
-    # Return: The new content if filewrite = False
     def sign(self, inner_path="content.json", privatekey=None, filewrite=True, update_changed_files=False, extend=None, remove_missing_optional=False):
-        if not inner_path.endswith("content.json"):
+        """Create and sign a content.json
+
+        Return: The new content if filewrite = False"""
+
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
+        if inner_path.name != 'content.json':
             raise SignError("Invalid file name, you can only sign content.json files")
 
         if inner_path in self.contents:
@@ -720,13 +732,13 @@ class ContentManager:
                     content[key] = val
                     self.log.info("Extending content.json with: %s" % key)
 
-        directory = helper.getDirname(self.site.storage.getPath(inner_path))
-        inner_directory = helper.getDirname(inner_path)
+        directory = self.site.storage.getPath(inner_path).parent
+        inner_directory = inner_path.parent
         self.log.info("Opening site data directory: %s..." % directory)
 
         changed_files = [inner_path]
         files_node, files_optional_node = self.hashFiles(
-            helper.getDirname(inner_path), content.get("ignore"), content.get("optional")
+            inner_directory, content.get("ignore"), content.get("optional")
         )
 
         if not remove_missing_optional:
@@ -741,7 +753,7 @@ class ContentManager:
             old_hash = content.get("files", {}).get(file_relative_path, {}).get("sha512")
             new_hash = files_merged[file_relative_path]["sha512"]
             if old_hash != new_hash:
-                changed_files.append(inner_directory + file_relative_path)
+                changed_files.append(inner_directory / file_relative_path)
 
         self.log.debug("Changed files: %s" % changed_files)
         if update_changed_files:
@@ -752,20 +764,27 @@ class ContentManager:
         self.log.info("Adding timestamp and sha512sums to new content.json...")
 
         new_content = content.copy()  # Create a copy of current content.json
-        new_content["files"] = files_node  # Add files sha512 hash
+          # Add files sha512 hash
+        new_content["files"] = {
+            str(fname) : val
+            for fname, val in files_node.items()
+        }
         if files_optional_node:
-            new_content["files_optional"] = files_optional_node
+            new_content['files_optional'] = {
+                str(fname) : val
+                for fname, val in files_optional_node.items()
+            }
         elif "files_optional" in new_content:
             del new_content["files_optional"]
 
         new_content["modified"] = int(time.time())  # Add timestamp
-        if inner_path == "content.json":
+        if inner_path == Path('content.json'):
             # add for backward compatibility, but don't expose user version
             new_content["zeronet_version"] = config.user_agent
             new_content["signs_required"] = content.get("signs_required", 1)
 
         new_content["address"] = self.site.address
-        new_content["inner_path"] = inner_path
+        new_content["inner_path"] = str(inner_path)
 
         # Verify private key
         self.log.info("Verifying private key...")
@@ -778,7 +797,7 @@ class ContentManager:
             )
         self.log.info("Correct %s in valid signers: %s" % (privatekey_address, valid_signers))
 
-        if inner_path == "content.json" and privatekey_address == self.site.address:
+        if inner_path == Path('content.json') and privatekey_address == self.site.address:
             # If signing using the root key, then sign the valid signers
             signers_data = "%s:%s" % (new_content["signs_required"], ",".join(valid_signers))
             new_content["signers_sign"] = CryptBitcoin.sign(str(signers_data), privatekey)
@@ -804,7 +823,7 @@ class ContentManager:
         if filewrite:
             self.log.info("Saving to %s..." % inner_path)
             self.site.storage.writeJson(inner_path, new_content)
-            self.contents[inner_path] = new_content
+            self.contents[str(inner_path)] = new_content
 
         self.log.info("File %s signed!" % inner_path)
 
@@ -816,8 +835,10 @@ class ContentManager:
     # The valid signers of content.json file
     # Return: ["1KRxE1s3oDyNDawuYWpzbLUwNm8oDbeEp6", "13ReyhCsjhpuCVahn1DHdf6eMqqEVev162"]
     def getValidSigners(self, inner_path, content=None):
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
         valid_signers = []
-        if inner_path == "content.json":  # Root content.json
+        if inner_path == Path("content.json"):  # Root content.json
             if "content.json" in self.contents and "signers" in self.contents["content.json"]:
                 valid_signers += self.contents["content.json"]["signers"][:]
         else:
@@ -890,11 +911,11 @@ class ContentManager:
             raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site.address))
 
         # Check file inner path
-        if content.get("inner_path") and content["inner_path"] != inner_path:
-            raise VerifyError("Wrong inner_path: %s" % content["inner_path"])
+        if content.get('inner_path') and Path(content['inner_path']) != inner_path:
+            raise VerifyError(f"Wrong inner_path: {content['inner_path']}")
 
         # If our content.json file bigger than the size limit throw error
-        if inner_path == "content.json":
+        if inner_path == Path('content.json'):
             content_size_file = len(json.dumps(content, indent=1))
             if content_size_file > site_size_limit:
                 # Save site size to display warning
@@ -909,7 +930,7 @@ class ContentManager:
             if not self.isValidRelativePath(file_relative_path):
                 raise VerifyError("Invalid relative path: %s" % file_relative_path)
 
-        if inner_path == "content.json":
+        if inner_path == Path('content.json'):
             self.site.settings["size"] = site_size
             self.site.settings["size_optional"] = site_size_optional
             return True  # Root content.json is passed

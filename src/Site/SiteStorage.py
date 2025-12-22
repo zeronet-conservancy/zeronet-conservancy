@@ -252,13 +252,13 @@ class SiteStorage(object):
                 raise err
         return True
 
-    # Open file object
     def open(self, inner_path, mode="rb", create_dirs=False, **kwargs):
+        """Open file object"""
         file_path = self.getPath(inner_path)
         if create_dirs:
-            file_inner_dir = os.path.dirname(inner_path)
+            file_inner_dir = file_path.parent
             self.ensureDir(file_inner_dir)
-        return open(file_path, mode, **kwargs)
+        return file_path.open(mode, **kwargs)
 
     # Open file object
     @thread_pool_fs_read.wrap
@@ -272,8 +272,7 @@ class SiteStorage(object):
         self.ensureDir(os.path.dirname(inner_path))
         # Write file
         if hasattr(content, 'read'):  # File-like object
-
-            with open(file_path, "wb") as file:
+            with file_path.open('wb') as file:
                 shutil.copyfileobj(content, file)  # Write buff to disk
         else:  # Simple string
             if inner_path == "content.json" and os.path.isfile(file_path):
@@ -350,12 +349,14 @@ class SiteStorage(object):
         directory = self.getPath(dir_inner_path)
         return os.listdir(directory)
 
-    # Site content updated
     def onUpdated(self, inner_path, file=None):
+        """Site content updated"""
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
         # Update Sql cache
-        should_load_to_db = inner_path.endswith(".json") or inner_path.endswith(".json.gz")
-        if inner_path == "dbschema.json":
-            self.has_db = self.isFile("dbschema.json")
+        should_load_to_db = inner_path.name.endswith('.json') or inner_path.name.endswith('.json.gz')
+        if inner_path == Path('dbschema.json'):
+            self.has_db = self.isFile(inner_path)
             # Reopen DB to check changes
             if self.has_db:
                 self.closeDb("New dbschema")
@@ -388,17 +389,17 @@ class SiteStorage(object):
         except Exception:
             return 0
 
-    # File exist
     def isFile(self, inner_path):
-        return os.path.isfile(self.getPath(inner_path))
+        """File exist"""
+        return self.getPath(inner_path).is_file()
 
-    # File or directory exist
     def isExists(self, inner_path):
-        return os.path.exists(self.getPath(inner_path))
+        """File or directory exist"""
+        return self.getPath(inner_path).exists()
 
-    # Dir exist
     def isDir(self, inner_path):
-        return os.path.isdir(self.getPath(inner_path))
+        """Dir exist"""
+        return self.getPath(inner_path).is_dir()
 
     def getPath(self, inner_path: Path):
         """Security check and return path of site's file"""
@@ -407,6 +408,8 @@ class SiteStorage(object):
         if '..' in inner_path.parts:
             raise AccessError(f"Paths with '..' are not allowed: {inner_path}")
         if inner_path.is_absolute():
+            inner_path = inner_path.relative_to(inner_path.anchor)
+        if inner_path.is_absolute(): # ugh, just making sure there's nothing funky going on
             raise AccessError(f"Paths shouldn't be absolute: {inner_path}")
 
         return self.directory / inner_path
