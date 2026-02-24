@@ -144,15 +144,16 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - or: `docker compose up -d 0net-tor` for run 0net and tor in one container.
 (please check if these instructions are still accurate)
 
-#### Alternative one-liner (by @ssdifnskdjfnsdjk) (installing python dependencies globally)
+#### (alternatively) Linux one-liner installation and updating
 
-Clone Github repository and install required Python modules. First
-edit zndir path at the begining of the command, to be the path where
-you want to store `zeronet-conservancy`:
+After installing [System dependencies](#system-dependencies) you can run following command for installation and update:
 
-`zndir="/home/user/myapps/zeronet" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin master; fi; cd "$zndir" && pip install -r requirements.txt|grep -v "already satisfied"; echo "Try to run: python3 $(pwd)/zeronet.py"`
+> zndir="$HOME/zeronetc" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin main; fi; cd "$zndir" && /usr/bin/python3 -m venv venv && source venv/bin/activate && python3 -m pip install -r requirements.txt && echo -e ""$zndir"/venv/bin/python3 "$zndir"/zeronet.py \\"\\$@\\"" > zeronet.sh && chmod +x zeronet.sh && echo -e "\nRun on a desktop PC: $(pwd)/zeronet.sh --no-migrate\nRun on a headless http://server:8081 : $(pwd)/zeronet.sh --ui-ip \\"*\\" --ui-port 8081 --no-migrate\nShow command help using parameter --help"
 
-(This command can also be used to keep `zeronet-conservancy` up to date)
+To keep Zeronet always running on a desktop PC, run following command being in a Zeronet directory:
+> echo -e "$(crontab -l 2>/dev/null)\n* * * * * $(whoami) pgrep -if 'eronet\.(py|sh)' || $(pwd)/zeronet.sh --no-migrate &" | crontab -
+
+On a headless server, you can add parameters like `--ui-ip "*" --ui-port 8081` to access UI via http://server:8081. Zeronet should automatically start every minute in case it is not running. To edit the task, run `crontab -e`.
 
 #### Alternative script
  - after installing general dependencies and cloning repo (as above),
