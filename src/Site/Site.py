@@ -665,7 +665,10 @@ class Site(object):
 
             if "domain" in content_json:
                 del content_json["domain"]
-            content_json["title"] = "my" + content_json["title"]
+            if root_inner_path.startswith("template-"):
+                content_json["title"] = "My New Epix Site"
+            else:
+                content_json["title"] = "My " + content_json["title"]
             content_json["cloned_from"] = self.address
             content_json["clone_root"] = root_inner_path
             content_json["files"] = {}

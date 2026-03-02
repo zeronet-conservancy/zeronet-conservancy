@@ -102,13 +102,13 @@ class TestOptionalManager:
         assert site.content_manager.hashfield.getHashId("aaaabbbbdddd") in site.content_manager.hashfield
 
     def testIsPinned(self, site):
-        assert not site.content_manager.isPinned("data/img/zerotalk-upvote.png")
-        site.content_manager.setPin("data/img/zerotalk-upvote.png", True)
-        assert site.content_manager.isPinned("data/img/zerotalk-upvote.png")
+        assert not site.content_manager.isPinned("data/img/epixtalk-upvote.png")
+        site.content_manager.setPin("data/img/epixtalk-upvote.png", True)
+        assert site.content_manager.isPinned("data/img/epixtalk-upvote.png")
 
         assert len(site.content_manager.cache_is_pinned) == 1
         site.content_manager.cache_is_pinned = {}
-        assert site.content_manager.isPinned("data/img/zerotalk-upvote.png")
+        assert site.content_manager.isPinned("data/img/epixtalk-upvote.png")
 
     def testBigfilePieceReset(self, site):
         site.bad_files = {
@@ -123,36 +123,36 @@ class TestOptionalManager:
     def testOptionalDelete(self, site):
         contents = site.content_manager.contents
 
-        site.content_manager.setPin("data/img/zerotalk-upvote.png", True)
+        site.content_manager.setPin("data/img/epixtalk-upvote.png", True)
         site.content_manager.setPin("data/img/zeroid.png", False)
         new_content = copy.deepcopy(contents["content.json"])
-        del new_content["files_optional"]["data/img/zerotalk-upvote.png"]
+        del new_content["files_optional"]["data/img/epixtalk-upvote.png"]
         del new_content["files_optional"]["data/img/zeroid.png"]
 
-        assert site.storage.isFile("data/img/zerotalk-upvote.png")
+        assert site.storage.isFile("data/img/epixtalk-upvote.png")
         assert site.storage.isFile("data/img/zeroid.png")
 
         site.storage.writeJson("content.json", new_content)
         site.content_manager.loadContent("content.json", force=True)
 
         assert not site.storage.isFile("data/img/zeroid.png")
-        assert site.storage.isFile("data/img/zerotalk-upvote.png")
+        assert site.storage.isFile("data/img/epixtalk-upvote.png")
 
     def testOptionalRename(self, site):
         contents = site.content_manager.contents
 
-        site.content_manager.setPin("data/img/zerotalk-upvote.png", True)
+        site.content_manager.setPin("data/img/epixtalk-upvote.png", True)
         new_content = copy.deepcopy(contents["content.json"])
-        new_content["files_optional"]["data/img/zerotalk-upvote-new.png"] = new_content["files_optional"]["data/img/zerotalk-upvote.png"]
-        del new_content["files_optional"]["data/img/zerotalk-upvote.png"]
+        new_content["files_optional"]["data/img/epixtalk-upvote-new.png"] = new_content["files_optional"]["data/img/epixtalk-upvote.png"]
+        del new_content["files_optional"]["data/img/epixtalk-upvote.png"]
 
-        assert site.storage.isFile("data/img/zerotalk-upvote.png")
-        assert site.content_manager.isPinned("data/img/zerotalk-upvote.png")
+        assert site.storage.isFile("data/img/epixtalk-upvote.png")
+        assert site.content_manager.isPinned("data/img/epixtalk-upvote.png")
 
         site.storage.writeJson("content.json", new_content)
         site.content_manager.loadContent("content.json", force=True)
 
-        assert not site.storage.isFile("data/img/zerotalk-upvote.png")
-        assert not site.content_manager.isPinned("data/img/zerotalk-upvote.png")
-        assert site.content_manager.isPinned("data/img/zerotalk-upvote-new.png")
-        assert site.storage.isFile("data/img/zerotalk-upvote-new.png")
+        assert not site.storage.isFile("data/img/epixtalk-upvote.png")
+        assert not site.content_manager.isPinned("data/img/epixtalk-upvote.png")
+        assert site.content_manager.isPinned("data/img/epixtalk-upvote-new.png")
+        assert site.storage.isFile("data/img/epixtalk-upvote-new.png")

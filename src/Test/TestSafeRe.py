@@ -7,7 +7,7 @@ class TestSafeRe:
     def testSafeMatch(self):
         assert SafeRe.match(
             "((js|css)/(?!all.(js|css))|data/users/.*db|data/users/.*/.*|data/archived|.*.py)",
-            "js/ZeroTalk.coffee"
+            "js/EpixTalk.coffee"
         )
         assert SafeRe.match(".+/data.json", "data/users/1J3rJ8ecnwH2EPYa6MrgZttBNc61ACFiCj/data.json")
 

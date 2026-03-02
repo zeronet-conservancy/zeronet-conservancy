@@ -533,7 +533,7 @@ class ContentManager:
         if "signers" in rules:
             rules["signers"] = rules["signers"][:]  # Make copy of the signers
 
-        if content is not None:
+        if content is not None and 'cert_user_id' in content:
             name, domain = content['cert_user_id'].rsplit('@', 1)
             cert_addresses = parent_content['user_contents']['cert_signers'].get(domain)
         else:

@@ -502,7 +502,7 @@ if __name__ == "__main__":
     logging.getLogger('').setLevel(logging.DEBUG)
     logging.getLogger('').addHandler(console_log)
     console_log.setLevel(logging.DEBUG)
-    dbjson = Db(json.load(open("zerotalk.schema.json")), "data/users/zerotalk.db")
+    dbjson = Db(json.load(open("epixtalk.schema.json")), "data/users/epixtalk.db")
     dbjson.collect_stats = True
     dbjson.checkTables()
     cur = dbjson.getCursor()

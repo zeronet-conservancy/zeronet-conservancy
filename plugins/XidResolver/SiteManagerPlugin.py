@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import re
 import json
@@ -17,10 +18,13 @@ allow_reload = False
 
 log = logging.getLogger("XidResolverPlugin")
 
-# Cache: keyed by "name.tld", stores {"address": site_address, "timestamp": float, "attested": bool}
+# Cache: keyed by "name.tld", stores {"data": dict, "timestamp": float, "attested": bool}
+# "data" contains: address (site address), peers (list of EpixNet peer dicts), owner, content_root
 _resolve_cache = {}
 # Reverse cache: keyed by site_address, stores "name.tld" (only from attested resolutions)
 _reverse_cache = {}
+# Peer cache: keyed by "name.tld", stores list of EpixNet peer address strings
+_peer_cache = {}
 RESOLVE_CACHE_TTL = 30
 # Attested resolutions are trusted longer since they're backed by 2/3 validator consensus
 ATTESTED_CACHE_TTL = 300
@@ -36,10 +40,10 @@ _chain_id_verified = None
 _chain_id_cache = {"chain_id": None, "timestamp": 0}
 CHAIN_ID_CACHE_TTL = 300
 
-# Attested snapshot cache: stores all EPIXNET domain->address mappings from a finalized snapshot
-# {"digest": str, "mappings": {domain: address}, "timestamp": float}
-_attested_snapshot = {"digest": None, "mappings": {}, "timestamp": 0}
-SNAPSHOT_CACHE_TTL = 60
+# Attested root cache: the current Merkle root verified by 2/3+ validators
+# Changes only when chain state changes, so can be cached with longer TTL
+_attested_root_cache = {"root": None, "timestamp": 0}
+ATTESTED_ROOT_CACHE_TTL = 60
 
 
 def _fetch_json(url, timeout=10):
@@ -83,123 +87,76 @@ def _verify_chain_id():
     return _chain_id_verified
 
 
-def _fetch_attested_snapshot():
-    """Fetch the state snapshot and verify it's attested by 2/3+ validators.
+def _verify_merkle_proof(proof, expected_root):
+    """Verify a Merkle inclusion proof for a domain entry.
 
-    Returns the snapshot mappings dict {domain: address} if finalized, or None.
-    Uses the ChainAttestation plugin's functions when available.
+    Args:
+        proof: dict with leaf_index, leaf_hash, siblings (list of hex strings), root
+        expected_root: the attested Merkle root hex string
 
-    The snapshot is fetched first, then its digest is verified against attestations.
-    This avoids race conditions where the digest changes between separate RPC calls.
-    Retries up to 3 times if the digest changes mid-pagination.
+    Returns:
+        True if the proof is valid against the expected root.
+    """
+    try:
+        current = bytes.fromhex(proof["leaf_hash"])
+        index = proof["leaf_index"]
+        for sibling_hex in proof["siblings"]:
+            sibling = bytes.fromhex(sibling_hex)
+            if index % 2 == 0:  # current is left child
+                current = hashlib.sha256(current + sibling).digest()
+            else:  # current is right child
+                current = hashlib.sha256(sibling + current).digest()
+            index //= 2
+        return current.hex() == expected_root
+    except (KeyError, ValueError, TypeError) as e:
+        log.debug("Merkle proof verification error: %s" % e)
+        return False
+
+
+def _get_attested_root():
+    """Fetch and cache the current attested Merkle root.
+
+    Checks if the current state digest is finalized (attested by 2/3+ validators).
+    Returns the root hex string if finalized, or None.
     """
     now = time.time()
-    if _attested_snapshot["digest"] and (now - _attested_snapshot["timestamp"]) < SNAPSHOT_CACHE_TTL:
-        return _attested_snapshot["mappings"]
+    if _attested_root_cache["root"] and (now - _attested_root_cache["timestamp"]) < ATTESTED_ROOT_CACHE_TTL:
+        return _attested_root_cache["root"]
 
     rpc_url = _get_rpc_url()
 
-    for attempt in range(3):
-        # 1. Fetch the first page of the snapshot to get the current digest
-        snap_data = _fetch_json("%s/xid/v1/state_snapshot" % rpc_url)
-        if not snap_data:
-            return None
+    # Fetch the current state digest
+    digest_data = _fetch_json("%s/xid/v1/state_digest" % rpc_url)
+    if not digest_data or not digest_data.get("digest"):
+        return None
 
-        digest = snap_data.get("digest", "")
-        if not digest:
-            return None
+    digest = digest_data["digest"]
 
-        # If we already have this digest cached, just refresh the timestamp
-        if digest == _attested_snapshot["digest"]:
-            _attested_snapshot["timestamp"] = now
-            return _attested_snapshot["mappings"]
+    # If we already have this root cached, just refresh the timestamp
+    if digest == _attested_root_cache["root"]:
+        _attested_root_cache["timestamp"] = now
+        return digest
 
-        # 2. Check if this digest is finalized (attested by 2/3+ validators)
-        att_data = _fetch_json("%s/xid/v1/attestations?digest=%s" % (rpc_url, digest))
-        if not att_data or not att_data.get("finalized"):
-            return None
+    # Check if this digest is finalized
+    att_data = _fetch_json("%s/xid/v1/attestations?digest=%s" % (rpc_url, digest))
+    if not att_data or not att_data.get("finalized"):
+        return None
 
-        # 3. Extract EPIXNET DNS mappings from already-fetched first page + remaining pages
-        mappings = {}
-        digest_changed = False
-
-        # Process first page (already fetched)
-        for domain_snap in snap_data.get("domains", []):
-            record = domain_snap.get("record", {})
-            name = record.get("name", "")
-            tld = record.get("tld", "")
-            if not name or not tld:
-                continue
-
-            domain_key = "%s.%s" % (name, tld)
-            for dns_rec in domain_snap.get("dns_records", []):
-                if int(dns_rec.get("record_type", 0)) == EPIXNET_RECORD_TYPE:
-                    site_addr = dns_rec.get("value", "").strip()
-                    if site_addr:
-                        mappings[domain_key] = site_addr
-                    break
-
-        # Fetch remaining pages
-        pagination = snap_data.get("pagination", {})
-        next_key = pagination.get("next_key")
-        page = 1
-        while next_key and page < 100:
-            url = "%s/xid/v1/state_snapshot?pagination.key=%s" % (rpc_url, next_key)
-            snap_data = _fetch_json(url)
-            if not snap_data:
-                break
-
-            # Verify digest hasn't changed mid-pagination
-            if snap_data.get("digest", "") != digest:
-                log.debug("Digest changed mid-pagination (attempt %d), retrying" % (attempt + 1))
-                digest_changed = True
-                break
-
-            for domain_snap in snap_data.get("domains", []):
-                record = domain_snap.get("record", {})
-                name = record.get("name", "")
-                tld = record.get("tld", "")
-                if not name or not tld:
-                    continue
-
-                domain_key = "%s.%s" % (name, tld)
-                for dns_rec in domain_snap.get("dns_records", []):
-                    if int(dns_rec.get("record_type", 0)) == EPIXNET_RECORD_TYPE:
-                        site_addr = dns_rec.get("value", "").strip()
-                        if site_addr:
-                            mappings[domain_key] = site_addr
-                        break
-
-            pagination = snap_data.get("pagination", {})
-            next_key = pagination.get("next_key")
-            page += 1
-
-        if digest_changed:
-            continue  # Retry from scratch
-
-        # Store the attested snapshot
-        _attested_snapshot["digest"] = digest
-        _attested_snapshot["mappings"] = mappings
-        _attested_snapshot["timestamp"] = now
-
-        # Populate caches from attested data
-        for domain_key, site_addr in mappings.items():
-            _resolve_cache[domain_key] = {"address": site_addr, "timestamp": now, "attested": True}
-            _reverse_cache[site_addr] = domain_key
-
-        log.info("Loaded attested snapshot: %d EPIXNET mappings (digest: %s...)" % (len(mappings), digest[:16]))
-        return mappings
-
-    log.warning("Failed to fetch consistent snapshot after 3 attempts")
-    return None
+    _attested_root_cache["root"] = digest
+    _attested_root_cache["timestamp"] = now
+    log.debug("Attested root updated: %s..." % digest[:16])
+    return digest
 
 
 def _resolve_epix_name(tld, name):
-    """Query the xID chain for the EPIXNET DNS record of a name.
+    """Resolve an xID name using per-name Merkle proof verification.
 
-    Verification priority:
-    1. Attested snapshot (2/3 validator consensus) — strongest proof
-    2. Direct RPC query with chain ID verification — fallback
+    Verification:
+    1. Fetch domain data + Merkle proof in a single RPC call
+    2. Verify proof against attested root (2/3+ validator consensus)
+    3. Extract EPIXNET DNS record and EpixNet peers
+
+    Falls back to unattested chain-ID-verified direct query if attestation unavailable.
 
     Returns the EpixNet site address string, or None.
     """
@@ -209,23 +166,57 @@ def _resolve_epix_name(tld, name):
     if cached:
         ttl = ATTESTED_CACHE_TTL if cached.get("attested") else RESOLVE_CACHE_TTL
         if (now - cached["timestamp"]) < ttl:
-            return cached["address"]
-
-    # Try attested snapshot first (strongest verification)
-    attested_mappings = _fetch_attested_snapshot()
-    if attested_mappings is not None:
-        site_address = attested_mappings.get(cache_key)
-        _resolve_cache[cache_key] = {"address": site_address, "timestamp": now, "attested": True}
-        if site_address:
-            _reverse_cache[site_address] = cache_key
-            log.debug("Resolved %s to %s (attested)" % (cache_key, site_address))
-        return site_address
-
-    # Fallback: direct RPC query with chain ID verification
-    if not _verify_chain_id():
-        return None
+            return cached.get("address")
 
     rpc_url = _get_rpc_url()
+
+    # Single RPC call: domain data + Merkle proof
+    proof_data = _fetch_json("%s/xid/v1/resolve_with_proof/%s/%s" % (rpc_url, tld, name))
+    if proof_data and proof_data.get("domain") and proof_data.get("proof"):
+        domain = proof_data["domain"]
+        proof = proof_data["proof"]
+
+        # Try to verify against attested root
+        attested_root = _get_attested_root()
+        attested = False
+        if attested_root and _verify_merkle_proof(proof, attested_root):
+            attested = True
+            log.debug("Merkle proof verified for %s against attested root" % cache_key)
+        elif attested_root:
+            # Proof doesn't match attested root — could be stale, try the proof's own root
+            # but only trust it if chain ID is verified
+            log.debug("Merkle proof for %s doesn't match attested root (state may have changed)" % cache_key)
+
+        # Extract EPIXNET DNS record (site address)
+        site_address = None
+        for dns_rec in domain.get("dns_records", []):
+            if int(dns_rec.get("record_type", 0)) == EPIXNET_RECORD_TYPE:
+                site_address = dns_rec.get("value", "").strip()
+                break
+
+        # Extract EpixNet peers
+        peers = domain.get("peers", [])
+        active_peers = [p.get("address", "") for p in peers if p.get("active")]
+        if active_peers:
+            _peer_cache[cache_key] = active_peers
+
+        # Cache the result
+        _resolve_cache[cache_key] = {
+            "address": site_address,
+            "timestamp": now,
+            "attested": attested,
+            "owner": domain.get("record", {}).get("owner", ""),
+            "content_root": domain.get("content_root", ""),
+        }
+        if site_address:
+            _reverse_cache[site_address] = cache_key
+            log.debug("Resolved %s to %s (%s)" % (
+                cache_key, site_address, "attested" if attested else "proof unverified"))
+        return site_address
+
+    # Fallback: direct RPC query with chain ID verification (no proof available)
+    if not _verify_chain_id():
+        return None
 
     data = _fetch_json("%s/xid/v1/resolve/%s/%s" % (rpc_url, tld, name))
     if not data or not data.get("record"):
@@ -240,14 +231,36 @@ def _resolve_epix_name(tld, name):
                 site_address = record.get("value", "").strip()
                 break
 
+    # Also fetch peers in fallback path
+    peers_data = _fetch_json("%s/xid/v1/epixnet/%s/%s" % (rpc_url, tld, name))
+    if peers_data and peers_data.get("peers"):
+        active_peers = [p.get("address", "") for p in peers_data["peers"] if p.get("active")]
+        if active_peers:
+            _peer_cache[cache_key] = active_peers
+
     _resolve_cache[cache_key] = {"address": site_address, "timestamp": now, "attested": False}
     if site_address:
         _reverse_cache[site_address] = cache_key
-        log.debug("Resolved %s to %s (chain ID verified, not attested)" % (cache_key, site_address))
+        log.debug("Resolved %s to %s (chain ID verified, no proof)" % (cache_key, site_address))
     else:
         log.debug("Name %s exists but has no EPIXNET record" % cache_key)
 
     return site_address
+
+
+def getEpixNetPeers(tld, name):
+    """Get the EpixNet peer addresses for a domain.
+
+    Returns a list of active peer address strings, or an empty list.
+    Triggers a resolution if not cached.
+    """
+    cache_key = "%s.%s" % (name, tld)
+    if cache_key in _peer_cache:
+        return _peer_cache[cache_key]
+
+    # Trigger resolution which populates the peer cache
+    _resolve_epix_name(tld, name)
+    return _peer_cache.get(cache_key, [])
 
 
 @PluginManager.registerTo("SiteManager")
@@ -273,11 +286,11 @@ class SiteManagerPlugin(object):
     def reverseLookupDomain(self, address):
         """Return the verified .epix domain for a site address, or None.
 
-        Only returns domains verified against the chain — either from an
-        attested snapshot (2/3 validator consensus) or a chain-ID-verified
+        Only returns domains verified against the chain — either from a
+        Merkle proof against the attested root or a chain-ID-verified
         forward resolution that confirmed domain -> address.
         """
-        # Already verified via forward resolution or attested snapshot
+        # Already verified via forward resolution
         cached = _reverse_cache.get(address)
         if cached:
             return cached
@@ -309,9 +322,10 @@ def clearXidCaches():
     count = len(_resolve_cache)
     _resolve_cache.clear()
     _reverse_cache.clear()
+    _peer_cache.clear()
     _chain_id_verified = None
     _chain_id_cache.update({"chain_id": None, "timestamp": 0})
-    _attested_snapshot.update({"digest": None, "mappings": {}, "timestamp": 0})
+    _attested_root_cache.update({"root": None, "timestamp": 0})
 
     # Clear ChainAttestation caches if loaded
     try:

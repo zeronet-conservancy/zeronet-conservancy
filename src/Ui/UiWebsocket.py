@@ -470,13 +470,14 @@ class UiWebsocket(object):
             inner_path = file_info["content_inner_path"]
 
         # Add certificate to user files
-        is_user_content = file_info and ("cert_signers" in file_info or "cert_signers_pattern" in file_info)
+        is_user_content = file_info and (file_info.get("cert_signers") or file_info.get("cert_signers_pattern"))
         if is_user_content and privatekey is None:
             cert = self.user.getCert(self.site.address)
-            extend["cert_auth_type"] = cert["auth_type"]
-            extend["cert_user_id"] = self.user.getCertUserId(site.address)
-            extend["cert_sign"] = cert["cert_sign"]
-            self.log.debug("Extending content.json with cert %s" % extend["cert_user_id"])
+            if cert:
+                extend["cert_auth_type"] = cert["auth_type"]
+                extend["cert_user_id"] = self.user.getCertUserId(site.address)
+                extend["cert_sign"] = cert["cert_sign"]
+                self.log.debug("Extending content.json with cert %s" % extend["cert_user_id"])
 
         if privatekey == "stored":  # Get privatekey from sites.json
             privatekey = self.user.getSiteData(self.site.address).get("privatekey")
