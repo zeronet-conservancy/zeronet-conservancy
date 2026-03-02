@@ -172,7 +172,8 @@ def _resolve_epix_name(tld, name):
 
     # Single RPC call: domain data + Merkle proof
     proof_data = _fetch_json("%s/xid/v1/resolve_with_proof/%s/%s" % (rpc_url, tld, name))
-    if proof_data and proof_data.get("domain") and proof_data.get("proof"):
+    if (proof_data and proof_data.get("domain") and proof_data.get("proof")
+            and proof_data["domain"].get("record", {}).get("name")):
         domain = proof_data["domain"]
         proof = proof_data["proof"]
 
@@ -267,9 +268,13 @@ def getEpixNetPeers(tld, name):
 class SiteManagerPlugin(object):
 
     def isEpixDomain(self, address):
+        if not isinstance(address, str):
+            return False
         return re.match(r"^[a-zA-Z0-9][a-zA-Z0-9\-]*\.[a-zA-Z]+$", address) and address.endswith(".epix")
 
     def resolveEpixDomain(self, domain):
+        if not isinstance(domain, str):
+            return None
         domain = domain.lower()
         parts = domain.rsplit(".", 1)
         if len(parts) != 2:
@@ -278,6 +283,8 @@ class SiteManagerPlugin(object):
         return _resolve_epix_name(tld, name)
 
     def resolveDomain(self, domain):
+        if not isinstance(domain, str):
+            return False
         return self.resolveEpixDomain(domain) or super(SiteManagerPlugin, self).resolveDomain(domain)
 
     def isDomain(self, address):
