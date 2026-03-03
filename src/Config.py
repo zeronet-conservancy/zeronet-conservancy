@@ -410,7 +410,7 @@ class Config:
         self.parser.add_argument('--log-dir', help='Path of logging directory', default=log_dir, metavar="path")
         self.parser.add_argument('--log-level', help='Level of logging to file', default="DEBUG", choices=["DEBUG", "INFO", "ERROR", "off"])
         self.parser.add_argument('--log-rotate', help='Log rotate interval', default="daily", choices=["hourly", "daily", "weekly", "off"])
-        self.parser.add_argument('--log-rotate-backup-count', help='Log rotate backup count', default=5, type=int)
+        self.parser.add_argument('--log-rotate-backup-count', help='Log rotate backup count', default=1, type=int)
 
         self.parser.add_argument('--language', help='Web interface language', default=language, metavar='language')
         self.parser.add_argument('--ui-ip-protect', help="Protect UI server from being accessed through third-party pages and on unauthorized cross-origin pages (enabled by default when serving on localhost IPs; doesn't work with non-local IPs, need testing with host names)", choices=['always', 'local', 'off'], default='local')
