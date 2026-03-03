@@ -570,6 +570,25 @@ class Site(object):
         content_json_modified = self.content_manager.contents[inner_path]["modified"]
         body = self.storage.read(inner_path)
 
+        PUSH_SIZE_LIMIT = 5 * 1024 * 1024  # Push files up to 5MB over the existing connection
+        content_inner_dir = helper.getDirname(inner_path)
+
+        # Large changed files that couldn't be inlined — push after update is acknowledged
+        push_files = []
+        for file_inner_path in getattr(self.content_manager, "last_changed_files", []):
+            if file_inner_path == inner_path:
+                continue
+            file_relative_path = file_inner_path[len(content_inner_dir):]
+            if file_relative_path in inline_files:
+                continue  # Already sent inline
+            try:
+                file_info = self.content_manager.getFileInfo(file_inner_path)
+                size = file_info.get("size", 0) if file_info else 0
+                if 0 < size <= PUSH_SIZE_LIMIT:
+                    push_files.append((file_inner_path, size))
+            except Exception:
+                pass
+
         while 1:
             if not peers or len(published) >= limit:
                 if event_done:
@@ -605,6 +624,19 @@ class Site(object):
                 if cb_progress and len(published) <= limit:
                     cb_progress(len(published), limit)
                 self.log.info("[OK] %s: %s %s/%s" % (peer.key, result["ok"], len(published), limit))
+                # Push large changed files over the same connection (no open port needed on publisher)
+                for file_inner_path, file_size in push_files:
+                    try:
+                        push_timeout = 5 + int(file_size / 1024)
+                        with gevent.Timeout(push_timeout, False):
+                            file_body = self.storage.read(file_inner_path)
+                            push_result = peer.pushFile(self.address, file_inner_path, file_body)
+                            if push_result and "ok" in push_result:
+                                self.log.debug("Pushed %s to %s" % (file_inner_path, peer.key))
+                            else:
+                                self.log.debug("PushFile failed %s to %s: %s" % (file_inner_path, peer.key, push_result))
+                    except Exception as err:
+                        self.log.debug("PushFile error %s to %s: %s" % (file_inner_path, peer.key, err))
             else:
                 if result == {"exception": "Timeout"}:
                     peer.onConnectionError("Publish timeout")
@@ -638,8 +670,15 @@ class Site(object):
         INLINE_SIZE_LIMIT = 64 * 1024
         inline_files = {}
         content_inner_dir = helper.getDirname(inner_path)
-        for file_relative_path in diffs.keys():
-            file_inner_path = content_inner_dir + file_relative_path
+
+        # Candidate inner_paths: files in diffs + files sign() detected as hash-changed
+        candidate_inner_paths = set(content_inner_dir + p for p in diffs.keys())
+        for p in getattr(self.content_manager, "last_changed_files", []):
+            if p != inner_path:  # skip content.json itself
+                candidate_inner_paths.add(p)
+
+        for file_inner_path in candidate_inner_paths:
+            file_relative_path = file_inner_path[len(content_inner_dir):]
             try:
                 file_info = self.content_manager.getFileInfo(file_inner_path)
                 if file_info and 0 < file_info.get("size", INLINE_SIZE_LIMIT + 1) <= INLINE_SIZE_LIMIT:

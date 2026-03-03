@@ -744,6 +744,7 @@ class ContentManager:
                 changed_files.append(inner_directory + file_relative_path)
 
         self.log.debug("Changed files: %s" % changed_files)
+        self.last_changed_files = changed_files  # Expose to publish() for inline_files selection
         if update_changed_files:
             for file_path in changed_files:
                 self.site.storage.onUpdated(file_path)

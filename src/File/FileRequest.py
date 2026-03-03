@@ -1,5 +1,6 @@
 # Included modules
 import os
+import io
 import time
 import json
 import collections
@@ -203,6 +204,51 @@ class FileRequest(object):
 
         else:  # Invalid sign or sha hash
             self.response({"error": "File %s invalid: %s" % (inner_path, error)})
+            self.connection.badAction(5)
+
+    # Receive a file pushed by the publisher over the existing connection (no open port needed)
+    def actionPushFile(self, params):
+        site = self.sites.get(params.get("site"))
+        if not site or not site.isServing():
+            self.response({"error": "Unknown site"})
+            self.connection.badAction(5)
+            return False
+
+        inner_path = params.get("inner_path")
+        body = params.get("body")
+
+        if not inner_path or not body:
+            self.response({"error": "Missing params"})
+            self.connection.badAction(5)
+            return False
+
+        # Size pre-check before verifyFile to avoid wasted SHA512 on garbage data
+        file_info = site.content_manager.getFileInfo(inner_path)
+        if not file_info:
+            self.response({"error": "File not in content.json"})
+            return False
+
+        expected_size = file_info.get("size", -1)
+        if len(body) != expected_size:
+            self.log.debug("PushFile size mismatch %s: got %d expected %d" % (inner_path, len(body), expected_size))
+            self.response({"error": "File size mismatch"})
+            self.connection.badAction(5)
+            return False
+
+        try:
+            file_obj = io.BytesIO(body)
+            if site.content_manager.verifyFile(inner_path, file_obj):
+                file_obj.seek(0)
+                site.storage.write(inner_path, file_obj)
+                site.onFileDone(inner_path)
+                self.log.debug("PushFile applied: %s" % inner_path)
+                self.response({"ok": "File pushed"})
+            else:
+                self.response({"error": "File verify failed"})
+                self.connection.badAction(5)
+        except Exception as err:
+            self.log.debug("PushFile error %s: %s" % (inner_path, err))
+            self.response({"error": "File push error: %s" % err})
             self.connection.badAction(5)
 
     def isReadable(self, site, inner_path, file, pos):

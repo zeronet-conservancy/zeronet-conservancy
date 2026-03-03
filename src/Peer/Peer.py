@@ -382,6 +382,13 @@ class Peer(object):
             "inline_files": inline_files
         })
 
+    def pushFile(self, address, inner_path, body):
+        return self.request("pushFile", {
+            "site": address,
+            "inner_path": inner_path,
+            "body": body
+        })
+
     # Stop and remove from site
     def remove(self, reason="Removing"):
         self.log("Removing peer...Connection error: %s, Hash failed: %s" % (self.connection_error, self.hash_failed))
