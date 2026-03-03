@@ -355,7 +355,7 @@ class UiWebsocket(object):
                 'tor_use_bridges' : True,
                 'ui_ip' : '127.0.0.1',
                 'ui_port' : 42222,
-                'version' : config.user_agent,
+                'version' : config.version,
                 'rev' : config.user_agent_rev,
                 'timecorrection' : 0.0,
                 'language' : config.language, #?
