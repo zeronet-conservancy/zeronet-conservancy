@@ -163,13 +163,15 @@ class FileRequest(object):
 
             if inner_path.endswith("content.json"):  # Download every changed file from peer
                 peer = site.addPeer(self.connection.ip, self.connection.port, return_peer=True, source="update")  # Add or get peer
+                if not peer.connection:
+                    peer.connect(self.connection)  # Assign current connection so downloader can reach sender
                 # On complete publish to other peers
                 diffs = params.get("diffs", {})
                 site.onComplete.once(lambda: site.publish(inner_path=inner_path, diffs=diffs, limit=3), "publish_%s" % inner_path)
 
                 # Load new content file and download changed files in new thread
                 def downloader():
-                    site.downloadContent(inner_path, peer=peer, diffs=params.get("diffs", {}))
+                    site.downloadContent(inner_path, peer=peer, diffs=params.get("diffs", {}), inline_files=params.get("inline_files", {}))
                     del self.server.files_parsing[file_uri]
 
                 gevent.spawn(downloader)

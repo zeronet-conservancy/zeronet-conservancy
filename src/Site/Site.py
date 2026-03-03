@@ -1,4 +1,5 @@
 import os
+import io
 import json
 import logging
 import re
@@ -160,7 +161,7 @@ class Site(object):
         return time.time() - self.settings.get("added", 0) < 60 * 60 * 24
 
     # Download all file from content.json
-    def downloadContent(self, inner_path, download_files=True, peer=None, check_modifications=False, diffs={}):
+    def downloadContent(self, inner_path, download_files=True, peer=None, check_modifications=False, diffs={}, inline_files={}):
         s = time.time()
         if config.verbose:
             self.log.debug(
@@ -209,7 +210,32 @@ class Site(object):
             for file_relative_path in list(self.content_manager.contents[inner_path].get("files", {}).keys()):
                 file_inner_path = content_inner_dir + file_relative_path
 
-                # Try to diff first
+                # Try inline file body first (pushed by sender, no reverse connection needed)
+                inline_body = inline_files.get(file_relative_path)
+                if inline_body:
+                    # Reject obviously wrong sizes before allocating BytesIO or running SHA512
+                    file_info = self.content_manager.getFileInfo(file_inner_path)
+                    expected_size = file_info.get("size", -1) if file_info else -1
+                    if len(inline_body) != expected_size:
+                        self.log.debug("DownloadContent Inline file size mismatch for %s: got %d, expected %d" % (
+                            file_inner_path, len(inline_body), expected_size))
+                        if peer and peer.connection:
+                            peer.connection.badAction(5)
+                    else:
+                        inline_file = io.BytesIO(inline_body)
+                        try:
+                            if self.content_manager.verifyFile(file_inner_path, inline_file):
+                                inline_file.seek(0)
+                                self.storage.write(file_inner_path, inline_file)
+                                self.onFileDone(file_inner_path)
+                                self.log.debug("DownloadContent Inline file applied: %s" % file_inner_path)
+                                continue
+                        except Exception as err:
+                            self.log.debug("DownloadContent Inline file verify failed for %s: %s" % (file_inner_path, err))
+                            if peer and peer.connection:
+                                peer.connection.badAction(5)
+
+                # Try to diff next
                 diff_success = False
                 diff_actions = diffs.get(file_relative_path)
                 file_changed = file_inner_path in changed or self.bad_files.get(file_inner_path)
@@ -539,7 +565,7 @@ class Site(object):
         gevent.joinall(content_threads)
 
     # Publish worker
-    def publisher(self, inner_path, peers, published, limit, diffs={}, event_done=None, cb_progress=None):
+    def publisher(self, inner_path, peers, published, limit, diffs={}, event_done=None, cb_progress=None, inline_files={}):
         file_size = self.storage.getSize(inner_path)
         content_json_modified = self.content_manager.contents[inner_path]["modified"]
         body = self.storage.read(inner_path)
@@ -567,7 +593,7 @@ class Site(object):
             for retry in range(2):
                 try:
                     with gevent.Timeout(timeout, False):
-                        result = peer.publish(self.address, inner_path, body, content_json_modified, diffs)
+                        result = peer.publish(self.address, inner_path, body, content_json_modified, diffs, inline_files)
                     if result:
                         break
                 except Exception as err:
@@ -608,8 +634,22 @@ class Site(object):
 
         peers = set(peers)
 
-        self.log.info("Publishing %s to %s/%s peers (connected: %s) diffs: %s (%.2fk)..." % (
-            inner_path, limit, len(self.peers), num_connected_peers, list(diffs.keys()), float(len(str(diffs))) / 1024
+        # Collect small changed files to push inline (avoids requiring reverse connection from peers)
+        INLINE_SIZE_LIMIT = 64 * 1024
+        inline_files = {}
+        content_inner_dir = helper.getDirname(inner_path)
+        for file_relative_path in diffs.keys():
+            file_inner_path = content_inner_dir + file_relative_path
+            try:
+                file_info = self.content_manager.getFileInfo(file_inner_path)
+                if file_info and 0 < file_info.get("size", INLINE_SIZE_LIMIT + 1) <= INLINE_SIZE_LIMIT:
+                    inline_files[file_relative_path] = self.storage.read(file_inner_path)
+            except Exception:
+                pass
+
+        self.log.info("Publishing %s to %s/%s peers (connected: %s) diffs: %s (%.2fk) inline: %s..." % (
+            inner_path, limit, len(self.peers), num_connected_peers, list(diffs.keys()), float(len(str(diffs))) / 1024,
+            list(inline_files.keys())
         ))
 
         if not peers:
@@ -617,7 +657,7 @@ class Site(object):
 
         event_done = gevent.event.AsyncResult()
         for i in range(min(len(peers), limit, threads)):
-            publisher = gevent.spawn(self.publisher, inner_path, peers, published, limit, diffs, event_done, cb_progress)
+            publisher = gevent.spawn(self.publisher, inner_path, peers, published, limit, diffs, event_done, cb_progress, inline_files)
             publishers.append(publisher)
 
         event_done.get()  # Wait for done
@@ -633,7 +673,7 @@ class Site(object):
         )
 
         for thread in range(2):
-            gevent.spawn(self.publisher, inner_path, peers, published, limit=limit * 2, diffs=diffs)
+            gevent.spawn(self.publisher, inner_path, peers, published, limit=limit * 2, diffs=diffs, inline_files=inline_files)
 
         # Send my hashfield to every connected peer if changed
         gevent.spawn(self.sendMyHashfield, 100)

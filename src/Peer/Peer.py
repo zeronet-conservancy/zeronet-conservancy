@@ -368,7 +368,7 @@ class Peer(object):
             self.time_my_hashfield_sent = time.time()
             return True
 
-    def publish(self, address, inner_path, body, modified, diffs=[]):
+    def publish(self, address, inner_path, body, modified, diffs=[], inline_files={}):
         if len(body) > 10 * 1024 and self.connection and self.connection.handshake.get("rev", 0) >= 4095:
             # To save bw we don't push big content.json to peers
             body = b""
@@ -378,7 +378,8 @@ class Peer(object):
             "inner_path": inner_path,
             "body": body,
             "modified": modified,
-            "diffs": diffs
+            "diffs": diffs,
+            "inline_files": inline_files
         })
 
     # Stop and remove from site
