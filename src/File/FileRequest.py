@@ -11,6 +11,7 @@ import gevent
 
 from Debug import Debug
 from Config import config
+from Crypt import CryptHash
 from util import RateLimit
 from util import Msgpack
 from util import helper
@@ -222,12 +223,19 @@ class FileRequest(object):
             self.connection.badAction(5)
             return False
 
-        # Size pre-check before verifyFile to avoid wasted SHA512 on garbage data
-        file_info = site.content_manager.getFileInfo(inner_path)
+        # Get file info from the on-disk content.json (which may be newer than what's
+        # in memory — pushFile can arrive before downloadContent's loadContent runs).
+        # We read from disk without updating in-memory state so downloadContent can
+        # still detect changed files later.
+        file_info = self._getFileInfoFromDisk(site, inner_path)
+        if not file_info:
+            # Fall back to in-memory content (handles sub-directory content.json etc.)
+            file_info = site.content_manager.getFileInfo(inner_path)
         if not file_info:
             self.response({"error": "File not in content.json"})
             return False
 
+        # Size pre-check before running SHA512
         expected_size = file_info.get("size", -1)
         if len(body) != expected_size:
             self.log.debug("PushFile size mismatch %s: got %d expected %d" % (inner_path, len(body), expected_size))
@@ -235,21 +243,50 @@ class FileRequest(object):
             self.connection.badAction(5)
             return False
 
+        # Verify hash and write
         try:
             file_obj = io.BytesIO(body)
-            if site.content_manager.verifyFile(inner_path, file_obj):
-                file_obj.seek(0)
-                site.storage.write(inner_path, file_obj)
-                site.onFileDone(inner_path)
-                self.log.debug("PushFile applied: %s" % inner_path)
-                self.response({"ok": "File pushed"})
-            else:
+            expected_hash = file_info.get("sha512", "")
+            actual_hash = CryptHash.sha512sum(file_obj)
+            if actual_hash != expected_hash:
                 self.response({"error": "File verify failed"})
                 self.connection.badAction(5)
+                return False
+
+            file_obj.seek(0)
+            site.storage.write(inner_path, file_obj)
+            site.onFileDone(inner_path)
+            self.log.debug("PushFile applied: %s" % inner_path)
+            self.response({"ok": "File pushed"})
         except Exception as err:
             self.log.debug("PushFile error %s: %s" % (inner_path, err))
             self.response({"error": "File push error: %s" % err})
             self.connection.badAction(5)
+
+    def _getFileInfoFromDisk(self, site, inner_path):
+        """Read file info from on-disk content.json without updating in-memory state.
+
+        Walks up the directory tree (like getFileInfo) but reads content.json
+        from disk instead of the in-memory cache.
+        """
+        dirs = inner_path.split("/")
+        inner_path_parts = []
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = ("%s/content.json" % "/".join(dirs)).strip("/")
+            if not site.storage.isFile(content_inner_path):
+                continue
+            try:
+                disk_content = site.storage.loadJson(content_inner_path)
+            except Exception:
+                continue
+            file_relative = "/".join(inner_path_parts)
+            entry = disk_content.get("files", {}).get(file_relative)
+            if not entry:
+                entry = disk_content.get("files_optional", {}).get(file_relative)
+            if entry:
+                return entry
+        return None
 
     def isReadable(self, site, inner_path, file, pos):
         return True
