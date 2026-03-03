@@ -512,7 +512,7 @@ class ContentManager:
             user_address = re.match(r".*/([A-Za-z0-9]*?)/.*?$", inner_path).group(1)
 
         try:
-            if not content:
+            if not content and self.site.storage.isFile(inner_path):
                 content = self.site.storage.loadJson(inner_path)  # Read the file if no content specified
             user_urn = "%s/%s" % (content["cert_auth_type"], content["cert_user_id"])  # web/mud@epixid.epix
             cert_user_id = content["cert_user_id"]

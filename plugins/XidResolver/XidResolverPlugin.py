@@ -6,11 +6,18 @@ import time
 from Config import config
 from Plugin import PluginManager
 
+import ssl
 try:
     from urllib.request import urlopen, Request
     from urllib.error import URLError
 except ImportError:
     from urllib2 import urlopen, Request, URLError
+
+try:
+    import certifi
+    _ssl_context = ssl.create_default_context(cafile=certifi.where())
+except ImportError:
+    _ssl_context = ssl.create_default_context()
 
 allow_reload = False
 
@@ -35,7 +42,7 @@ def _fetch_json(url, timeout=10):
     try:
         req = Request(url)
         req.add_header("Accept", "application/json")
-        resp = urlopen(req, timeout=timeout)
+        resp = urlopen(req, timeout=timeout, context=_ssl_context)
         return json.loads(resp.read().decode("utf-8"))
     except (URLError, ValueError, IOError) as e:
         log.debug("xID RPC fetch failed for %s: %s" % (url, e))
