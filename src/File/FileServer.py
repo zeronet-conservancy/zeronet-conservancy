@@ -346,6 +346,23 @@ class FileServer(ConnectionServer):
             self.log.debug("Site announce tracker done in %.3fs, sleeping for %.3fs..." % (taken, sleep))
             time.sleep(sleep)
 
+    # Poll recently active sites for new modifications every 60 seconds
+    def pollSites(self):
+        time.sleep(2 * 60)  # Let startup checks complete first
+        while 1:
+            s = time.time()
+            now = time.time()
+            for address, site in list(self.sites.items()):
+                if not site.isServing():
+                    continue
+                # Only poll sites modified within the last 7 days
+                if now - site.settings.get("modified", 0) > 60 * 60 * 24 * 7:
+                    continue
+                site.checkModifications()
+                time.sleep(1)
+            taken = time.time() - s
+            time.sleep(max(0, 60 - taken))  # ~60s between polls
+
     # Detects if computer back from wakeup
     def wakeupWatcher(self):
         last_time = time.time()
@@ -394,6 +411,7 @@ class FileServer(ConnectionServer):
 
         thread_announce_sites = gevent.spawn(self.announceSites)
         thread_cleanup_sites = gevent.spawn(self.cleanupSites)
+        thread_poll_sites = gevent.spawn(self.pollSites)
         thread_wakeup_watcher = gevent.spawn(self.wakeupWatcher)
 
         ConnectionServer.listen(self)
