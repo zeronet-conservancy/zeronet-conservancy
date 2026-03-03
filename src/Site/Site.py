@@ -183,7 +183,7 @@ class Site(object):
             self.log.debug("DownloadContent got %s" % inner_path)
             sub_s = time.time()
 
-        changed, deleted = self.content_manager.loadContent(inner_path, load_includes=False)
+        changed, deleted = self.content_manager.loadContent(inner_path, load_includes=False, force=bool(diffs))
 
         if config.verbose:
             self.log.debug("DownloadContent %s: loadContent done in %.3fs" % (inner_path, time.time() - sub_s))
@@ -212,7 +212,8 @@ class Site(object):
                 # Try to diff first
                 diff_success = False
                 diff_actions = diffs.get(file_relative_path)
-                if diff_actions and self.bad_files.get(file_inner_path):
+                file_changed = file_inner_path in changed or self.bad_files.get(file_inner_path)
+                if diff_actions:  # Sender explicitly sent a diff — always try to apply it
                     try:
                         s = time.time()
                         new_file = Diff.patch(self.storage.open(file_inner_path, "rb"), diff_actions)
@@ -243,7 +244,7 @@ class Site(object):
 
                 if not diff_success:
                     # Start download and dont wait for finish, return the event
-                    res = self.needFile(file_inner_path, blocking=False, update=self.bad_files.get(file_inner_path), peer=peer)
+                    res = self.needFile(file_inner_path, blocking=False, update=file_changed or bool(diff_actions), peer=peer)
                     if res is not True and res is not False:  # Need downloading and file is allowed
                         file_threads.append(res)  # Append evt
 
