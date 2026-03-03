@@ -62,6 +62,8 @@ def resolve_peer_xid(peer_address):
                     "owner": cached["owner"],
                     "active": cached["active"],
                     "revoked_at": cached["revoked_at"],
+                    "avatar": cached.get("avatar", ""),
+                    "bio": cached.get("bio", ""),
                 }
             return None
 
@@ -72,12 +74,26 @@ def resolve_peer_xid(peer_address):
     if data and data.get("name_record"):
         record = data["name_record"]
         peer_info = data.get("peer", {})
+        name = record.get("name", "")
+        tld = record.get("tld", "")
+
+        # Fetch profile (avatar, bio)
+        avatar = ""
+        bio = ""
+        profile_data = _fetch_json("%s/xid/v1/profile/%s/%s" % (rpc_url, tld, name))
+        if profile_data and profile_data.get("profile"):
+            profile = profile_data["profile"]
+            avatar = profile.get("avatar", "")
+            bio = profile.get("bio", "")
+
         entry = {
-            "name": record.get("name", ""),
-            "tld": record.get("tld", ""),
+            "name": name,
+            "tld": tld,
             "owner": record.get("owner", ""),
             "active": peer_info.get("active", True),
             "revoked_at": int(peer_info.get("revoked_at", 0)),
+            "avatar": avatar,
+            "bio": bio,
             "cached_at": now,
         }
         _peer_cache[peer_address] = entry
@@ -87,6 +103,8 @@ def resolve_peer_xid(peer_address):
             "owner": entry["owner"],
             "active": entry["active"],
             "revoked_at": entry["revoked_at"],
+            "avatar": entry["avatar"],
+            "bio": entry["bio"],
         }
     else:
         # Negative cache
@@ -102,8 +120,136 @@ def invalidate_peer_cache(peer_address=None):
         _peer_cache.clear()
 
 
+# Cache for xID name resolution: "name.tld" -> {owner, peers, cached_at}
+_xid_name_cache = {}
+XID_NAME_CACHE_TTL = 300  # 5 minutes
+
+
+def resolve_xid_name(name, tld="epix"):
+    """Resolve an xID name to its owner address and registered EpixNet peers.
+
+    Returns dict {owner: str, peers: [str, ...]} or None if not found.
+    """
+    cache_key = "%s.%s" % (name, tld)
+    now = time.time()
+
+    cached = _xid_name_cache.get(cache_key)
+    if cached and (now - cached["cached_at"]) < XID_NAME_CACHE_TTL:
+        if cached.get("owner"):
+            return {"owner": cached["owner"], "peers": cached["peers"]}
+        return None
+
+    rpc_url = _get_rpc_url()
+
+    # Fetch name record to get owner
+    name_data = _fetch_json("%s/xid/v1/resolve/%s/%s" % (rpc_url, tld, name))
+    if not name_data or not name_data.get("record"):
+        _xid_name_cache[cache_key] = {"owner": None, "cached_at": now}
+        return None
+
+    owner = name_data["record"].get("owner", "")
+
+    # Fetch EpixNet peers for this name
+    peers_data = _fetch_json("%s/xid/v1/epixnet/%s/%s" % (rpc_url, tld, name))
+    active_peers = []
+    if peers_data and peers_data.get("peers"):
+        active_peers = [
+            p.get("address", "") for p in peers_data["peers"]
+            if p.get("active", False)
+        ]
+
+    _xid_name_cache[cache_key] = {
+        "owner": owner,
+        "peers": active_peers,
+        "cached_at": now,
+    }
+    return {"owner": owner, "peers": active_peers}
+
+
+def invalidate_xid_name_cache(name=None):
+    """Invalidate xID name resolution cache."""
+    if name:
+        _xid_name_cache.pop(name, None)
+    else:
+        _xid_name_cache.clear()
+
+
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
+
+    def verifyCert(self, inner_path, content):
+        """Override cert verification to handle xID self-signed certs.
+
+        For domain "xid", the cert is self-signed by the user's auth key using
+        keccak256. Verification recovers the signer, confirms self-signature,
+        then checks on-chain that the xID name has this peer address registered.
+
+        For all other domains, delegates to the standard verifyCert.
+        """
+        if content.get("cert_user_id") and "@" in content.get("cert_user_id", ""):
+            name, domain = content["cert_user_id"].rsplit("@", 1)
+            if domain == "xid":
+                return self._verifyXidCert(inner_path, content, name)
+
+        return super(ContentManagerPlugin, self).verifyCert(inner_path, content)
+
+    def _verifyXidCert(self, inner_path, content, xid_name):
+        """Verify an xID self-signed certificate."""
+        from Content.ContentManager import VerifyError
+        from Crypt import CryptEpix
+
+        rules = self.getRules(inner_path, content)
+        if not rules:
+            raise VerifyError("No rules for this file")
+
+        if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
+            return True
+
+        # Check that "xid" is in cert_signers
+        cert_signer_entry = rules.get("cert_signers", {}).get("xid")
+        if not cert_signer_entry:
+            raise VerifyError("xID cert signer not configured for this site")
+
+        user_address = rules.get("user_address")
+        if not user_address:
+            raise VerifyError("Cannot determine user address from rules")
+
+        cert_sign = content.get("cert_sign")
+        if not cert_sign:
+            raise VerifyError("Missing cert_sign for xID cert")
+
+        # Step 1: Verify the self-signature
+        cert_subject = "%s#xid/%s" % (user_address, xid_name)
+        recovered_address = CryptEpix.get_sign_address_keccak(cert_subject, cert_sign)
+        if not recovered_address:
+            raise VerifyError("Could not recover address from xID cert signature")
+
+        if recovered_address != user_address:
+            raise VerifyError(
+                "xID cert signature mismatch: recovered %s, expected %s" %
+                (recovered_address, user_address)
+            )
+
+        # Step 2: Verify on-chain — xID name must have this peer address registered
+        tld = "epix"
+        name_parts = xid_name.rsplit(".", 1)
+        if len(name_parts) == 2:
+            xid_name_only, tld = name_parts
+        else:
+            xid_name_only = xid_name
+
+        xid_info = resolve_xid_name(xid_name_only, tld)
+        if not xid_info:
+            raise VerifyError("xID name '%s' not found on chain" % xid_name)
+
+        if user_address not in xid_info.get("peers", []):
+            raise VerifyError(
+                "Peer address %s not registered for xID '%s'" % (user_address, xid_name)
+            )
+
+        log.debug("xID cert verified: %s owns '%s', peer %s registered" %
+                   (xid_info["owner"], xid_name, user_address))
+        return True
 
     def sign(self, inner_path="content.json", privatekey=None, filewrite=True,
              update_changed_files=False, extend=None, remove_missing_optional=False):
@@ -184,9 +330,176 @@ class UiWebsocketPlugin(object):
             results[addr] = resolve_peer_xid(addr)
         self.response(to, results)
 
+    def actionCertXid(self, to, xid_name=None):
+        """Acquire an xID certificate for the current user.
+
+        Creates a self-signed certificate using keccak256 that ties the user's
+        auth address to their xID name. The cert is stored locally and used
+        when signing content on sites that accept xID certs.
+
+        If xid_name is omitted, tries reverse lookup on all the user's known
+        addresses. If none resolve, shows the xID site overlay so the user
+        can add their peer address.
+        """
+        if not xid_name:
+            # Try reverse lookup on all known addresses
+            auth_address = self.user.getAuthAddress(self.site.address)
+            tried = set()
+
+            # Try current site auth address
+            addresses_to_try = [auth_address]
+
+            # Try master address
+            master = getattr(self.user, "master_address", None)
+            if master:
+                addresses_to_try.append(master)
+
+            # Try all other site auth addresses
+            for site_data in self.user.sites.values():
+                auth = site_data.get("auth_address")
+                if auth:
+                    addresses_to_try.append(auth)
+
+            # Invalidate cache for all addresses so we get fresh chain data
+            # (user may have just added their peer on the xID site)
+            for addr in addresses_to_try:
+                if addr:
+                    invalidate_peer_cache(addr)
+            invalidate_xid_name_cache()
+
+            for addr in addresses_to_try:
+                if addr and addr not in tried:
+                    tried.add(addr)
+                    result = resolve_peer_xid(addr)
+                    if result and result.get("name"):
+                        # Found their xID — proceed
+                        return self._processCertXid(to, result["name"])
+
+            # No xID found for any address — ask user to open xID site to add peer
+            xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
+            return_url = "/%s" % self.site.address
+            xid_url = "/%s/?addPeer=%s&returnTo=%s" % (
+                xid_site, auth_address, return_url
+            )
+
+            self.cmd(
+                "confirm",
+                [
+                    "No xID found for your address.<br><br>"
+                    "Open the xID site to add <b>%s</b> as an EpixNet peer?" %
+                    (auth_address[:20] + "..."),
+                    "Open xID"
+                ],
+                lambda res: self.cmd("redirect", xid_url)
+            )
+            return self.response(to, {
+                "error": "no_xid_found",
+                "auth_address": auth_address
+            })
+
+        self._processCertXid(to, xid_name)
+
+    def _processCertXid(self, to, xid_name):
+        """Process xID cert acquisition for a given name."""
+        from Crypt import CryptEpix
+
+        if not isinstance(xid_name, str):
+            return self.response(to, {"error": "Invalid xID name"})
+
+        xid_name = xid_name.strip().lower()
+        if not re.match(r'^[a-z0-9][a-z0-9\-]*$', xid_name):
+            return self.response(to, {"error": "Invalid xID name format"})
+
+        auth_address = self.user.getAuthAddress(self.site.address)
+        auth_privatekey = self.user.getAuthPrivatekey(self.site.address)
+
+        if not auth_address or not auth_privatekey:
+            return self.response(to, {"error": "No auth credentials for this site"})
+
+        # Verify on chain: user must own this name and have this peer registered
+        tld = "epix"
+        invalidate_xid_name_cache("%s.%s" % (xid_name, tld))
+        invalidate_peer_cache(auth_address)
+        xid_info = resolve_xid_name(xid_name, tld)
+        if not xid_info:
+            return self.response(to, {
+                "error": "xID name '%s' not found on chain" % xid_name
+            })
+
+        if auth_address not in xid_info.get("peers", []):
+            # Ask user to open xID add-peer page
+            xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
+            return_url = "/%s" % self.site.address
+            xid_url = "/%s/?addPeer=%s&returnTo=%s" % (
+                xid_site, auth_address, return_url
+            )
+
+            self.cmd(
+                "confirm",
+                [
+                    "Your address is not registered as a peer for <b>%s.%s</b>.<br><br>"
+                    "Open the xID site to add it?" % (xid_name, tld),
+                    "Open xID"
+                ],
+                lambda res: self.cmd("redirect", xid_url)
+            )
+            return self.response(to, {
+                "error": "peer_not_registered",
+                "auth_address": auth_address
+            })
+
+        # Create the self-signed cert
+        cert_subject = "%s#xid/%s" % (auth_address, xid_name)
+        cert_sign = CryptEpix.sign_keccak(cert_subject, auth_privatekey)
+
+        if not cert_sign:
+            return self.response(to, {"error": "Failed to sign certificate"})
+
+        # Store the cert
+        result = self.user.addCert(auth_address, "xid", "xid", xid_name, cert_sign)
+
+        if result is True:
+            self.cmd("notification", [
+                "done",
+                "xID certificate acquired: <b>%s@xid</b>" % xid_name
+            ])
+            self.user.setCert(self.site.address, "xid")
+            self.site.updateWebsocket(cert_changed="xid")
+            self.response(to, "ok")
+        elif result is False:
+            # Already have a different cert for "xid" domain — replace
+            cert_current = self.user.certs["xid"]
+            self.cmd(
+                "confirm",
+                [
+                    "You already have an xID cert: <b>%s@xid</b>. Replace?" %
+                    cert_current["auth_user_name"],
+                    "Replace"
+                ],
+                lambda res: self._cbCertXidReplace(to, auth_address, xid_name, cert_sign)
+            )
+        else:
+            # Same cert already exists
+            self.user.setCert(self.site.address, "xid")
+            self.site.updateWebsocket(cert_changed="xid")
+            self.response(to, "ok")
+
+    def _cbCertXidReplace(self, to, auth_address, xid_name, cert_sign):
+        """Callback to replace an existing xID cert after user confirmation."""
+        self.user.deleteCert("xid")
+        self.user.addCert(auth_address, "xid", "xid", xid_name, cert_sign)
+        self.cmd("notification", [
+            "done",
+            "xID certificate updated: <b>%s@xid</b>" % xid_name
+        ])
+        self.user.setCert(self.site.address, "xid")
+        self.site.updateWebsocket(cert_changed="xid")
+        self.response(to, "ok")
+
     def actionXidInvalidateCache(self, to, peer_address=None):
-        """Invalidate the xID peer cache (for a specific address or all)."""
+        """Invalidate the xID peer and name caches."""
         invalidate_peer_cache(peer_address)
+        invalidate_xid_name_cache()
         self.response(to, "ok")
 
 

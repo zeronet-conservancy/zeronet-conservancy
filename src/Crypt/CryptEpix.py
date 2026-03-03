@@ -125,6 +125,28 @@ def sign(data: str, privatekey: str) -> str:
     )).decode()
 
 
+def sign_keccak(data: str, privatekey: str) -> str:
+    """Sign data with privatekey using keccak256 hash, return base64 string signature.
+
+    Used for chain-compatible signatures where the verifier needs to recover
+    the signer's address and check it on-chain.
+    """
+    try:
+        if len(privatekey) == 64:
+            privatekey_bin = bytes.fromhex(privatekey)
+        else:
+            privatekey_bin = sslcurve.wif_to_private(privatekey.encode())
+    except Exception:
+        return None
+
+    return base64.b64encode(sslcurve.sign(
+        data.encode(),
+        privatekey_bin,
+        recoverable=True,
+        hash=keccak_format
+    )).decode()
+
+
 def get_sign_address_64(data: str, sign: str, lib_verify=None) -> Optional[str]:
     """Returns pubkey/address of signer if any"""
     if not lib_verify:
@@ -135,6 +157,19 @@ def get_sign_address_64(data: str, sign: str, lib_verify=None) -> Optional[str]:
 
     try:
         publickey = sslcurve.recover(base64.b64decode(sign), data.encode(), hash=dbl_format)
+        sign_address = publicKeyToAddress(publickey)
+        return sign_address
+    except Exception:
+        return None
+
+
+def get_sign_address_keccak(data: str, sign: str) -> Optional[str]:
+    """Returns the epix bech32 address of the signer using keccak256 hash recovery."""
+    if not sign:
+        return None
+
+    try:
+        publickey = sslcurve.recover(base64.b64decode(sign), data.encode(), hash=keccak_format)
         sign_address = publicKeyToAddress(publickey)
         return sign_address
     except Exception:

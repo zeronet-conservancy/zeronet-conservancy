@@ -1171,13 +1171,23 @@ class UiWebsocket(object):
             min_mtime = self.site.settings["cache"].get("time_modified_files_check")
             modified_files = self.site.settings["cache"].get("modified_files", [])
 
-        inner_paths = [content_inner_path] + list(content.get("includes", {}).keys()) + list(content.get("files", {}).keys())
+        # Build list of paths that are managed by the site owner key.
+        # Exclude paths under includes directories (e.g. data/users/) since
+        # those are signed by individual user keys, not the site owner.
+        includes_prefixes = tuple(
+            helper.getDirname(k) for k in content.get("includes", {}).keys()
+            if "/" in k
+        )
+        inner_paths = [content_inner_path] + list(content.get("files", {}).keys())
 
         if len(inner_paths) > 1000:
             return {"error": "Too many files in content.json"}
 
         for relative_inner_path in inner_paths:
             inner_path = helper.getDirname(content_inner_path) + relative_inner_path
+            # Skip user-managed content under includes directories
+            if includes_prefixes and inner_path.startswith(includes_prefixes):
+                continue
             try:
                 is_mtime_newer = os.path.getmtime(self.site.storage.getPath(inner_path)) > min_mtime + 1
                 if is_mtime_newer:
