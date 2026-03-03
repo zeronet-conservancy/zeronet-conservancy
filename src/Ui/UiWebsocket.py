@@ -836,7 +836,7 @@ class UiWebsocket(object):
     # Select certificate for site
     def actionCertSelect(self, to, accepted_domains=[], accept_any=False, accepted_pattern=None):
         accounts = []
-        accounts.append(["", _["No certificate"], ""])  # Default option
+        accounts.append(["", _["None"], ""])  # Default option
         active = ""  # Make it active if no other option found
 
         # Add my certs
