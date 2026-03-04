@@ -50,6 +50,7 @@ class Site(object):
         self.worker_manager = WorkerManager(self)  # Handle site download from other peers
         self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
         self.given_up_files = set()  # Files that failed too many times; blocked from being re-added by checkModifications
+        self.peer_claims_failures = {}  # Silent failure tracking for peer-claimed files (not in bad_files)
         self.content_updated = None  # Content.js update time
         self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
         self.page_requested = False  # Page viewed in browser
@@ -454,8 +455,9 @@ class Site(object):
                 if inner_path not in self.bad_files and inner_path not in self.given_up_files and not self.content_manager.isArchived(inner_path, modified):
                     if has_newer:
                         # We dont have this file or we have older
+                        # Don't add to bad_files — peer claims are unverified.
+                        # Download silently; if valid it gets written, if not it fails without affecting dashboard/sync.
                         modified_contents.append(inner_path)
-                        self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1
                     if has_older and num_old_files < 5:
                         num_old_files += 1
                         self.log.debug("CheckModifications: %s client has older version of %s, publishing there (%s/5)..." % (peer, inner_path, num_old_files))
@@ -463,7 +465,7 @@ class Site(object):
             if modified_contents:
                 self.log.debug("CheckModifications: %s new modified file from %s" % (len(modified_contents), peer))
                 modified_contents.sort(key=lambda inner_path: 0 - res["modified_files"][inner_path])  # Download newest first
-                t = gevent.spawn(self.pooledDownloadContent, modified_contents, only_if_bad=True)
+                t = gevent.spawn(self.pooledDownloadContent, modified_contents, only_if_bad=False)
                 threads.append(t)
         if config.verbose:
             self.log.debug("CheckModifications: Waiting for %s pooledDownloadContent" % len(threads))
@@ -911,7 +913,16 @@ class Site(object):
                     self.log.debug("%s: Download not allowed" % inner_path)
                     return False
 
-            self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
+            # Only add to bad_files if this file belongs to a locally-verified content.json.
+            # User content.json files claimed by peers but never locally loaded should not
+            # enter bad_files — they'd block sync and show failures on the dashboard.
+            is_unverified_user_content = (
+                inner_path.endswith("content.json") and
+                inner_path != "content.json" and
+                inner_path not in self.content_manager.contents
+            )
+            if not is_unverified_user_content:
+                self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
 
             task = self.worker_manager.addTask(inner_path, peer, priority=priority, file_info=file_info)
             if blocking:
@@ -1212,6 +1223,7 @@ class Site(object):
             if config.verbose:
                 self.log.debug("Bad file solved: %s" % inner_path)
             del(self.bad_files[inner_path])
+        self.peer_claims_failures.pop(inner_path, None)
 
         # Update content.json last downlad time
         if inner_path == "content.json":
@@ -1226,7 +1238,17 @@ class Site(object):
         if inner_path == "content.json":
             self.content_updated = False
             self.log.debug("Can't update content.json")
-        if inner_path in self.bad_files and self.connection_server.has_internet:
+
+        if inner_path not in self.bad_files:
+            # Peer-claimed file that was never in bad_files — track silently
+            self.peer_claims_failures[inner_path] = self.peer_claims_failures.get(inner_path, 0) + 1
+            if self.peer_claims_failures[inner_path] > 3:
+                self.log.debug("Peer-claimed file failed too many times, ignoring: %s" % inner_path)
+                del self.peer_claims_failures[inner_path]
+                self.given_up_files.add(inner_path)
+            return  # No dashboard notification for peer-claimed files
+
+        if self.connection_server.has_internet:
             self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1
 
         self.updateWebsocket(file_failed=inner_path)
