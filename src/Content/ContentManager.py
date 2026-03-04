@@ -833,6 +833,9 @@ class ContentManager:
             rules = self.getRules(inner_path, content)
             if rules and "signers" in rules:
                 valid_signers += rules["signers"]
+            if "users/" in inner_path:
+                self.log.debug("getValidSigners %s: rules=%s signers=%s" % (
+                    inner_path, bool(rules), rules.get("signers") if rules else None))
 
         if self.site.address not in valid_signers:
             valid_signers.append(self.site.address)  # Site address always valid
@@ -1024,9 +1027,15 @@ class ContentManager:
                         raise VerifyError("Invalid cert!")
 
                     valid_signs = 0
+                    if "users/" in inner_path:
+                        self.log.debug("verifyFile %s: valid_signers=%s signs_keys=%s" % (
+                            inner_path, valid_signers, list(signs.keys())))
                     for address in valid_signers:
                         if address in signs:
-                            valid_signs += CryptEpix.verify(sign_content, address, signs[address])
+                            verify_result = CryptEpix.verify(sign_content, address, signs[address])
+                            valid_signs += verify_result
+                            if "users/" in inner_path:
+                                self.log.debug("verifyFile %s: verify(%s)=%s" % (inner_path, address, verify_result))
                         if valid_signs >= signs_required:
                             break  # Break if we has enough signs
                     if valid_signs < signs_required:
