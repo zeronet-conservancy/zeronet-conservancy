@@ -48,7 +48,7 @@ def _fetch_json(url, timeout=10):
         resp = urlopen(req, timeout=timeout, context=_ssl_context)
         return json.loads(resp.read().decode("utf-8"))
     except (URLError, ValueError, IOError) as e:
-        log.warning("xID RPC fetch failed for %s: %s" % (url, e))
+        log.debug("xID RPC fetch failed for %s: %s" % (url, e))
         return None
 
 
