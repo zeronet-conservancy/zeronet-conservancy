@@ -195,6 +195,25 @@ def invalidate_xid_name_cache(name=None):
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
 
+    def resolveUserSigners(self, user_address):
+        """For xID-named directories, resolve to all linked identity addresses."""
+        if "." not in user_address:
+            return super(ContentManagerPlugin, self).resolveUserSigners(user_address)
+
+        parts = user_address.rsplit(".", 1)
+        if len(parts) != 2:
+            return [user_address]
+        name, tld = parts
+
+        xid_info = resolve_xid_name(name, tld)
+        if not xid_info or not xid_info.get("identities"):
+            log.warning("Cannot resolve xID signers for %s" % user_address)
+            return []
+
+        signers = [e["address"] for e in xid_info["identities"] if e.get("address")]
+        log.debug("Resolved xID directory %s to signers: %s" % (user_address, signers))
+        return signers
+
     def verifyCert(self, inner_path, content):
         """Override cert verification to handle xID self-signed certs.
 
@@ -231,6 +250,15 @@ class ContentManagerPlugin(object):
         user_address = rules.get("user_address")
         if not user_address:
             raise VerifyError("Cannot determine user address from rules")
+
+        # If user_address is an xID directory name (contains dot), extract the
+        # actual signing identity address from the content's signs dict.
+        if "." in user_address:
+            signing_addresses = list(content.get("signs", {}).keys())
+            if signing_addresses:
+                user_address = signing_addresses[0]
+            else:
+                raise VerifyError("No signing address found in content for xID directory")
 
         cert_sign = content.get("cert_sign")
         if not cert_sign:
@@ -313,15 +341,20 @@ class ContentManagerPlugin(object):
 
         # Only check for user content directories (e.g. data/users/<address>/content.json)
         if "users/" in inner_path:
-            match = re.search(r"users/([A-Za-z0-9]+)/", inner_path)
+            match = re.search(r"users/([A-Za-z0-9.]+)/", inner_path)
             if match:
-                user_address = match.group(1)
-                xid_info = resolve_identity_xid(user_address)
-                if xid_info and not xid_info["active"]:
-                    raise SignError(
-                        "Your xID identity has been revoked (revoked at block %s). "
-                        "You cannot post new content with a revoked identity." % xid_info["revoked_at"]
-                    )
+                dir_name = match.group(1)
+                if "." in dir_name:
+                    # xID directory — check revocation of the actual signing identity
+                    # (the cert's auth_address), not the directory name
+                    pass  # Revocation is enforced during cert verification
+                else:
+                    xid_info = resolve_identity_xid(dir_name)
+                    if xid_info and not xid_info["active"]:
+                        raise SignError(
+                            "Your xID identity has been revoked (revoked at block %s). "
+                            "You cannot post new content with a revoked identity." % xid_info["revoked_at"]
+                        )
 
         return super(ContentManagerPlugin, self).sign(
             inner_path, privatekey, filewrite,

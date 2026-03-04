@@ -449,7 +449,7 @@ class ContentManager:
                 back = content["user_contents"]
                 content_inner_path_dir = helper.getDirname(content_inner_path)
                 relative_content_path = inner_path[len(content_inner_path_dir):]
-                user_auth_address_match = re.match(r"([A-Za-z0-9]+)/.*", relative_content_path)
+                user_auth_address_match = re.match(r"([A-Za-z0-9.]+)/.*", relative_content_path)
                 if user_auth_address_match:
                     user_auth_address = user_auth_address_match.group(1)
                     back["content_inner_path"] = "%s%s/content.json" % (content_inner_path_dir, user_auth_address)
@@ -507,9 +507,9 @@ class ContentManager:
         # Delivered for directory
         if "inner_path" in parent_content:
             parent_content_dir = helper.getDirname(parent_content["inner_path"])
-            user_address = re.match(r"([A-Za-z0-9]*?)/", inner_path[len(parent_content_dir):]).group(1)
+            user_address = re.match(r"([A-Za-z0-9.]*?)/", inner_path[len(parent_content_dir):]).group(1)
         else:
-            user_address = re.match(r".*/([A-Za-z0-9]*?)/.*?$", inner_path).group(1)
+            user_address = re.match(r".*/([A-Za-z0-9.]*?)/.*?$", inner_path).group(1)
 
         try:
             if not content and self.site.storage.isFile(inner_path):
@@ -579,11 +579,19 @@ class ContentManager:
             rules["signers"] = []
 
         if not banned:
-            rules["signers"].append(user_address)  # Add user as valid signer
+            rules["signers"] += self.resolveUserSigners(user_address)
         rules["user_address"] = user_address
         rules["includes_allowed"] = False
 
         return rules
+
+    def resolveUserSigners(self, user_address):
+        """Resolve a user directory name to valid signer addresses.
+
+        For raw addresses, returns [user_address].
+        Plugins (e.g. XidResolverPlugin) override this for xID name directories.
+        """
+        return [user_address]
 
     # Get diffs for changed files
     def getDiffs(self, inner_path, limit=30 * 1024, update_files=True):

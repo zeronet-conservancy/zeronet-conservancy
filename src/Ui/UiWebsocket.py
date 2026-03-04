@@ -275,6 +275,7 @@ class UiWebsocket(object):
         ret = {
             "auth_address": self.user.getAuthAddress(site.address, create=create_user),
             "cert_user_id": self.user.getCertUserId(site.address),
+            "xid_directory": self.user.getUserDirectory(site.address),
             "address": site.address,
             "address_short": site.address_short,
             "address_hash": site.address_hash.hex(),

@@ -177,6 +177,16 @@ class User(object):
             return None  # Site dont have cert
         return self.certs.get(site_data["cert"])
 
+    # Get the directory name for user content on a site.
+    # If an xID cert is active, returns the xID name with TLD (e.g. "smile.epix")
+    # so content is stored under data/users/smile.epix/.
+    # Otherwise returns the auth_address for backward compatibility.
+    def getUserDirectory(self, address):
+        cert = self.getCert(address)
+        if cert and cert.get("auth_type") == "xid" and cert.get("auth_user_name"):
+            return "%s.epix" % cert["auth_user_name"]
+        return self.getAuthAddress(address)
+
     # Get cert user name for the site address
     # Return: user@certprovider.epix or None
     def getCertUserId(self, address):
