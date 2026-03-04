@@ -913,16 +913,7 @@ class Site(object):
                     self.log.debug("%s: Download not allowed" % inner_path)
                     return False
 
-            # Only add to bad_files if this file belongs to a locally-verified content.json.
-            # User content.json files claimed by peers but never locally loaded should not
-            # enter bad_files — they'd block sync and show failures on the dashboard.
-            is_unverified_user_content = (
-                inner_path.endswith("content.json") and
-                inner_path != "content.json" and
-                inner_path not in self.content_manager.contents
-            )
-            if not is_unverified_user_content:
-                self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
+            self.bad_files[inner_path] = self.bad_files.get(inner_path, 0) + 1  # Mark as bad file
 
             task = self.worker_manager.addTask(inner_path, peer, priority=priority, file_info=file_info)
             if blocking:

@@ -121,7 +121,12 @@ class SiteStorage(object):
     @thread_pool_fs_read.wrap
     def getDbFiles(self):
         found = 0
-        for content_inner_path, content in self.site.content_manager.contents.items():
+        for content_inner_path in list(self.site.content_manager.contents.keys()):
+            try:
+                content = self.site.content_manager.contents[content_inner_path]
+            except KeyError:
+                self.log.debug("[MISSING] %s" % content_inner_path)
+                continue
             # content.json file itself
             if self.isFile(content_inner_path):
                 yield content_inner_path, self.getPath(content_inner_path)
