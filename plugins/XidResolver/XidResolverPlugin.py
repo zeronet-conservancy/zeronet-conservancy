@@ -30,6 +30,9 @@ _identity_cache = {}
 IDENTITY_CACHE_TTL = 300  # 5 minutes
 # How long to cache negative (not found) results
 NEGATIVE_CACHE_TTL = 60  # 1 minute
+# Grace period (seconds) for clock drift between chain block time and content modified timestamp.
+# Content modified within this window after revocation is still accepted.
+REVOCATION_GRACE_PERIOD = 60  # 1 minute
 
 
 def _get_rpc_url():
@@ -52,7 +55,7 @@ def _fetch_json(url, timeout=10):
 def resolve_identity_xid(identity_address):
     """Resolve a linked identity address to its xID name.
 
-    Returns dict with {name, tld, owner, active, revoked_at} or None if not found.
+    Returns dict with {name, tld, owner, active, revoked_at, revoked_at_time} or None if not found.
     Results are cached with TTL to avoid repeated API calls.
     """
     now = time.time()
@@ -69,6 +72,7 @@ def resolve_identity_xid(identity_address):
                     "owner": cached["owner"],
                     "active": cached["active"],
                     "revoked_at": cached["revoked_at"],
+                    "revoked_at_time": cached.get("revoked_at_time", 0),
                     "avatar": cached.get("avatar", ""),
                     "bio": cached.get("bio", ""),
                 }
@@ -99,6 +103,7 @@ def resolve_identity_xid(identity_address):
             "owner": record.get("owner", ""),
             "active": identity_info.get("active", True),
             "revoked_at": int(identity_info.get("revoked_at", 0)),
+            "revoked_at_time": int(identity_info.get("revoked_at_time", 0)),
             "avatar": avatar,
             "bio": bio,
             "cached_at": now,
@@ -110,6 +115,7 @@ def resolve_identity_xid(identity_address):
             "owner": entry["owner"],
             "active": entry["active"],
             "revoked_at": entry["revoked_at"],
+            "revoked_at_time": entry["revoked_at_time"],
             "avatar": entry["avatar"],
             "bio": entry["bio"],
         }
@@ -135,7 +141,10 @@ XID_NAME_CACHE_TTL = 300  # 5 minutes
 def resolve_xid_name(name, tld="epix"):
     """Resolve an xID name to its owner address and linked identities.
 
-    Returns dict {owner: str, identities: [str, ...]} or None if not found.
+    Returns dict {owner: str, identities: [{address, active, revoked_at_time}, ...]}
+    or None if not found.  Both active and revoked identities are included so that
+    callers can perform temporal verification (accept old content signed before
+    revocation).
     """
     cache_key = "%s.%s" % (name, tld)
     now = time.time()
@@ -156,21 +165,23 @@ def resolve_xid_name(name, tld="epix"):
 
     owner = name_data["record"].get("owner", "")
 
-    # Fetch linked identities for this name
+    # Fetch all linked identities for this name (both active and revoked)
     identities_data = _fetch_json("%s/xid/v1/identities/%s/%s" % (rpc_url, tld, name))
-    active_identities = []
+    identities = []
     if identities_data and identities_data.get("identities"):
-        active_identities = [
-            p.get("address", "") for p in identities_data["identities"]
-            if p.get("active", False)
-        ]
+        for p in identities_data["identities"]:
+            identities.append({
+                "address": p.get("address", ""),
+                "active": p.get("active", False),
+                "revoked_at_time": int(p.get("revoked_at_time", 0)),
+            })
 
     _xid_name_cache[cache_key] = {
         "owner": owner,
-        "identities": active_identities,
+        "identities": identities,
         "cached_at": now,
     }
-    return {"owner": owner, "identities": active_identities}
+    return {"owner": owner, "identities": identities}
 
 
 def invalidate_xid_name_cache(name=None):
@@ -249,13 +260,47 @@ class ContentManagerPlugin(object):
         if not xid_info:
             raise VerifyError("xID name '%s' not found on chain" % xid_name)
 
-        if user_address not in xid_info.get("identities", []):
+        # Find the identity entry for this address (active or revoked)
+        identity_entry = None
+        for entry in xid_info.get("identities", []):
+            if entry.get("address") == user_address:
+                identity_entry = entry
+                break
+
+        if identity_entry is None:
             raise VerifyError(
                 "Identity address %s not linked to xID '%s'" % (user_address, xid_name)
             )
 
-        log.debug("xID cert verified: %s owns '%s', identity %s linked" %
-                   (xid_info["owner"], xid_name, user_address))
+        # Temporal verification: if identity is revoked, only accept content
+        # that was modified before the revocation timestamp (plus a grace
+        # period to account for clock drift between the user's machine and
+        # the chain's block time).
+        if not identity_entry["active"]:
+            revoked_at_time = identity_entry.get("revoked_at_time", 0)
+            content_modified = content.get("modified", 0)
+            if revoked_at_time > 0 and content_modified > 0:
+                cutoff = revoked_at_time + REVOCATION_GRACE_PERIOD
+                if content_modified >= cutoff:
+                    raise VerifyError(
+                        "Identity %s was revoked at %s but content was modified at %s" %
+                        (user_address, revoked_at_time, content_modified)
+                    )
+                log.debug(
+                    "xID cert verified (revoked identity, pre-revocation content): "
+                    "%s modified=%s < revoked_at=%s (grace=%ss)" %
+                    (user_address, content_modified, revoked_at_time, REVOCATION_GRACE_PERIOD)
+                )
+            else:
+                # No revocation timestamp available — reject to be safe
+                raise VerifyError(
+                    "Identity address %s has been revoked from xID '%s'" %
+                    (user_address, xid_name)
+                )
+        else:
+            log.debug("xID cert verified: %s owns '%s', identity %s linked" %
+                       (xid_info["owner"], xid_name, user_address))
+
         return True
 
     def sign(self, inner_path="content.json", privatekey=None, filewrite=True,
@@ -292,7 +337,7 @@ class UiWebsocketPlugin(object):
 
         If the address matches the current user's site auth_address, also tries
         the user's other known addresses (master + all site auth_addresses).
-        Returns {name, tld, owner, active, revoked_at} or null.
+        Returns {name, tld, owner, active, revoked_at, revoked_at_time} or null.
         """
         # Try the passed-in address first
         result = resolve_identity_xid(peer_address)
@@ -433,7 +478,12 @@ class UiWebsocketPlugin(object):
                 "error": "xID name '%s' not found on chain" % xid_name
             })
 
-        if auth_address not in xid_info.get("identities", []):
+        # Check that identity is actively linked (not revoked)
+        identity_linked = any(
+            entry.get("address") == auth_address and entry.get("active", False)
+            for entry in xid_info.get("identities", [])
+        )
+        if not identity_linked:
             # Ask user to open xID to link identity
             xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
             return_url = "/%s" % self.site.address
