@@ -49,6 +49,7 @@ class Site(object):
         self.greenlet_manager = GreenletManager.GreenletManager()  # Running greenlets
         self.worker_manager = WorkerManager(self)  # Handle site download from other peers
         self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
+        self.given_up_files = set()  # Files that failed too many times; blocked from being re-added by checkModifications
         self.content_updated = None  # Content.js update time
         self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
         self.page_requested = False  # Page viewed in browser
@@ -447,7 +448,10 @@ class Site(object):
             for inner_path, modified in res["modified_files"].items():  # Check if the peer has newer files than we
                 has_newer = int(modified) > my_modified.get(inner_path, 0)
                 has_older = int(modified) < my_modified.get(inner_path, 0)
-                if inner_path not in self.bad_files and not self.content_manager.isArchived(inner_path, modified):
+                # Reject files with no place in this site's content hierarchy (catches completely fabricated paths)
+                if self.content_manager.getFileInfo(inner_path) is False:
+                    continue
+                if inner_path not in self.bad_files and inner_path not in self.given_up_files and not self.content_manager.isArchived(inner_path, modified):
                     if has_newer:
                         # We dont have this file or we have older
                         modified_contents.append(inner_path)
@@ -1227,9 +1231,17 @@ class Site(object):
 
         self.updateWebsocket(file_failed=inner_path)
 
-        if self.bad_files.get(inner_path, 0) > 30:
+        # Give up faster on user content.json files we've never successfully loaded —
+        # these are almost certainly ghost entries from stale or malicious peers.
+        limit = 30
+        if (inner_path.endswith("/content.json") and
+                inner_path != "content.json" and
+                inner_path not in self.content_manager.contents):
+            limit = 5
+        if self.bad_files.get(inner_path, 0) > limit:
             self.fileForgot(inner_path)
 
     def fileForgot(self, inner_path):
         self.log.debug("Giving up on %s" % inner_path)
         del self.bad_files[inner_path]  # Give up after 30 tries
+        self.given_up_files.add(inner_path)  # Block re-adding via checkModifications
