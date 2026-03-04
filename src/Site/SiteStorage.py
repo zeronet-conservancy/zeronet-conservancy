@@ -371,6 +371,8 @@ class SiteStorage(object):
     # Load and parse json file
     @thread_pool_fs_read.wrap
     def loadJson(self, inner_path):
+        if not self.isFile(inner_path):
+            return None
         with self.open(inner_path, "r", encoding="utf8") as file:
             return json.load(file)
 

@@ -27,6 +27,8 @@ class ContentDbDict(dict):
                 else:
                     self.log.debug("Loaded json: %s (latest: %s)" % (self.num_loaded, key))
             content = self.site.storage.loadJson(key)
+            if content is None:
+                raise IOError("File not found: %s" % key)
             dict.__setitem__(self, key, content)
         except IOError:
             if dict.get(self, key):
