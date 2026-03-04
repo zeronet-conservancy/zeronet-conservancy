@@ -251,42 +251,63 @@ class ContentManagerPlugin(object):
         if not user_address:
             raise VerifyError("Cannot determine user address from rules")
 
-        # If user_address is an xID directory name (contains dot), extract the
-        # actual signing identity address from the content's signs dict.
-        if "." in user_address:
-            signing_addresses = list(content.get("signs", {}).keys())
-            if signing_addresses:
-                user_address = signing_addresses[0]
-            else:
-                raise VerifyError("No signing address found in content for xID directory")
-
         cert_sign = content.get("cert_sign")
         if not cert_sign:
             raise VerifyError("Missing cert_sign for xID cert")
 
-        # Step 1: Verify the self-signature
-        cert_subject = "%s#xid/%s" % (user_address, xid_name)
-        recovered_address = CryptEpix.get_sign_address_keccak(cert_subject, cert_sign)
-        if not recovered_address:
-            raise VerifyError("Could not recover address from xID cert signature")
+        # If user_address is an xID directory name (contains dot), we can't use
+        # it directly as the cert subject. Instead, resolve all linked identity
+        # addresses from on-chain data and try each one as the cert subject.
+        if "." in user_address:
+            tld = "epix"
+            name_parts = xid_name.rsplit(".", 1)
+            if len(name_parts) == 2:
+                xid_name_only, tld = name_parts
+            else:
+                xid_name_only = xid_name
 
-        if recovered_address != user_address:
-            raise VerifyError(
-                "xID cert signature mismatch: recovered %s, expected %s" %
-                (recovered_address, user_address)
-            )
+            xid_info = resolve_xid_name(xid_name_only, tld)
+            if not xid_info or not xid_info.get("identities"):
+                raise VerifyError("xID name '%s' not found on chain" % xid_name)
+
+            # Try each linked identity as potential signer
+            for entry in xid_info["identities"]:
+                candidate = entry.get("address")
+                if not candidate:
+                    continue
+                cert_subject = "%s#xid/%s" % (candidate, xid_name)
+                recovered = CryptEpix.get_sign_address_keccak(cert_subject, cert_sign)
+                if recovered == candidate:
+                    user_address = candidate
+                    break
+            else:
+                raise VerifyError("No linked identity matches xID cert signature")
+        else:
+            # Standard case: user_address is a raw address
+            cert_subject = "%s#xid/%s" % (user_address, xid_name)
+            recovered_address = CryptEpix.get_sign_address_keccak(cert_subject, cert_sign)
+            if not recovered_address:
+                raise VerifyError("Could not recover address from xID cert signature")
+
+            if recovered_address != user_address:
+                raise VerifyError(
+                    "xID cert signature mismatch: recovered %s, expected %s" %
+                    (recovered_address, user_address)
+                )
 
         # Step 2: Verify on-chain — xID name must have this identity address linked
-        tld = "epix"
-        name_parts = xid_name.rsplit(".", 1)
-        if len(name_parts) == 2:
-            xid_name_only, tld = name_parts
-        else:
-            xid_name_only = xid_name
+        # (For xID directory case, xid_info was already resolved above)
+        if not "." in rules.get("user_address", ""):
+            tld = "epix"
+            name_parts = xid_name.rsplit(".", 1)
+            if len(name_parts) == 2:
+                xid_name_only, tld = name_parts
+            else:
+                xid_name_only = xid_name
 
-        xid_info = resolve_xid_name(xid_name_only, tld)
-        if not xid_info:
-            raise VerifyError("xID name '%s' not found on chain" % xid_name)
+            xid_info = resolve_xid_name(xid_name_only, tld)
+            if not xid_info:
+                raise VerifyError("xID name '%s' not found on chain" % xid_name)
 
         # Find the identity entry for this address (active or revoked)
         identity_entry = None
