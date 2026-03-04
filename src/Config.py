@@ -255,12 +255,8 @@ class Config:
     def createArguments(self):
         try:
             language = locale.getlocale()[0]
-            if language is None:
-                language = locale.getencoding()
-                if language:
-                    language = "en"  # Default fallback
-                else:
-                    language = "en"
+            if language is None or language in ("C", "POSIX"):
+                language = "en"
             else:
                 language = language.lower().replace("_", "-")
                 if language not in ["pt-br", "zh-tw"]:
