@@ -23,11 +23,11 @@ allow_reload = False
 
 log = logging.getLogger("XidResolverPlugin")
 
-# In-memory cache: peer_address -> {name, tld, owner, active, revoked_at, cached_at}
-_peer_cache = {}
+# In-memory cache: identity_address -> {name, tld, owner, active, revoked_at, cached_at}
+_identity_cache = {}
 
 # How long to cache positive results (seconds)
-PEER_CACHE_TTL = 300  # 5 minutes
+IDENTITY_CACHE_TTL = 300  # 5 minutes
 # How long to cache negative (not found) results
 NEGATIVE_CACHE_TTL = 60  # 1 minute
 
@@ -49,8 +49,8 @@ def _fetch_json(url, timeout=10):
         return None
 
 
-def resolve_peer_xid(peer_address):
-    """Resolve an EpixNet peer address to its xID name.
+def resolve_identity_xid(identity_address):
+    """Resolve a linked identity address to its xID name.
 
     Returns dict with {name, tld, owner, active, revoked_at} or None if not found.
     Results are cached with TTL to avoid repeated API calls.
@@ -58,9 +58,9 @@ def resolve_peer_xid(peer_address):
     now = time.time()
 
     # Check cache
-    cached = _peer_cache.get(peer_address)
+    cached = _identity_cache.get(identity_address)
     if cached:
-        ttl = PEER_CACHE_TTL if cached.get("name") else NEGATIVE_CACHE_TTL
+        ttl = IDENTITY_CACHE_TTL if cached.get("name") else NEGATIVE_CACHE_TTL
         if (now - cached["cached_at"]) < ttl:
             if cached.get("name"):
                 return {
@@ -76,11 +76,11 @@ def resolve_peer_xid(peer_address):
 
     # Cache miss — query the chain
     rpc_url = _get_rpc_url()
-    data = _fetch_json("%s/xid/v1/reverse_peer/%s" % (rpc_url, peer_address))
+    data = _fetch_json("%s/xid/v1/reverse_identity/%s" % (rpc_url, identity_address))
 
     if data and data.get("name_record"):
         record = data["name_record"]
-        peer_info = data.get("peer", {})
+        identity_info = data.get("identity", {})
         name = record.get("name", "")
         tld = record.get("tld", "")
 
@@ -97,13 +97,13 @@ def resolve_peer_xid(peer_address):
             "name": name,
             "tld": tld,
             "owner": record.get("owner", ""),
-            "active": peer_info.get("active", True),
-            "revoked_at": int(peer_info.get("revoked_at", 0)),
+            "active": identity_info.get("active", True),
+            "revoked_at": int(identity_info.get("revoked_at", 0)),
             "avatar": avatar,
             "bio": bio,
             "cached_at": now,
         }
-        _peer_cache[peer_address] = entry
+        _identity_cache[identity_address] = entry
         return {
             "name": entry["name"],
             "tld": entry["tld"],
@@ -115,27 +115,27 @@ def resolve_peer_xid(peer_address):
         }
     else:
         # Negative cache
-        _peer_cache[peer_address] = {"name": None, "cached_at": now}
+        _identity_cache[identity_address] = {"name": None, "cached_at": now}
         return None
 
 
-def invalidate_peer_cache(peer_address=None):
-    """Invalidate cache for a specific peer or all peers."""
-    if peer_address:
-        _peer_cache.pop(peer_address, None)
+def invalidate_identity_cache(identity_address=None):
+    """Invalidate cache for a specific identity or all identities."""
+    if identity_address:
+        _identity_cache.pop(identity_address, None)
     else:
-        _peer_cache.clear()
+        _identity_cache.clear()
 
 
-# Cache for xID name resolution: "name.tld" -> {owner, peers, cached_at}
+# Cache for xID name resolution: "name.tld" -> {owner, identities, cached_at}
 _xid_name_cache = {}
 XID_NAME_CACHE_TTL = 300  # 5 minutes
 
 
 def resolve_xid_name(name, tld="epix"):
-    """Resolve an xID name to its owner address and registered EpixNet peers.
+    """Resolve an xID name to its owner address and linked identities.
 
-    Returns dict {owner: str, peers: [str, ...]} or None if not found.
+    Returns dict {owner: str, identities: [str, ...]} or None if not found.
     """
     cache_key = "%s.%s" % (name, tld)
     now = time.time()
@@ -143,7 +143,7 @@ def resolve_xid_name(name, tld="epix"):
     cached = _xid_name_cache.get(cache_key)
     if cached and (now - cached["cached_at"]) < XID_NAME_CACHE_TTL:
         if cached.get("owner"):
-            return {"owner": cached["owner"], "peers": cached["peers"]}
+            return {"owner": cached["owner"], "identities": cached["identities"]}
         return None
 
     rpc_url = _get_rpc_url()
@@ -156,21 +156,21 @@ def resolve_xid_name(name, tld="epix"):
 
     owner = name_data["record"].get("owner", "")
 
-    # Fetch EpixNet peers for this name
-    peers_data = _fetch_json("%s/xid/v1/epixnet/%s/%s" % (rpc_url, tld, name))
-    active_peers = []
-    if peers_data and peers_data.get("peers"):
-        active_peers = [
-            p.get("address", "") for p in peers_data["peers"]
+    # Fetch linked identities for this name
+    identities_data = _fetch_json("%s/xid/v1/identities/%s/%s" % (rpc_url, tld, name))
+    active_identities = []
+    if identities_data and identities_data.get("identities"):
+        active_identities = [
+            p.get("address", "") for p in identities_data["identities"]
             if p.get("active", False)
         ]
 
     _xid_name_cache[cache_key] = {
         "owner": owner,
-        "peers": active_peers,
+        "identities": active_identities,
         "cached_at": now,
     }
-    return {"owner": owner, "peers": active_peers}
+    return {"owner": owner, "identities": active_identities}
 
 
 def invalidate_xid_name_cache(name=None):
@@ -189,7 +189,7 @@ class ContentManagerPlugin(object):
 
         For domain "xid", the cert is self-signed by the user's auth key using
         keccak256. Verification recovers the signer, confirms self-signature,
-        then checks on-chain that the xID name has this peer address registered.
+        then checks on-chain that the xID name has this identity address linked.
 
         For all other domains, delegates to the standard verifyCert.
         """
@@ -237,7 +237,7 @@ class ContentManagerPlugin(object):
                 (recovered_address, user_address)
             )
 
-        # Step 2: Verify on-chain — xID name must have this peer address registered
+        # Step 2: Verify on-chain — xID name must have this identity address linked
         tld = "epix"
         name_parts = xid_name.rsplit(".", 1)
         if len(name_parts) == 2:
@@ -249,20 +249,20 @@ class ContentManagerPlugin(object):
         if not xid_info:
             raise VerifyError("xID name '%s' not found on chain" % xid_name)
 
-        if user_address not in xid_info.get("peers", []):
+        if user_address not in xid_info.get("identities", []):
             raise VerifyError(
-                "Peer address %s not registered for xID '%s'" % (user_address, xid_name)
+                "Identity address %s not linked to xID '%s'" % (user_address, xid_name)
             )
 
-        log.debug("xID cert verified: %s owns '%s', peer %s registered" %
+        log.debug("xID cert verified: %s owns '%s', identity %s linked" %
                    (xid_info["owner"], xid_name, user_address))
         return True
 
     def sign(self, inner_path="content.json", privatekey=None, filewrite=True,
              update_changed_files=False, extend=None, remove_missing_optional=False):
-        """Check peer revocation status before signing user content.
+        """Check identity revocation status before signing user content.
 
-        Old messages from revoked peers remain valid — we only block NEW signing.
+        Old messages from revoked identities remain valid — we only block NEW signing.
         """
         from Content.ContentManager import SignError
 
@@ -271,11 +271,11 @@ class ContentManagerPlugin(object):
             match = re.search(r"users/([A-Za-z0-9]+)/", inner_path)
             if match:
                 user_address = match.group(1)
-                xid_info = resolve_peer_xid(user_address)
+                xid_info = resolve_identity_xid(user_address)
                 if xid_info and not xid_info["active"]:
                     raise SignError(
-                        "Your xID peer key has been revoked (revoked at block %s). "
-                        "You cannot post new content with a revoked key." % xid_info["revoked_at"]
+                        "Your xID identity has been revoked (revoked at block %s). "
+                        "You cannot post new content with a revoked identity." % xid_info["revoked_at"]
                     )
 
         return super(ContentManagerPlugin, self).sign(
@@ -288,14 +288,14 @@ class ContentManagerPlugin(object):
 class UiWebsocketPlugin(object):
 
     def actionXidResolve(self, to, peer_address):
-        """Resolve an EpixNet peer address to its xID name.
+        """Resolve an EpixNet identity address to its xID name.
 
         If the address matches the current user's site auth_address, also tries
         the user's other known addresses (master + all site auth_addresses).
         Returns {name, tld, owner, active, revoked_at} or null.
         """
         # Try the passed-in address first
-        result = resolve_peer_xid(peer_address)
+        result = resolve_identity_xid(peer_address)
         if result:
             self.response(to, result)
             return
@@ -309,7 +309,7 @@ class UiWebsocketPlugin(object):
                 master = getattr(self.user, "master_address", None)
                 if master and master not in tried:
                     tried.add(master)
-                    result = resolve_peer_xid(master)
+                    result = resolve_identity_xid(master)
                     if result:
                         self.response(to, result)
                         return
@@ -317,7 +317,7 @@ class UiWebsocketPlugin(object):
                     auth = site_data.get("auth_address")
                     if auth and auth not in tried:
                         tried.add(auth)
-                        result = resolve_peer_xid(auth)
+                        result = resolve_identity_xid(auth)
                         if result:
                             self.response(to, result)
                             return
@@ -325,16 +325,16 @@ class UiWebsocketPlugin(object):
         self.response(to, None)
 
     def actionXidResolveBatch(self, to, peer_addresses):
-        """Batch resolve multiple peer addresses to xID names.
+        """Batch resolve multiple identity addresses to xID names.
 
-        Takes a list of peer addresses (max 50), returns a dict of address -> result.
+        Takes a list of addresses (max 50), returns a dict of address -> result.
         """
         if not isinstance(peer_addresses, list):
             return self.response(to, {"error": "peer_addresses must be a list"})
 
         results = {}
         for addr in peer_addresses[:50]:
-            results[addr] = resolve_peer_xid(addr)
+            results[addr] = resolve_identity_xid(addr)
         self.response(to, results)
 
     def actionCertXid(self, to, xid_name=None):
@@ -346,7 +346,7 @@ class UiWebsocketPlugin(object):
 
         If xid_name is omitted, tries reverse lookup on all the user's known
         addresses. If none resolve, shows the xID site overlay so the user
-        can add their peer address.
+        can link their identity.
         """
         if not xid_name:
             # Try reverse lookup on all known addresses
@@ -368,24 +368,24 @@ class UiWebsocketPlugin(object):
                     addresses_to_try.append(auth)
 
             # Invalidate cache for all addresses so we get fresh chain data
-            # (user may have just added their peer on the xID site)
+            # (user may have just linked their identity on the xID site)
             for addr in addresses_to_try:
                 if addr:
-                    invalidate_peer_cache(addr)
+                    invalidate_identity_cache(addr)
             invalidate_xid_name_cache()
 
             for addr in addresses_to_try:
                 if addr and addr not in tried:
                     tried.add(addr)
-                    result = resolve_peer_xid(addr)
+                    result = resolve_identity_xid(addr)
                     if result and result.get("name"):
                         # Found their xID — proceed
                         return self._processCertXid(to, result["name"])
 
-            # No xID found for any address — ask user to open xID site to add peer
+            # No xID found for any address — ask user to open xID site to link identity
             xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
             return_url = "/%s" % self.site.address
-            xid_url = "/%s/?addPeer=%s&returnTo=%s" % (
+            xid_url = "/%s/?linkIdentity=%s&returnTo=%s" % (
                 xid_site, auth_address, return_url
             )
 
@@ -393,7 +393,7 @@ class UiWebsocketPlugin(object):
                 "confirm",
                 [
                     "No xID found for your address.<br><br>"
-                    "Open the xID site to add <b>%s</b> as an EpixNet peer?" %
+                    "Open the xID site to link <b>%s</b> as an identity?" %
                     (auth_address[:20] + "..."),
                     "Open xID"
                 ],
@@ -423,35 +423,35 @@ class UiWebsocketPlugin(object):
         if not auth_address or not auth_privatekey:
             return self.response(to, {"error": "No auth credentials for this site"})
 
-        # Verify on chain: user must own this name and have this peer registered
+        # Verify on chain: user must own this name and have this identity linked
         tld = "epix"
         invalidate_xid_name_cache("%s.%s" % (xid_name, tld))
-        invalidate_peer_cache(auth_address)
+        invalidate_identity_cache(auth_address)
         xid_info = resolve_xid_name(xid_name, tld)
         if not xid_info:
             return self.response(to, {
                 "error": "xID name '%s' not found on chain" % xid_name
             })
 
-        if auth_address not in xid_info.get("peers", []):
-            # Ask user to open xID add-peer page
+        if auth_address not in xid_info.get("identities", []):
+            # Ask user to open xID to link identity
             xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
             return_url = "/%s" % self.site.address
-            xid_url = "/%s/?addPeer=%s&returnTo=%s" % (
+            xid_url = "/%s/?linkIdentity=%s&returnTo=%s" % (
                 xid_site, auth_address, return_url
             )
 
             self.cmd(
                 "confirm",
                 [
-                    "Your address is not registered as a peer for <b>%s.%s</b>.<br><br>"
-                    "Open the xID site to add it?" % (xid_name, tld),
+                    "Your address is not linked as an identity for <b>%s.%s</b>.<br><br>"
+                    "Open the xID site to link it?" % (xid_name, tld),
                     "Open xID"
                 ],
                 lambda res: self.cmd("redirect", xid_url)
             )
             return self.response(to, {
-                "error": "peer_not_registered",
+                "error": "identity_not_linked",
                 "auth_address": auth_address
             })
 
@@ -504,8 +504,8 @@ class UiWebsocketPlugin(object):
         self.response(to, "ok")
 
     def actionXidInvalidateCache(self, to, peer_address=None):
-        """Invalidate the xID peer and name caches."""
-        invalidate_peer_cache(peer_address)
+        """Invalidate the xID identity and name caches."""
+        invalidate_identity_cache(peer_address)
         invalidate_xid_name_cache()
         self.response(to, "ok")
 
@@ -516,7 +516,7 @@ class ConfigPlugin(object):
         group = self.parser.add_argument_group("xID Resolver plugin")
         group.add_argument(
             '--xid-rpc-url',
-            help='Epix Chain REST API URL for xID peer resolution',
+            help='Epix Chain REST API URL for xID identity resolution',
             default='https://api.testnet.epix.zone',
             metavar='url'
         )
