@@ -1,5 +1,5 @@
 {
-	"name": "AnnounceZero",
+	"name": "AnnounceEpix",
 	"description": "Announce using EpixNet protocol.",
 	"default": "enabled"
 }
