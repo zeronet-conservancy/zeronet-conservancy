@@ -69,13 +69,15 @@ class UiWebsocketPlugin(object):
                         query_params = map(helper.sqlquote, params)
                         query = query.replace(":params", ",".join(query_params))
 
-                    res = site.storage.query(query + " ORDER BY date_added DESC LIMIT %s" % limit)
+                    full_query = query + " ORDER BY date_added DESC LIMIT %s" % limit
+                    res = site.storage.query(full_query)
 
                 except Exception as err:  # Log error
                     self.log.error("%s feed query %s error: %s" % (address, name, Debug.formatException(err)))
                     stats.append({"site": site.address, "feed_name": name, "error": str(err)})
                     continue
 
+                row_count = 0
                 for row in res:
                     row = dict(row)
                     if not isinstance(row["date_added"], (int, float, complex)):
@@ -89,6 +91,7 @@ class UiWebsocketPlugin(object):
                     row["site"] = address
                     row["feed_name"] = name
                     rows.append(row)
+                    row_count += 1
                 stats.append({"site": site.address, "feed_name": name, "taken": round(time.time() - s, 3)})
                 time.sleep(0.001)
         return self.response(to, {"rows": rows, "stats": stats, "num": len(rows), "sites": num_sites, "taken": round(time.time() - total_s, 3)})
