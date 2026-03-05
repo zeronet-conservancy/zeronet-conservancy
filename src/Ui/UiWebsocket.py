@@ -509,6 +509,17 @@ class UiWebsocket(object):
 
         site.content_manager.loadContent(inner_path, add_bad_files=False)  # Load new content.json, ignore errors
 
+        # Also sign include content.json files listed in root content.json
+        if inner_path == "content.json":
+            for include_path in list(site.content_manager.contents.get("content.json", {}).get("includes", {}).keys()):
+                self.log.debug("Also signing include: %s" % include_path)
+                try:
+                    site.content_manager.loadContent(include_path, add_bad_files=False, force=True)
+                    site.content_manager.sign(include_path, privatekey, update_changed_files=update_changed_files, remove_missing_optional=remove_missing_optional)
+                    site.content_manager.loadContent(include_path, add_bad_files=False)
+                except Exception as err:
+                    self.log.error("Include sign error: %s: %s" % (include_path, err))
+
         if update_changed_files:
             self.site.updateWebsocket(file_done=inner_path)
 
@@ -563,6 +574,15 @@ class UiWebsocket(object):
             ])
         diffs = site.content_manager.getDiffs(inner_path)
         back = site.publish(limit=5, inner_path=inner_path, diffs=diffs, cb_progress=cbProgress)
+
+        # Also publish include content.json files
+        if inner_path == "content.json":
+            for include_path in list(site.content_manager.contents.get("content.json", {}).get("includes", {}).keys()):
+                if include_path in site.content_manager.contents:
+                    self.log.debug("Also publishing include: %s" % include_path)
+                    include_diffs = site.content_manager.getDiffs(include_path)
+                    site.publish(limit=5, inner_path=include_path, diffs=include_diffs)
+
         if back == 0:  # Failed to publish to anyone
             self.cmd("progress", ["publish", _["Content publish failed."], -100])
         else:
