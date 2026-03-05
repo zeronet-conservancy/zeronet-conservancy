@@ -648,7 +648,7 @@ class UiRequest:
             '''combines parts from re.escape & html.escape'''
             # https://github.com/python/cpython/blob/3.10/Lib/re.py#L267
             # '&' is handled otherwise
-            re_chars = {i: '\\' + chr(i) for i in  b'()[]{}*+-|^$\\.~# \t\n\r\v\f'}
+            re_chars = {i: '\\' + chr(i) for i in  b'()[]{}*+-|^$\\.~#\t\n\r\v\f'}
             # https://github.com/python/cpython/blob/3.10/Lib/html/__init__.py#L12
             html_chars = {
                 '<' : '&lt;',
