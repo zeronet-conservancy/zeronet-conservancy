@@ -1,3 +1,4 @@
+import hashlib
 import logging
 import json
 import re
@@ -34,6 +35,151 @@ NEGATIVE_CACHE_TTL = 60  # 1 minute
 # Content modified within this window after revocation is still accepted.
 REVOCATION_GRACE_PERIOD = 60  # 1 minute
 
+# ---------------------------------------------------------------------------
+# Chain attestation verification for xID resolution
+# ---------------------------------------------------------------------------
+# State digest cache: {digest, height, timestamp}
+_digest_cache = {"digest": None, "height": 0, "timestamp": 0}
+# Attestation finalization cache: digest -> {finalized, timestamp}
+_attestation_cache = {}
+
+DIGEST_CACHE_TTL = 15  # seconds
+ATTESTATION_CACHE_TTL = 30  # seconds
+
+
+def _fetch_state_digest(rpc_url):
+    """Fetch the current xID state digest from the chain."""
+    now = time.time()
+    if _digest_cache["digest"] and (now - _digest_cache["timestamp"]) < DIGEST_CACHE_TTL:
+        return _digest_cache
+
+    data = _fetch_json("%s/xid/v1/state_digest" % rpc_url)
+    if data and data.get("digest"):
+        _digest_cache["digest"] = data["digest"]
+        _digest_cache["height"] = int(data.get("height", 0))
+        _digest_cache["timestamp"] = now
+        return _digest_cache
+    return None
+
+
+def _is_digest_finalized(rpc_url, digest):
+    """Check if a state digest has been attested by 2/3+ validators."""
+    now = time.time()
+    cached = _attestation_cache.get(digest)
+    if cached and (now - cached["timestamp"]) < ATTESTATION_CACHE_TTL:
+        return cached["finalized"]
+
+    data = _fetch_json("%s/xid/v1/attestations?digest=%s" % (rpc_url, digest))
+    if data is not None:
+        finalized = bool(data.get("finalized", False))
+        _attestation_cache[digest] = {"finalized": finalized, "timestamp": now}
+        return finalized
+
+    return False
+
+
+def _verify_merkle_proof(leaf_hash, leaf_index, siblings, expected_root):
+    """Verify a Merkle inclusion proof by recomputing the root from leaf to top.
+
+    Args:
+        leaf_hash: hex string of the leaf hash
+        leaf_index: integer position of the leaf
+        siblings: list of hex string sibling hashes (bottom to top)
+        expected_root: hex string of the expected root hash
+
+    Returns:
+        True if the recomputed root matches expected_root
+    """
+    current = bytes.fromhex(leaf_hash)
+    idx = leaf_index
+
+    for sibling_hex in siblings:
+        sibling = bytes.fromhex(sibling_hex)
+        if idx % 2 == 0:
+            # Current is left child, sibling is right
+            combined = current + sibling
+        else:
+            # Current is right child, sibling is left
+            combined = sibling + current
+        current = hashlib.sha256(combined).digest()
+        idx //= 2
+
+    recomputed_root = current.hex()
+    return recomputed_root == expected_root
+
+
+def _resolve_with_proof(rpc_url, tld, name):
+    """Resolve an xID name using the resolve_with_proof endpoint and verify
+    the Merkle proof against an attested state digest.
+
+    Returns (domain_data, verified) where domain_data is the DomainSnapshot dict
+    and verified is True if the proof was cryptographically verified against a
+    finalized state digest.
+
+    Returns (None, False) if the name is not found.
+    """
+    data = _fetch_json("%s/xid/v1/resolve_with_proof/%s/%s" % (rpc_url, tld, name))
+    if not data or not data.get("domain"):
+        return None, False
+
+    domain = data["domain"]
+    proof = data.get("proof", {})
+    chain_root = data.get("root", "")
+
+    # Extract proof components
+    leaf_hash = proof.get("leaf_hash", "")
+    leaf_index = int(proof.get("leaf_index", 0))
+    siblings = proof.get("siblings", [])
+    proof_root = proof.get("root", "")
+
+    if not leaf_hash or not proof_root:
+        log.warning("resolve_with_proof returned incomplete proof for %s.%s" % (name, tld))
+        return domain, False
+
+    # Step 1: Verify the Merkle proof (leaf -> siblings -> root)
+    if not _verify_merkle_proof(leaf_hash, leaf_index, siblings, proof_root):
+        log.error(
+            "Merkle proof verification FAILED for %s.%s: "
+            "recomputed root does not match proof root %s..." % (name, tld, proof_root[:16])
+        )
+        return None, False
+
+    # Step 2: Verify the proof root matches the chain's state digest
+    if proof_root != chain_root:
+        log.warning(
+            "Proof root %s... != chain root %s... for %s.%s" %
+            (proof_root[:16], chain_root[:16], name, tld)
+        )
+
+    # Step 3: Verify the state digest is finalized (attested by 2/3+ validators)
+    digest_info = _fetch_state_digest(rpc_url)
+    if not digest_info:
+        log.warning("Could not fetch state digest for attestation check")
+        return domain, False
+
+    attested_digest = digest_info["digest"]
+
+    # The proof root must match the current attested state digest
+    if proof_root != attested_digest:
+        log.warning(
+            "Proof root %s... does not match attested digest %s... for %s.%s" %
+            (proof_root[:16], attested_digest[:16], name, tld)
+        )
+        return domain, False
+
+    if not _is_digest_finalized(rpc_url, attested_digest):
+        log.warning(
+            "State digest %s... not yet finalized (awaiting 2/3+ validator attestation)" %
+            attested_digest[:16]
+        )
+        return domain, False
+
+    log.debug(
+        "xID %s.%s verified: Merkle proof valid, digest %s... finalized at height %s" %
+        (name, tld, attested_digest[:16], digest_info.get("height", "?"))
+    )
+    return domain, True
+
 
 def _get_rpc_url():
     """Get the xID REST API base URL."""
@@ -54,6 +200,9 @@ def _fetch_json(url, timeout=10):
 
 def resolve_identity_xid(identity_address):
     """Resolve a linked identity address to its xID name.
+
+    Uses reverse lookup to find the name, then cross-verifies via
+    resolve_with_proof to ensure the data is attested by 2/3+ validators.
 
     Returns dict with {name, tld, owner, active, revoked_at, revoked_at_time} or None if not found.
     Results are cached with TTL to avoid repeated API calls.
@@ -78,29 +227,57 @@ def resolve_identity_xid(identity_address):
                 }
             return None
 
-    # Cache miss — query the chain
+    # Cache miss — query the chain via reverse lookup
     rpc_url = _get_rpc_url()
     data = _fetch_json("%s/xid/v1/reverse_identity/%s" % (rpc_url, identity_address))
 
     if data and data.get("name_record"):
         record = data["name_record"]
-        identity_info = data.get("identity", {})
         name = record.get("name", "")
         tld = record.get("tld", "")
 
-        # Fetch profile (avatar, bio)
+        if not name or not tld:
+            _identity_cache[identity_address] = {"name": None, "cached_at": now}
+            return None
+
+        # Cross-verify: use resolve_with_proof to get chain-attested data
+        domain, verified = _resolve_with_proof(rpc_url, tld, name)
+        if not domain or not verified:
+            log.error(
+                "SECURITY: Reverse lookup for %s returned %s.%s but proof verification "
+                "failed. Rejecting to prevent rogue RPC attacks." % (identity_address, name, tld)
+            )
+            _identity_cache[identity_address] = {"name": None, "cached_at": now}
+            return None
+
+        # Find this identity in the verified domain data
+        identity_info = None
+        for ident in domain.get("identities", []):
+            if ident.get("address") == identity_address:
+                identity_info = ident
+                break
+
+        if not identity_info:
+            log.warning(
+                "Reverse lookup said %s belongs to %s.%s but verified domain data "
+                "does not contain this identity" % (identity_address, name, tld)
+            )
+            _identity_cache[identity_address] = {"name": None, "cached_at": now}
+            return None
+
+        # Extract profile from verified domain snapshot
         avatar = ""
         bio = ""
-        profile_data = _fetch_json("%s/xid/v1/profile/%s/%s" % (rpc_url, tld, name))
-        if profile_data and profile_data.get("profile"):
-            profile = profile_data["profile"]
+        profile = domain.get("profile")
+        if profile:
             avatar = profile.get("avatar", "")
             bio = profile.get("bio", "")
 
+        verified_record = domain.get("record", {})
         entry = {
             "name": name,
             "tld": tld,
-            "owner": record.get("owner", ""),
+            "owner": verified_record.get("owner", ""),
             "active": identity_info.get("active", True),
             "revoked_at": int(identity_info.get("revoked_at", 0)),
             "revoked_at_time": int(identity_info.get("revoked_at_time", 0)),
@@ -141,6 +318,10 @@ XID_NAME_CACHE_TTL = 300  # 5 minutes
 def resolve_xid_name(name, tld="epix"):
     """Resolve an xID name to its owner address and linked identities.
 
+    Uses the resolve_with_proof endpoint and verifies the response against a
+    Merkle proof and finalized state digest (attested by 2/3+ validators).
+    This prevents a rogue RPC from returning fabricated identity data.
+
     Returns dict {owner: str, identities: [{address, active, revoked_at_time}, ...]}
     or None if not found.  Both active and revoked identities are included so that
     callers can perform temporal verification (accept old content signed before
@@ -157,24 +338,31 @@ def resolve_xid_name(name, tld="epix"):
 
     rpc_url = _get_rpc_url()
 
-    # Fetch name record to get owner
-    name_data = _fetch_json("%s/xid/v1/resolve/%s/%s" % (rpc_url, tld, name))
-    if not name_data or not name_data.get("record"):
+    # Use resolve_with_proof for chain-verified resolution
+    domain, verified = _resolve_with_proof(rpc_url, tld, name)
+    if not domain:
         _xid_name_cache[cache_key] = {"owner": None, "cached_at": now}
         return None
 
-    owner = name_data["record"].get("owner", "")
+    if not verified:
+        log.error(
+            "SECURITY: xID resolution for %s.%s could not be verified against chain. "
+            "Rejecting unverified data to prevent rogue RPC attacks." % (name, tld)
+        )
+        return None
 
-    # Fetch all linked identities for this name (both active and revoked)
-    identities_data = _fetch_json("%s/xid/v1/identities/%s/%s" % (rpc_url, tld, name))
+    # Extract owner from the domain record
+    record = domain.get("record", {})
+    owner = record.get("owner", "")
+
+    # Extract identities from the verified domain snapshot
     identities = []
-    if identities_data and identities_data.get("identities"):
-        for p in identities_data["identities"]:
-            identities.append({
-                "address": p.get("address", ""),
-                "active": p.get("active", False),
-                "revoked_at_time": int(p.get("revoked_at_time", 0)),
-            })
+    for p in domain.get("identities", []):
+        identities.append({
+            "address": p.get("address", ""),
+            "active": p.get("active", False),
+            "revoked_at_time": int(p.get("revoked_at_time", 0)),
+        })
 
     _xid_name_cache[cache_key] = {
         "owner": owner,
@@ -194,6 +382,41 @@ def invalidate_xid_name_cache(name=None):
 
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
+
+    def getValidSigners(self, inner_path, content=None):
+        """Extend valid signers to resolve xID names in includes signers.
+
+        When an includes entry has xID names (e.g. "smile.epix") in its signers
+        array, resolve them to all active linked identity addresses on-chain.
+        This allows admins to be referenced by xID in content.json, and key
+        rotation is handled automatically via on-chain resolution.
+        """
+        valid_signers = super(ContentManagerPlugin, self).getValidSigners(inner_path, content)
+
+        resolved = []
+        for signer in valid_signers:
+            if "." in signer and not signer.startswith("epix1"):
+                # Looks like an xID name (e.g. "smile.epix"), resolve it
+                parts = signer.rsplit(".", 1)
+                if len(parts) == 2:
+                    name, tld = parts
+                    xid_info = resolve_xid_name(name, tld)
+                    if xid_info and xid_info.get("identities"):
+                        addrs = [
+                            e["address"] for e in xid_info["identities"]
+                            if e.get("address") and e.get("active", False)
+                        ]
+                        if addrs:
+                            resolved.extend(addrs)
+                            log.debug("Resolved includes signer %s to: %s" % (signer, addrs))
+                        else:
+                            log.warning("xID signer %s has no active identities" % signer)
+                    else:
+                        log.warning("Cannot resolve xID signer %s" % signer)
+            else:
+                resolved.append(signer)
+
+        return resolved
 
     def resolveUserSigners(self, user_address):
         """For xID-named directories, resolve to all linked identity addresses."""
