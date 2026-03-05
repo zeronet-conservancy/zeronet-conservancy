@@ -174,7 +174,7 @@ class Site(object):
         if not inner_path.endswith("content.json"):
             return False
 
-        found = self.needFile(inner_path, update=self.bad_files.get(inner_path))
+        found = self.needFile(inner_path, update=True)
         content_inner_dir = helper.getDirname(inner_path)
         if not found:
             self.log.debug("DownloadContent %s: Download failed, check_modifications: %s" % (inner_path, check_modifications))
