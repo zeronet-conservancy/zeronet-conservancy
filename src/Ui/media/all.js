@@ -2117,7 +2117,7 @@ if (window.getComputedStyle(document.body).transform) {
   };
 
   epixframe.cmd("userGetGlobalSettings", [], function (user_settings) {
-    if (user_settings.use_system_theme === true) {
+    if (user_settings.use_system_theme !== false) {
       detectColorScheme();
     }
   });
