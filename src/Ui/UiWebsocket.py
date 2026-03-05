@@ -578,8 +578,14 @@ class UiWebsocket(object):
         # Also publish include content.json files
         if inner_path == "content.json":
             for include_path in list(site.content_manager.contents.get("content.json", {}).get("includes", {}).keys()):
-                if include_path in site.content_manager.contents:
+                include_content = site.content_manager.contents.get(include_path)
+                if include_content:
                     self.log.debug("Also publishing include: %s" % include_path)
+                    # Set last_changed_files to all files in this include so they get pushed inline
+                    include_dir = helper.getDirname(include_path)
+                    site.content_manager.last_changed_files = [
+                        include_dir + f for f in include_content.get("files", {}).keys()
+                    ]
                     include_diffs = site.content_manager.getDiffs(include_path)
                     site.publish(limit=5, inner_path=include_path, diffs=include_diffs)
 
