@@ -380,6 +380,121 @@ def invalidate_xid_name_cache(name=None):
         _xid_name_cache.clear()
 
 
+# Cache for site-level xID resolution: site_address -> {name, tld, verified, cached_at}
+_site_xid_cache = {}
+SITE_XID_CACHE_TTL = 300  # 5 minutes
+
+
+def resolve_site_xid(site):
+    """Resolve a site's canonical xID name from its content.json xid_name claim.
+
+    The site owner declares their canonical name by setting "xid_name" in
+    content.json (e.g. "mysite.epix").  This function verifies the claim by
+    doing a forward lookup on-chain: the xID DNS record for that name must
+    include an EpixNet site record pointing back to this site's address.
+
+    Returns dict {name, tld, verified} or None if no claim or verification fails.
+    """
+    site_address = site.address
+    now = time.time()
+
+    # Check cache
+    cached = _site_xid_cache.get(site_address)
+    if cached and (now - cached["cached_at"]) < SITE_XID_CACHE_TTL:
+        if cached.get("name"):
+            return {
+                "name": cached["name"],
+                "tld": cached["tld"],
+                "verified": cached["verified"],
+            }
+        return None
+
+    # Read the site's content.json for the domain claim
+    content = site.content_manager.contents.get("content.json", {})
+    xid_name_claim = content.get("domain", "").strip()
+
+    if not xid_name_claim:
+        _site_xid_cache[site_address] = {"name": None, "cached_at": now}
+        return None
+
+    # Parse "name.tld" format
+    parts = xid_name_claim.rsplit(".", 1)
+    if len(parts) != 2:
+        log.warning("Invalid xid_name format in content.json: %s" % xid_name_claim)
+        _site_xid_cache[site_address] = {"name": None, "cached_at": now}
+        return None
+
+    name, tld = parts
+
+    # Forward lookup: resolve the xID name on-chain
+    xid_info = resolve_xid_name(name, tld)
+    if not xid_info:
+        log.warning(
+            "Site %s claims xid_name '%s' but name not found on chain" %
+            (site_address, xid_name_claim)
+        )
+        _site_xid_cache[site_address] = {"name": None, "cached_at": now}
+        return None
+
+    # Verify: the xID must have a DNS record pointing to this site address.
+    # Check the domain's DNS records for an EpixNet site record matching
+    # this site's address, OR check if any linked identity's address matches
+    # the site address (for sites owned directly by the xID owner).
+    rpc_url = _get_rpc_url()
+    domain, verified = _resolve_with_proof(rpc_url, tld, name)
+
+    if not domain or not verified:
+        log.warning(
+            "Site %s claims xid_name '%s' but chain verification failed" %
+            (site_address, xid_name_claim)
+        )
+        _site_xid_cache[site_address] = {"name": None, "cached_at": now}
+        return None
+
+    # Check DNS records for an EpixNet site record pointing to this address
+    dns_match = False
+    for dns_record in domain.get("dns_records", []):
+        value = dns_record.get("value", "")
+        # EpixNet site DNS record: value is the site address
+        if value == site_address:
+            dns_match = True
+            break
+
+    # Also accept if the site address matches the xID owner (site IS the owner)
+    record = domain.get("record", {})
+    owner_match = record.get("owner", "") == site_address
+
+    if not dns_match and not owner_match:
+        log.warning(
+            "Site %s claims xid_name '%s' but no DNS record or owner match found "
+            "on chain. Claim rejected." % (site_address, xid_name_claim)
+        )
+        _site_xid_cache[site_address] = {"name": None, "cached_at": now}
+        return None
+
+    log.debug(
+        "Site %s xid_name '%s' verified (dns=%s, owner=%s)" %
+        (site_address, xid_name_claim, dns_match, owner_match)
+    )
+
+    entry = {
+        "name": name,
+        "tld": tld,
+        "verified": True,
+        "cached_at": now,
+    }
+    _site_xid_cache[site_address] = entry
+    return {"name": name, "tld": tld, "verified": True}
+
+
+def invalidate_site_xid_cache(site_address=None):
+    """Invalidate site xID resolution cache."""
+    if site_address:
+        _site_xid_cache.pop(site_address, None)
+    else:
+        _site_xid_cache.clear()
+
+
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
 
@@ -646,6 +761,23 @@ class UiWebsocketPlugin(object):
 
         self.response(to, None)
 
+    def actionXidResolveName(self, to, xid_name):
+        """Forward-resolve an xID name (e.g. "peet.epix") to its owner and identities.
+
+        Returns {owner, identities} or null if the name is not registered.
+        """
+        if not xid_name or not isinstance(xid_name, str):
+            return self.response(to, None)
+
+        parts = xid_name.rsplit(".", 1)
+        if len(parts) == 2:
+            name, tld = parts
+        else:
+            name, tld = xid_name, "epix"
+
+        result = resolve_xid_name(name, tld)
+        self.response(to, result)
+
     def actionXidResolveBatch(self, to, peer_addresses):
         """Batch resolve multiple identity addresses to xID names.
 
@@ -830,10 +962,32 @@ class UiWebsocketPlugin(object):
         self.site.updateWebsocket(cert_changed="xid")
         self.response(to, "ok")
 
+    def actionXidResolveSite(self, to, site_address=None):
+        """Resolve a site's canonical xID name from its content.json claim.
+
+        Reads the site's xid_name from content.json, then verifies on-chain
+        that the xID DNS record points back to this site address.
+
+        If site_address is omitted, uses the current site.
+        Returns {name, tld, verified} or null if no valid claim.
+        """
+        import main as main_module
+
+        if site_address:
+            site = main_module.file_server.sites.get(site_address)
+            if not site:
+                return self.response(to, {"error": "Site not found"})
+        else:
+            site = self.site
+
+        result = resolve_site_xid(site)
+        self.response(to, result)
+
     def actionXidInvalidateCache(self, to, peer_address=None):
-        """Invalidate the xID identity and name caches."""
+        """Invalidate the xID identity, name, and site caches."""
         invalidate_identity_cache(peer_address)
         invalidate_xid_name_cache()
+        invalidate_site_xid_cache()
         self.response(to, "ok")
 
 

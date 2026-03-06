@@ -512,6 +512,7 @@ class UiWebsocketPlugin(object):
     def sidebarRenderOwnSettings(self, body, site):
         title = site.content_manager.contents.get("content.json", {}).get("title", "")
         description = site.content_manager.contents.get("content.json", {}).get("description", "")
+        xid_name = site.content_manager.contents.get("content.json", {}).get("domain", "")
 
         body.append(_("""
             <li>
@@ -522,6 +523,11 @@ class UiWebsocketPlugin(object):
             <li>
              <label for='settings-description'>{_[Site description]}</label>
              <input type='text' class='text' value="{description}" id='settings-description'/>
+            </li>
+
+            <li>
+             <label for='settings-xid-name'>{_[xID name]} <small class='label-right'>{_[e.g. mysite.epix]}</small></label>
+             <input type='text' class='text' value="{xid_name}" id='settings-xid-name' placeholder='name.epix'/>
             </li>
 
             <li>

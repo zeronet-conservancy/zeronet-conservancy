@@ -1195,6 +1195,12 @@ window.initScrollable = function () {
             data = JSON.parse(res);
             data["title"] = $("#settings-title").val();
             data["description"] = $("#settings-description").val();
+            var xid_name = $("#settings-xid-name").val().trim();
+            if (xid_name) {
+              data["domain"] = xid_name;
+            } else {
+              delete data["domain"];
+            }
             json_raw = unescape(encodeURIComponent(JSON.stringify(data, void 0, '\t')));
             return _this.wrapper.ws.cmd("fileWrite", ["content.json", btoa(json_raw), true], function(res) {
               if (res !== "ok") {
