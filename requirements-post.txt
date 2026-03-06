@@ -1,0 +1,3 @@
+# Post-install overrides: install AFTER requirements.txt
+# These override transitive dependency pins that are too strict
+Cerberus>=1.3.8  # aio-krpc-server pins ==1.3.1 but 1.3.1 uses deprecated pkg_resources
