@@ -51,6 +51,9 @@ class Site(object):
         self.bad_files = {}  # SHA check failed files, need to redownload {"inner.content": 1} (key: file, value: failed accept)
         self.given_up_files = set()  # Files that failed too many times; blocked from being re-added by checkModifications
         self.peer_claims_failures = {}  # Silent failure tracking for peer-claimed files (not in bad_files)
+        self.push_pending = {}  # Files we need to push to peers {"inner_path": {"tries": 0, "sha512": "...", "pushed_count": 0}}
+        self.push_pool = gevent.pool.Pool(2)  # Limit concurrent onPeerConnect push greenlets
+        self.push_last_time = 0  # Timestamp of last push attempt (rate limiting)
         self.content_updated = None  # Content.js update time
         self.notifications = []  # Pending notifications displayed once on page load [error|ok|info, message, timeout]
         self.page_requested = False  # Page viewed in browser
@@ -111,6 +114,11 @@ class Site(object):
             # Give it minimum 10 tries after restart
             for inner_path in self.bad_files:
                 self.bad_files[inner_path] = min(self.bad_files[inner_path], 20)
+            # Restore push_pending for owned sites
+            self.push_pending = settings["cache"].get("push_pending", {})
+            settings["cache"]["push_pending"] = {}
+            for inner_path in self.push_pending:
+                self.push_pending[inner_path]["tries"] = min(self.push_pending[inner_path].get("tries", 0), 5)
         else:
             self.settings = {
                 "own": False, "serving": True, "permissions": [], "cache": {"bad_files": {}}, "size_files_optional": 0,
@@ -144,6 +152,8 @@ class Site(object):
         back = {}
         back["bad_files"] = self.bad_files
         back["hashfield"] = base64.b64encode(self.content_manager.hashfield.tobytes()).decode("ascii")
+        if self.push_pending:
+            back["push_pending"] = self.push_pending
         return back
 
     # Max site size in MB
@@ -358,6 +368,75 @@ class Site(object):
                     del self.bad_files[bad_file]
                     self.log.debug("No info or size for file: %s, removing from bad_files" % bad_file)
 
+    def checkPushPending(self):
+        """Remove stale push_pending entries (file gone, hash changed, or too many tries)."""
+        for inner_path in list(self.push_pending.keys()):
+            file_info = self.content_manager.getFileInfo(inner_path)
+            if not file_info:
+                del self.push_pending[inner_path]
+                self.log.debug("checkPushPending: Removed %s (not in content.json)" % inner_path)
+                continue
+            current_hash = file_info.get("sha512", "")
+            pending_hash = self.push_pending[inner_path].get("sha512", "")
+            if pending_hash and current_hash != pending_hash:
+                del self.push_pending[inner_path]
+                self.log.debug("checkPushPending: Removed %s (hash changed)" % inner_path)
+                continue
+            if self.push_pending[inner_path].get("tries", 0) > 30:
+                del self.push_pending[inner_path]
+                self.log.debug("checkPushPending: Gave up on %s" % inner_path)
+
+    def retryPushPending(self):
+        """Retry pushing files that haven't reached enough peers yet.
+
+        Mirrors retryBadFiles() pattern: exponential backoff via random probability,
+        checks connected peers' hashfields, pushes missing files.
+        """
+        if not self.push_pending:
+            return
+
+        self.checkPushPending()
+
+        if not self.push_pending:
+            return
+
+        # Exponential backoff: higher tries = less likely to retry this cycle
+        should_retry = False
+        for inner_path, entry in self.push_pending.items():
+            tries = entry.get("tries", 0)
+            if random.randint(0, min(40, tries)) < 4:
+                should_retry = True
+                break
+
+        if not should_retry:
+            return
+
+        self.log.debug("retryPushPending: %s files pending" % len(self.push_pending))
+
+        # Get peers to push to
+        peers = self.getConnectedPeers()
+        if len(peers) < 3:
+            peers += self.getRecentPeers(5)
+        peers = list(set(peers))
+        random.shuffle(peers)
+
+        if not peers:
+            self.log.debug("retryPushPending: No peers available")
+            return
+
+        for peer in peers[:5]:
+            try:
+                peer.updateHashfield(force=True)
+                pushed = self.pushFilesToPeer(peer)
+                if pushed:
+                    self.log.info("retryPushPending: Pushed %s files to %s" % (pushed, peer.key))
+            except Exception as err:
+                self.log.debug("retryPushPending error for %s: %s" % (peer.key, err))
+
+            if not self.push_pending:
+                break  # All files reached enough peers
+            gevent.sleep(0.1)
+
     # Download all files of the site
     @util.Noparallel(blocking=False)
     def download(self, check_size=False, blind_includes=False, retry_bad_files=True):
@@ -552,6 +631,9 @@ class Site(object):
             self.log.debug("Bad files: %s" % self.bad_files)
             gevent.spawn(self.retryBadFiles, force=True)
 
+        if self.push_pending:
+            gevent.spawn(self.retryPushPending)
+
         if len(queried) == 0:
             # Failed to query modifications
             self.content_updated = False
@@ -570,36 +652,105 @@ class Site(object):
         self.log.debug("Waiting %s content.json to finish..." % len(content_threads))
         gevent.joinall(content_threads)
 
+    PUSH_SIZE_LIMIT = 5 * 1024 * 1024   # Max file size for pushFile
+    PUSH_TARGET = 3                      # Push to at least this many peers before clearing push_pending
+
+    def pushFilesToPeer(self, peer, inner_path="content.json", inline_files=None):
+        """Push files that a peer is missing based on hashfield comparison.
+
+        Compares our content.json files against the peer's hashfield to determine
+        which files the peer is missing, then pushes them via pushFile.
+        Returns the number of files successfully pushed.
+        """
+        if inline_files is None:
+            inline_files = {}
+        content_inner_dir = helper.getDirname(inner_path)
+        content_data = self.content_manager.contents.get(inner_path, {})
+        all_files = {}
+        all_files.update(content_data.get("files", {}))
+        all_files.update(content_data.get("files_optional", {}))
+
+        # Get peer's hashfield to know what they have
+        peer_hashfield = peer.hashfield
+        if not peer_hashfield:
+            # Try to fetch it
+            peer.updateHashfield(force=True)
+            peer_hashfield = peer.hashfield
+
+        # Also use hashfield from update response if available
+        peer_hashfield_set = set(peer_hashfield) if peer_hashfield else set()
+
+        # Find files peer is missing
+        files_to_push = []
+        for file_relative_path, file_details in all_files.items():
+            sha512 = file_details.get("sha512", "")
+            size = file_details.get("size", 0)
+            if not sha512 or size <= 0 or size > self.PUSH_SIZE_LIMIT:
+                continue
+            if file_relative_path in inline_files:
+                continue  # Already sent inline
+            file_inner_path = content_inner_dir + file_relative_path
+            # Always push files in push_pending regardless of hashfield (avoids 16-bit hash collisions)
+            if file_inner_path in self.push_pending:
+                if self.storage.isFile(file_inner_path):
+                    files_to_push.append((file_inner_path, size, sha512))
+                continue
+            # For other files, use hashfield to check if peer already has it
+            hash_id = int(sha512[0:4], 16)
+            if hash_id not in peer_hashfield_set:
+                if self.storage.isFile(file_inner_path):
+                    files_to_push.append((file_inner_path, size, sha512))
+
+        if not files_to_push:
+            return 0
+
+        self.log.info("Pushing %s missing files to %s" % (len(files_to_push), peer.key))
+        pushed = 0
+        for file_inner_path, file_size, sha512 in files_to_push:
+            try:
+                push_timeout = 10 + int(file_size / 1024)
+                push_result = None
+                with gevent.Timeout(push_timeout, False):
+                    file_body = self.storage.read(file_inner_path)
+                    push_result = peer.pushFile(self.address, file_inner_path, file_body)
+                if push_result and "ok" in push_result:
+                    pushed += 1
+                    self.log.info("Pushed %s (%sKB) to %s" % (file_inner_path, file_size // 1024, peer.key))
+                    if file_inner_path in self.push_pending:
+                        entry = self.push_pending[file_inner_path]
+                        entry["pushed_count"] = entry.get("pushed_count", 0) + 1
+                        if entry["pushed_count"] >= self.PUSH_TARGET:
+                            del self.push_pending[file_inner_path]
+                            self.log.info("Push complete for %s (%d peers)" % (file_inner_path, entry["pushed_count"]))
+                else:
+                    if push_result is None:
+                        self.log.debug("PushFile timeout %s to %s" % (file_inner_path, peer.key))
+                    else:
+                        self.log.debug("PushFile failed %s to %s: %s" % (file_inner_path, peer.key, push_result))
+                    if file_inner_path in self.push_pending:
+                        self.push_pending[file_inner_path]["tries"] = self.push_pending[file_inner_path].get("tries", 0) + 1
+            except Exception as err:
+                self.log.debug("PushFile error %s to %s: %s" % (file_inner_path, peer.key, err))
+                if file_inner_path in self.push_pending:
+                    self.push_pending[file_inner_path]["tries"] = self.push_pending[file_inner_path].get("tries", 0) + 1
+            gevent.sleep(0.01)
+        return pushed
+
     # Publish worker
-    def publisher(self, inner_path, peers, published, limit, diffs={}, event_done=None, cb_progress=None, inline_files={}):
+    def publisher(self, inner_path, peers, published, limit, diffs=None, event_done=None, cb_progress=None, inline_files=None):
+        if diffs is None:
+            diffs = {}
+        if inline_files is None:
+            inline_files = {}
         file_size = self.storage.getSize(inner_path)
         content_json_modified = self.content_manager.contents[inner_path]["modified"]
         body = self.storage.read(inner_path)
-
-        PUSH_SIZE_LIMIT = 5 * 1024 * 1024  # Push files up to 5MB over the existing connection
-        content_inner_dir = helper.getDirname(inner_path)
-
-        # Large changed files that couldn't be inlined — push after update is acknowledged
-        push_files = []
-        for file_inner_path in getattr(self.content_manager, "last_changed_files", []):
-            if file_inner_path == inner_path:
-                continue
-            file_relative_path = file_inner_path[len(content_inner_dir):]
-            if file_relative_path in inline_files:
-                continue  # Already sent inline
-            try:
-                file_info = self.content_manager.getFileInfo(file_inner_path)
-                size = file_info.get("size", 0) if file_info else 0
-                if 0 < size <= PUSH_SIZE_LIMIT:
-                    push_files.append((file_inner_path, size))
-            except Exception:
-                pass
 
         while 1:
             if not peers or len(published) >= limit:
                 if event_done:
                     event_done.set(True)
-                break  # All peers done, or published engouht
+                break  # All peers done, or published enough
             peer = peers.pop()
             if peer in published:
                 continue
@@ -608,10 +759,8 @@ class Site(object):
                 continue
 
             if peer.connection and peer.connection.last_ping_delay:  # Peer connected
-                # Timeout: 5sec + size in kb + last_ping
                 timeout = 5 + int(file_size / 1024) + peer.connection.last_ping_delay
             else:  # Peer not connected
-                # Timeout: 10sec + size in kb
                 timeout = 10 + int(file_size / 1024)
             result = {"exception": "Timeout"}
 
@@ -630,19 +779,15 @@ class Site(object):
                 if cb_progress and len(published) <= limit:
                     cb_progress(len(published), limit)
                 self.log.info("[OK] %s: %s %s/%s" % (peer.key, result["ok"], len(published), limit))
-                # Push large changed files over the same connection (no open port needed on publisher)
-                for file_inner_path, file_size in push_files:
-                    try:
-                        push_timeout = 5 + int(file_size / 1024)
-                        with gevent.Timeout(push_timeout, False):
-                            file_body = self.storage.read(file_inner_path)
-                            push_result = peer.pushFile(self.address, file_inner_path, file_body)
-                            if push_result and "ok" in push_result:
-                                self.log.debug("Pushed %s to %s" % (file_inner_path, peer.key))
-                            else:
-                                self.log.debug("PushFile failed %s to %s: %s" % (file_inner_path, peer.key, push_result))
-                    except Exception as err:
-                        self.log.debug("PushFile error %s to %s: %s" % (file_inner_path, peer.key, err))
+
+                # If peer accepted new content, use hashfield from response (if present)
+                # or fetch it, then push missing files
+                peer_accepted_update = "updated" in result.get("ok", "")
+                if peer_accepted_update:
+                    # Use hashfield from update response if available (saves round-trip)
+                    if "hashfield_raw" in result:
+                        peer.hashfield.replaceFromBytes(result["hashfield_raw"])
+                    self.pushFilesToPeer(peer, inner_path, inline_files)
             else:
                 if result == {"exception": "Timeout"}:
                     peer.onConnectionError("Publish timeout")
@@ -651,7 +796,9 @@ class Site(object):
 
     # Update content.json on peers
     @util.Noparallel()
-    def publish(self, limit="default", inner_path="content.json", diffs={}, cb_progress=None):
+    def publish(self, limit="default", inner_path="content.json", diffs=None, cb_progress=None):
+        if diffs is None:
+            diffs = {}
         published = []  # Successfully published (Peer)
         publishers = []  # Publisher threads
 
@@ -677,10 +824,13 @@ class Site(object):
         inline_files = {}
         content_inner_dir = helper.getDirname(inner_path)
 
-        # Candidate inner_paths: files in diffs + files sign() detected as hash-changed
+        # Candidate inner_paths: files in diffs + files sign() detected as hash-changed + push_pending
         candidate_inner_paths = set(content_inner_dir + p for p in diffs.keys())
         for p in getattr(self.content_manager, "last_changed_files", []):
             if p != inner_path:  # skip content.json itself
+                candidate_inner_paths.add(p)
+        for p in self.push_pending:
+            if p != inner_path:
                 candidate_inner_paths.add(p)
 
         for file_inner_path in candidate_inner_paths:
@@ -941,7 +1091,41 @@ class Site(object):
             peer = Peer(ip, port, self)
             self.peers[key] = peer
             peer.found(source)
+            # Trigger swarm push to new peer in background (owned sites only, rate limited)
+            if self.settings.get("own") and self.content_manager.contents.get("content.json"):
+                if time.time() - self.push_last_time > 10:  # Rate limit: max once per 10s per site
+                    self.push_last_time = time.time()
+                    gevent.spawn_later(2, self._onPeerConnectPooled, peer)
             return peer
+
+    def _onPeerConnectPooled(self, peer):
+        """Wrapper that runs onPeerConnect through the push_pool to limit concurrency."""
+        self.push_pool.spawn(self.onPeerConnect, peer)
+
+    def onPeerConnect(self, peer):
+        """Exchange hashfields with a new peer and push any files they're missing.
+
+        Only runs for owned sites. Uses push_pool (size 2) to limit concurrent
+        pushes, preventing PEX discovery storms from spawning many greenlets.
+        """
+        # Only push if we have files to share and the peer is still known
+        if peer.key not in self.peers:
+            return
+        if not self.content_manager.hashfield:
+            return
+
+        try:
+            # Exchange hashfields: send ours, get theirs
+            peer.sendMyHashfield()
+            if not peer.updateHashfield(force=True):
+                return  # Can't reach peer
+
+            # Push files they're missing
+            pushed = self.pushFilesToPeer(peer)
+            if pushed:
+                self.log.info("Swarm push: sent %s files to new peer %s" % (pushed, peer.key))
+        except Exception as err:
+            self.log.debug("onPeerConnect error for %s: %s" % (peer.key, err))
 
     def announce(self, *args, **kwargs):
         if self.isServing():
@@ -1115,7 +1299,7 @@ class Site(object):
 
     # Send hashfield to peers
     def sendMyHashfield(self, limit=5):
-        if not self.content_manager.hashfield:  # No optional files
+        if not self.content_manager.hashfield:  # No files tracked
             return False
 
         sent = 0

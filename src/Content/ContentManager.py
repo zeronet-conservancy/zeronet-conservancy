@@ -73,6 +73,42 @@ class ContentManager:
 
         self.contents.db.initSite(self.site)
 
+        # Rebuild hashfield from files on disk (tracks ALL files, not just optional)
+        self.rebuildHashfield()
+
+    def rebuildHashfield(self):
+        """Rebuild hashfield from all files we actually have on disk.
+
+        Iterates ALL content.json files (root + includes like data/users/content.json)
+        to track every file in the hashfield, enabling peers to compare inventories
+        and push missing files to each other.
+
+        Uses dict.keys() + get() instead of items() so orphaned entries (content.json
+        in DB but not on disk) get cleaned up via bad_files rather than warning on
+        every startup.
+        """
+        if not self.contents:
+            return
+
+        # Clear and rebuild to avoid stale entries from deleted/changed files
+        self.hashfield.storage = self.hashfield.createStorage()
+
+        for content_inner_path in list(dict.keys(self.contents)):
+            if not content_inner_path.endswith("content.json"):
+                continue
+            content = self.contents.get(content_inner_path)
+            if not content:
+                continue
+            content_inner_dir = helper.getDirname(content_inner_path)
+            for file_relative_path, file_details in content.get("files", {}).items():
+                sha512 = file_details.get("sha512")
+                if sha512 and self.site.storage.isFile(content_inner_dir + file_relative_path):
+                    self.hashfield.appendHash(sha512)
+            for file_relative_path, file_details in content.get("files_optional", {}).items():
+                sha512 = file_details.get("sha512")
+                if sha512 and self.site.storage.isFile(content_inner_dir + file_relative_path):
+                    self.hashfield.appendHash(sha512)
+
     def getFileChanges(self, old_files, new_files):
         deleted = {key: val for key, val in old_files.items() if key not in new_files}
         deleted_hashes = {val.get("sha512"): key for key, val in old_files.items() if key not in new_files}
@@ -752,7 +788,10 @@ class ContentManager:
                 changed_files.append(inner_directory + file_relative_path)
 
         self.log.debug("Changed files: %s" % changed_files)
-        self.last_changed_files = changed_files  # Expose to publish() for inline_files selection
+        # Merge with any previously unpushed files so re-signing doesn't lose them
+        prev = set(getattr(self, "last_changed_files", []))
+        merged = list(set(changed_files) | prev)
+        self.last_changed_files = merged  # Expose to publish() for inline_files + pushFile
         if update_changed_files:
             for file_path in changed_files:
                 self.site.storage.onUpdated(file_path)
@@ -817,7 +856,30 @@ class ContentManager:
 
         self.log.info("File %s signed!" % inner_path)
 
-        if filewrite:  # Written to file
+        if filewrite:
+            # Rebuild hashfield so it reflects all files we have on disk
+            self.rebuildHashfield()
+
+            # Populate push_pending for changed files (owner sites only)
+            if self.site.settings.get("own"):
+                inner_directory = helper.getDirname(inner_path)
+                for file_path in changed_files:
+                    if file_path == inner_path:
+                        continue  # Skip content.json itself
+                    relative = file_path[len(inner_directory):] if inner_directory else file_path
+                    file_entry = files_merged.get(relative)
+                    if file_entry:
+                        existing = self.site.push_pending.get(file_path, {})
+                        if existing.get("sha512") == file_entry["sha512"]:
+                            continue  # Same version already tracked, keep existing pushed_count
+                        self.site.push_pending[file_path] = {
+                            "tries": 0,
+                            "sha512": file_entry["sha512"],
+                            "pushed_count": 0
+                        }
+                if self.site.push_pending:
+                    self.log.info("Push pending after sign: %s" % list(self.site.push_pending.keys()))
+
             return True
         else:  # Return the new content
             return new_content

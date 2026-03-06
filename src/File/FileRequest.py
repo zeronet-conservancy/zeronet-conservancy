@@ -180,7 +180,10 @@ class FileRequest(object):
             else:
                 del self.server.files_parsing[file_uri]
 
-            self.response({"ok": "Thanks, file %s updated!" % inner_path})
+            self.response({
+                "ok": "Thanks, file %s updated!" % inner_path,
+                "hashfield_raw": site.content_manager.hashfield.tobytes()
+            })
             self.connection.goodAction()
 
         elif valid is None:  # Not changed
@@ -233,6 +236,7 @@ class FileRequest(object):
             file_info = site.content_manager.getFileInfo(inner_path)
         if not file_info:
             self.response({"error": "File not in content.json"})
+            self.connection.badAction(5)
             return False
 
         # Size pre-check before running SHA512
@@ -243,10 +247,23 @@ class FileRequest(object):
             self.connection.badAction(5)
             return False
 
+        expected_hash = file_info.get("sha512", "")
+
+        # Dedup: skip write if we already have the exact file
+        if expected_hash and site.storage.isFile(inner_path):
+            try:
+                existing_hash = CryptHash.sha512sum(site.storage.getPath(inner_path))
+                if existing_hash == expected_hash:
+                    self.log.debug("PushFile skipped (already have): %s" % inner_path)
+                    site.content_manager.hashfield.appendHash(expected_hash)
+                    self.response({"ok": "File already exists"})
+                    return
+            except Exception:
+                pass  # File may be corrupted, proceed with push
+
         # Verify hash and write
         try:
             file_obj = io.BytesIO(body)
-            expected_hash = file_info.get("sha512", "")
             actual_hash = CryptHash.sha512sum(file_obj)
             if actual_hash != expected_hash:
                 self.response({"error": "File verify failed"})
@@ -256,11 +273,13 @@ class FileRequest(object):
             file_obj.seek(0)
             site.storage.write(inner_path, file_obj)
             site.onFileDone(inner_path)
+            # Track in hashfield so other peers know we have this file
+            site.content_manager.hashfield.appendHash(expected_hash)
             self.log.debug("PushFile applied: %s" % inner_path)
             self.response({"ok": "File pushed"})
         except Exception as err:
             self.log.debug("PushFile error %s: %s" % (inner_path, err))
-            self.response({"error": "File push error: %s" % err})
+            self.response({"error": "File push error"})
             self.connection.badAction(5)
 
     def _getFileInfoFromDisk(self, site, inner_path):
