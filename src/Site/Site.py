@@ -173,7 +173,7 @@ class Site(object):
         return time.time() - self.settings.get("added", 0) < 60 * 60 * 24
 
     # Download all file from content.json
-    def downloadContent(self, inner_path, download_files=True, peer=None, check_modifications=False, diffs={}, inline_files={}):
+    def downloadContent(self, inner_path, download_files=True, peer=None, check_modifications=False, diffs={}, inline_files={}, publisher_port_open=True):
         s = time.time()
         if config.verbose:
             self.log.debug(
@@ -281,10 +281,15 @@ class Site(object):
                         diff_success = False
 
                 if not diff_success:
-                    # Start download and dont wait for finish, return the event
-                    res = self.needFile(file_inner_path, blocking=False, update=file_changed or bool(diff_actions), peer=peer)
-                    if res is not True and res is not False:  # Need downloading and file is allowed
-                        file_threads.append(res)  # Append evt
+                    if not publisher_port_open and not inline_body:
+                        # Publisher's port is closed — we can't connect back to download.
+                        # The publisher will push this file via pushFile instead.
+                        self.log.debug("DownloadContent Skipping needFile for %s (publisher port closed, awaiting push)" % file_inner_path)
+                    else:
+                        # Start download and dont wait for finish, return the event
+                        res = self.needFile(file_inner_path, blocking=False, update=file_changed or bool(diff_actions), peer=peer)
+                        if res is not True and res is not False:  # Need downloading and file is allowed
+                            file_threads.append(res)  # Append evt
 
             # Optionals files
             if inner_path == "content.json":
@@ -743,7 +748,7 @@ class Site(object):
         return pushed
 
     # Publish worker
-    def publisher(self, inner_path, peers, published, limit, diffs=None, event_done=None, cb_progress=None, inline_files=None):
+    def publisher(self, inner_path, peers, published, limit, diffs=None, event_done=None, cb_progress=None, inline_files=None, port_open=True):
         if diffs is None:
             diffs = {}
         if inline_files is None:
@@ -773,7 +778,7 @@ class Site(object):
             for retry in range(2):
                 try:
                     with gevent.Timeout(timeout, False):
-                        result = peer.publish(self.address, inner_path, body, content_json_modified, diffs, inline_files)
+                        result = peer.publish(self.address, inner_path, body, content_json_modified, diffs, inline_files, port_opened=port_open)
                     if result:
                         break
                 except Exception as err:
@@ -825,8 +830,19 @@ class Site(object):
 
         peers = set(peers)
 
-        # Collect small changed files to push inline (avoids requiring reverse connection from peers)
-        INLINE_SIZE_LIMIT = 64 * 1024
+        # Determine if our port is open — peers can connect back to download files
+        port_open = bool(
+            self.connection_server and
+            any(self.connection_server.port_opened.get(t) for t in ("ipv4", "ipv6"))
+        )
+
+        # Collect changed files to push inline (avoids requiring reverse connection from peers
+        # and eliminates race conditions with simultaneous pushFile/downloadContent).
+        # When our port is closed, peers can't connect back, so push more aggressively inline.
+        if port_open:
+            INLINE_SIZE_LIMIT = 512 * 1024      # 512KB — generous but peers can pull the rest
+        else:
+            INLINE_SIZE_LIMIT = 3 * 1024 * 1024  # 3MB — push everything we can (port closed)
         inline_files = {}
         content_inner_dir = helper.getDirname(inner_path)
 
@@ -858,7 +874,7 @@ class Site(object):
 
         event_done = gevent.event.AsyncResult()
         for i in range(min(len(peers), limit, threads)):
-            publisher = gevent.spawn(self.publisher, inner_path, peers, published, limit, diffs, event_done, cb_progress, inline_files)
+            publisher = gevent.spawn(self.publisher, inner_path, peers, published, limit, diffs, event_done, cb_progress, inline_files, port_open)
             publishers.append(publisher)
 
         event_done.get()  # Wait for done
@@ -874,10 +890,22 @@ class Site(object):
         )
 
         for thread in range(2):
-            gevent.spawn(self.publisher, inner_path, peers, published, limit=limit * 2, diffs=diffs, inline_files=inline_files)
+            gevent.spawn(self.publisher, inner_path, peers, published, limit=limit * 2, diffs=diffs, inline_files=inline_files, port_open=port_open)
 
         # Send my hashfield to every connected peer if changed
         gevent.spawn(self.sendMyHashfield, 100)
+
+        # Immediately retry any files that failed to push during publish
+        if self.push_pending and self.settings.get("own"):
+            gevent.spawn(self.retryPushPending)
+
+        # Clear last_changed_files for files that were sent inline (already delivered)
+        if inline_files and hasattr(self.content_manager, "last_changed_files"):
+            sent_inner_paths = set(content_inner_dir + p for p in inline_files.keys())
+            self.content_manager.last_changed_files = [
+                p for p in self.content_manager.last_changed_files
+                if p not in sent_inner_paths
+            ]
 
         return len(published)
 

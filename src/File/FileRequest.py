@@ -181,7 +181,9 @@ class FileRequest(object):
 
                 # Load new content file and download changed files in new thread
                 def downloader():
-                    site.downloadContent(inner_path, peer=peer, diffs=params.get("diffs", {}), inline_files=params.get("inline_files", {}))
+                    site.downloadContent(inner_path, peer=peer, diffs=params.get("diffs", {}),
+                                        inline_files=params.get("inline_files", {}),
+                                        publisher_port_open=params.get("port_opened", True))
                     del self.server.files_parsing[file_uri]
 
                 gevent.spawn(downloader)

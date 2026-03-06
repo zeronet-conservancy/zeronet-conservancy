@@ -368,7 +368,7 @@ class Peer(object):
             self.time_my_hashfield_sent = time.time()
             return True
 
-    def publish(self, address, inner_path, body, modified, diffs=[], inline_files={}):
+    def publish(self, address, inner_path, body, modified, diffs=[], inline_files={}, port_opened=True):
         if len(body) > 10 * 1024 and self.connection and self.connection.handshake.get("rev", 0) >= 4095:
             # To save bw we don't push big content.json to peers
             body = b""
@@ -379,7 +379,8 @@ class Peer(object):
             "body": body,
             "modified": modified,
             "diffs": diffs,
-            "inline_files": inline_files
+            "inline_files": inline_files,
+            "port_opened": port_opened
         })
 
     def pushFile(self, address, inner_path, body):
