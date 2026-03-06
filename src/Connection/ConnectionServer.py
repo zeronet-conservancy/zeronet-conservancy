@@ -291,11 +291,13 @@ class ConnectionServer(object):
                         "[Cleanup] Connect timeout: %.3fs" % idle
                     )
 
-                elif idle > 10 * timeout_multipler and connection.waiting_requests and time.time() - connection.last_send_time > 10 * timeout_multipler:
-                    # Sent command and no response in 10 sec
-                    connection.close(
-                        "[Cleanup] Command %s timeout: %.3fs" % (connection.last_cmd_sent, time.time() - connection.last_send_time)
-                    )
+                elif connection.waiting_requests and time.time() - connection.last_send_time > 10 * timeout_multipler:
+                    # pushFile transfers large bodies — give them more time (60s vs 10s)
+                    cmd_timeout = 60 * timeout_multipler if connection.last_cmd_sent == "pushFile" else 10 * timeout_multipler
+                    if idle > cmd_timeout:
+                        connection.close(
+                            "[Cleanup] Command %s timeout: %.3fs" % (connection.last_cmd_sent, time.time() - connection.last_send_time)
+                        )
 
                 elif idle < 60 and connection.bad_actions > 40:
                     connection.close(

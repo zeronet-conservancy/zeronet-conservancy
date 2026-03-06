@@ -571,8 +571,9 @@ class Connection(object):
 
     # Create and send a request to peer
     def request(self, cmd, params={}, stream_to=None):
-        # Last command sent more than 10 sec ago, timeout
-        if self.waiting_requests and self.protocol == "v2" and time.time() - max(self.last_req_time, self.last_recv_time) > 10:
+        # Last command sent more than 10 sec ago, timeout (longer for large-body pushFile)
+        req_timeout = 60 if self.last_cmd_sent == "pushFile" else 10
+        if self.waiting_requests and self.protocol == "v2" and time.time() - max(self.last_req_time, self.last_recv_time) > req_timeout:
             self.close("Request %s timeout: %.3fs" % (self.last_cmd_sent, time.time() - self.last_send_time))
             return False
 
