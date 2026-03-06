@@ -677,6 +677,12 @@ class Site(object):
             peer.updateHashfield(force=True)
             peer_hashfield = peer.hashfield
 
+        # If peer still has no hashfield after fetching, they haven't downloaded
+        # this site — don't push files to peers that never opted in.
+        if not peer_hashfield:
+            self.log.debug("Skipping push to %s: peer has no hashfield (site not downloaded)" % peer.key)
+            return 0
+
         # Also use hashfield from update response if available
         peer_hashfield_set = set(peer_hashfield) if peer_hashfield else set()
 

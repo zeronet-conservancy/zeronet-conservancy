@@ -110,6 +110,14 @@ class FileRequest(object):
             self.connection.badAction(5)
             return False
 
+        # Reject updates for sites we haven't fully downloaded yet —
+        # prevents arbitrary peers from pushing content to us for sites
+        # we never voluntarily added.
+        if not site.settings.get("downloaded"):
+            self.response({"error": "Site not yet downloaded"})
+            self.connection.badAction(5)
+            return False
+
         inner_path = params.get("inner_path", "")
         current_content_modified = site.content_manager.contents.get(inner_path, {}).get("modified", 0)
         body = params["body"]
@@ -215,6 +223,13 @@ class FileRequest(object):
         site = self.sites.get(params.get("site"))
         if not site or not site.isServing():
             self.response({"error": "Unknown site"})
+            self.connection.badAction(5)
+            return False
+
+        # Reject file pushes for sites we haven't fully downloaded yet —
+        # only accept pushed files for sites the user voluntarily added.
+        if not site.settings.get("downloaded"):
+            self.response({"error": "Site not yet downloaded"})
             self.connection.badAction(5)
             return False
 
