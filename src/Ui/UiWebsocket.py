@@ -1103,6 +1103,16 @@ class UiWebsocket(object):
             new_site = site.clone(new_address, new_site_data["privatekey"], address_index=new_address_index, root_inner_path=root_inner_path)
             new_site.settings["own"] = True
             new_site.settings["downloaded"] = int(time.time())
+            # Ensure new site has an index.html (in case template was missing)
+            if not new_site.storage.isFile("index.html"):
+                new_site.storage.open("index.html", "w").write(
+                    "<!DOCTYPE html>\n<html>\n<head>\n <meta charset=\"utf-8\">\n"
+                    " <title>My New Epix Site</title>\n</head>\n<body>\n\n"
+                    "<h1>My new site is ready!</h1>\n"
+                    "<p>Edit this page using the sidebar file manager.</p>\n\n"
+                    "</body>\n</html>"
+                )
+                new_site.content_manager.sign(privatekey=new_site_data["privatekey"])
             new_site.saveSettings()
             self.cmd("notification", ["done", _["Site cloned"]])
             if redirect:

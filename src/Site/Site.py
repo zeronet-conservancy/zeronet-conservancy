@@ -107,7 +107,7 @@ class Site(object):
                 settings["size_optional"] = 0
             if "optional_downloaded" not in settings:
                 settings["optional_downloaded"] = 0
-            if "downloaded" not in settings:
+            if not settings.get("downloaded"):
                 settings["downloaded"] = settings.get("added")
             self.bad_files = settings["cache"].get("bad_files", {})
             settings["cache"]["bad_files"] = {}
@@ -935,6 +935,8 @@ class Site(object):
 
             if "domain" in content_json:
                 del content_json["domain"]
+            if "xid_name" in content_json:
+                del content_json["xid_name"]
             if root_inner_path.startswith("template-"):
                 content_json["title"] = "My New Epix Site"
             else:
