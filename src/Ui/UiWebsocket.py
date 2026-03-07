@@ -1102,6 +1102,7 @@ class UiWebsocket(object):
             new_address, new_address_index, new_site_data = self.user.getNewSiteData()
             new_site = site.clone(new_address, new_site_data["privatekey"], address_index=new_address_index, root_inner_path=root_inner_path)
             new_site.settings["own"] = True
+            new_site.settings["downloaded"] = int(time.time())
             new_site.saveSettings()
             self.cmd("notification", ["done", _["Site cloned"]])
             if redirect:

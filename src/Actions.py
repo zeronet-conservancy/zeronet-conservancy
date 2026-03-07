@@ -128,6 +128,7 @@ class Actions:
 
         site.content_manager.sign(privatekey=privatekey, extend=extend)
         site.settings["own"] = True
+        site.settings["downloaded"] = int(time.time())
         site.saveSettings()
 
         logging.info("Site created!")
