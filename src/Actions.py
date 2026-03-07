@@ -291,7 +291,7 @@ class Actions:
         if main.dht_server is not None:
             launched_greenlets.append(gevent.spawn(main.dht_server.start))
 
-        site = Site(address)
+        site = SiteManager.site_manager.add(address)
 
         on_completed = gevent.event.AsyncResult()
 
