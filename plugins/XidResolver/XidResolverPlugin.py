@@ -802,15 +802,6 @@ class UiWebsocketPlugin(object):
         addresses. If none resolve, shows the xID site overlay so the user
         can link their identity.
         """
-        # Check if user already has a valid xID cert — just activate it for this site
-        existing_cert = self.user.certs.get("xid")
-        if existing_cert and existing_cert.get("auth_user_name"):
-            site_data = self.user.getSiteData(self.site.address, create=False)
-            if not site_data or site_data.get("cert") != "xid":
-                self.user.setCert(self.site.address, "xid")
-                self.site.updateWebsocket(cert_changed="xid")
-            return self.response(to, "ok")
-
         if not xid_name:
             # Try reverse lookup on all known addresses
             auth_address = self.user.getAuthAddress(self.site.address)
