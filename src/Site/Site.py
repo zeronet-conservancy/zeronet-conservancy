@@ -839,11 +839,11 @@ class Site(object):
         # Collect changed files to push inline (avoids requiring reverse connection from peers
         # and eliminates race conditions with simultaneous pushFile/downloadContent).
         # When our port is closed, peers can't connect back, so push more aggressively inline.
-        if port_open:
-            INLINE_SIZE_LIMIT = 512 * 1024      # 512KB — generous but peers can pull the rest
-        else:
-            INLINE_SIZE_LIMIT = 3 * 1024 * 1024  # 3MB — push everything we can (port closed)
+        INLINE_FILE_LIMIT = 512 * 1024       # Max size per individual file to inline
+        INLINE_TOTAL_LIMIT = 1024 * 1024     # Max total inline payload (1MB) — keeps the
+                                             # update message small enough for peers to accept
         inline_files = {}
+        inline_total = 0
         content_inner_dir = helper.getDirname(inner_path)
 
         # Candidate inner_paths: files in diffs + files sign() detected as hash-changed + push_pending
@@ -859,8 +859,13 @@ class Site(object):
             file_relative_path = file_inner_path[len(content_inner_dir):]
             try:
                 file_info = self.content_manager.getFileInfo(file_inner_path)
-                if file_info and 0 < file_info.get("size", INLINE_SIZE_LIMIT + 1) <= INLINE_SIZE_LIMIT:
-                    inline_files[file_relative_path] = self.storage.read(file_inner_path)
+                file_size = file_info.get("size", 0) if file_info else 0
+                if file_info and 0 < file_size <= INLINE_FILE_LIMIT:
+                    if inline_total + file_size > INLINE_TOTAL_LIMIT:
+                        break  # Total payload would be too large
+                    data = self.storage.read(file_inner_path)
+                    inline_files[file_relative_path] = data
+                    inline_total += len(data)
             except Exception:
                 pass
 
