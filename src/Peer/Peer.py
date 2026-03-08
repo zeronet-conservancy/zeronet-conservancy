@@ -369,8 +369,8 @@ class Peer(object):
             return True
 
     def publish(self, address, inner_path, body, modified, diffs=[], inline_files={}, port_opened=True):
-        if len(body) > 10 * 1024 and self.connection and self.connection.handshake.get("rev", 0) >= 4095:
-            # To save bw we don't push big content.json to peers
+        if len(body) > 1024 * 1024 and self.connection and self.connection.handshake.get("rev", 0) >= 4095:
+            # To save bw we don't push very large content.json to peers
             body = b""
 
         return self.request("update", {

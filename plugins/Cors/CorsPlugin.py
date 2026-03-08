@@ -15,7 +15,7 @@ if "_" not in locals():
 
 
 def getCorsPath(site, inner_path):
-    match = re.match("^cors-([A-Za-z0-9]{26,35})/(.*)", inner_path)
+    match = re.match("^cors-([A-Za-z0-9]{26,50})/(.*)", inner_path)
     if not match:
         raise Exception("Invalid cors path: %s" % inner_path)
     cors_address = match.group(1)

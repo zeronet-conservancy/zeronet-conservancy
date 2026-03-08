@@ -802,6 +802,15 @@ class UiWebsocketPlugin(object):
         addresses. If none resolve, shows the xID site overlay so the user
         can link their identity.
         """
+        # Check if user already has a valid xID cert — just activate it for this site
+        existing_cert = self.user.certs.get("xid")
+        if existing_cert and existing_cert.get("auth_user_name"):
+            site_data = self.user.getSiteData(self.site.address, create=False)
+            if not site_data or site_data.get("cert") != "xid":
+                self.user.setCert(self.site.address, "xid")
+                self.site.updateWebsocket(cert_changed="xid")
+            return self.response(to, "ok")
+
         if not xid_name:
             # Try reverse lookup on all known addresses
             auth_address = self.user.getAuthAddress(self.site.address)
@@ -833,8 +842,8 @@ class UiWebsocketPlugin(object):
                     tried.add(addr)
                     result = resolve_identity_xid(addr)
                     if result and result.get("name"):
-                        # Found their xID — proceed
-                        return self._processCertXid(to, result["name"])
+                        # Found their xID via this address — proceed
+                        return self._processCertXid(to, result["name"], linked_auth_address=addr)
 
             # No xID found for any address — ask user to open xID site to link identity
             xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
@@ -860,7 +869,7 @@ class UiWebsocketPlugin(object):
 
         self._processCertXid(to, xid_name)
 
-    def _processCertXid(self, to, xid_name):
+    def _processCertXid(self, to, xid_name, linked_auth_address=None):
         """Process xID cert acquisition for a given name."""
         from Crypt import CryptEpix
 
@@ -871,8 +880,19 @@ class UiWebsocketPlugin(object):
         if not re.match(r'^[a-z0-9][a-z0-9\-]*$', xid_name):
             return self.response(to, {"error": "Invalid xID name format"})
 
-        auth_address = self.user.getAuthAddress(self.site.address)
-        auth_privatekey = self.user.getAuthPrivatekey(self.site.address)
+        # Use the linked auth address if identity was found via a different
+        # site's auth address than the current site
+        if linked_auth_address:
+            auth_address = linked_auth_address
+            auth_privatekey = None
+            for site_addr, site_data in self.user.sites.items():
+                if site_data.get("auth_address") == linked_auth_address:
+                    auth_privatekey = self.user.getAuthPrivatekey(site_addr)
+                    if auth_privatekey:
+                        break
+        else:
+            auth_address = self.user.getAuthAddress(self.site.address)
+            auth_privatekey = self.user.getAuthPrivatekey(self.site.address)
 
         if not auth_address or not auth_privatekey:
             return self.response(to, {"error": "No auth credentials for this site"})

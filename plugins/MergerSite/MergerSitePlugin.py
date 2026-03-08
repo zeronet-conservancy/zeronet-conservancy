@@ -29,7 +29,7 @@ if "_" not in locals():
 
 # Check if the site has permission to this merger site
 def checkMergerPath(address, inner_path):
-    merged_match = re.match("^merged-(.*?)/([A-Za-z0-9]{26,35})/", inner_path)
+    merged_match = re.match("^merged-(.*?)/([A-Za-z0-9]{26,50})/", inner_path)
     if merged_match:
         merger_type = merged_match.group(1)
         # Check if merged site is allowed to include other sites
@@ -37,7 +37,7 @@ def checkMergerPath(address, inner_path):
             # Check if included site allows to include
             merged_address = merged_match.group(2)
             if merged_db.get(merged_address) == merger_type:
-                inner_path = re.sub("^merged-(.*?)/([A-Za-z0-9]{26,35})/", "", inner_path)
+                inner_path = re.sub("^merged-(.*?)/([A-Za-z0-9]{26,50})/", "", inner_path)
                 return merged_address, inner_path
             else:
                 raise Exception(
