@@ -792,73 +792,125 @@ class UiWebsocketPlugin(object):
         self.response(to, results)
 
     def actionCertXid(self, to, xid_name=None):
-        """Acquire an xID certificate for the current user.
+        """Show xID certificate selection dialog.
 
-        Creates a self-signed certificate using keccak256 that ties the user's
-        auth address to their xID name. The cert is stored locally and used
-        when signing content on sites that accept xID certs.
+        If the user already has an xID cert, shows a selection dialog to
+        activate/deactivate it. If no xID cert exists, tries auto-discovery
+        via reverse lookup on all known addresses. If still none found,
+        offers to open the xID site so the user can link their identity.
 
-        If xid_name is omitted, tries reverse lookup on all the user's known
-        addresses. If none resolve, shows the xID site overlay so the user
-        can link their identity.
+        If xid_name is provided directly, skips the dialog and proceeds
+        to cert acquisition.
         """
-        if not xid_name:
-            # Try reverse lookup on all known addresses
-            auth_address = self.user.getAuthAddress(self.site.address)
+        if xid_name:
+            return self._processCertXid(to, xid_name)
+
+        # Build the cert selection dialog
+        existing_cert = self.user.certs.get("xid")
+        site_data = self.user.getSiteData(self.site.address)
+        current_domain = site_data.get("cert", "") if site_data else ""
+        auth_address = self.user.getAuthAddress(self.site.address)
+
+        body = "<span style='padding-bottom: 5px; display: inline-block'>"
+        body += "Select the xID account you want to use on this site:"
+        body += "</span>"
+
+        # "None" option
+        none_class = " active" if current_domain != "xid" else ""
+        body += (
+            "<a href='#Select+account' class='select select-close cert%s' title=''>"
+            "<b>None</b>%s</a>"
+        ) % (none_class, " <small>(currently selected)</small>" if current_domain != "xid" else "")
+
+        if existing_cert and existing_cert.get("auth_user_name"):
+            # Show existing xID cert
+            cert_title = "%s@xid" % existing_cert["auth_user_name"]
+            active_class = " active" if current_domain == "xid" else ""
+            active_label = " <small>(currently selected)</small>" if current_domain == "xid" else ""
+            body += (
+                "<a href='#Select+account' class='select select-close cert%s' title='xid'>"
+                "<b>%s</b>%s</a>"
+            ) % (active_class, cert_title, active_label)
+        else:
+            # No xID cert yet — try auto-discovery and show register link
             tried = set()
-
-            # Try current site auth address
             addresses_to_try = [auth_address]
-
-            # Try master address
             master = getattr(self.user, "master_address", None)
             if master:
                 addresses_to_try.append(master)
-
-            # Try all other site auth addresses
-            for site_data in self.user.sites.values():
-                auth = site_data.get("auth_address")
+            for sd in self.user.sites.values():
+                auth = sd.get("auth_address")
                 if auth:
                     addresses_to_try.append(auth)
 
-            # Invalidate cache for all addresses so we get fresh chain data
-            # (user may have just linked their identity on the xID site)
             for addr in addresses_to_try:
                 if addr:
                     invalidate_identity_cache(addr)
             invalidate_xid_name_cache()
 
+            discovered_name = None
+            discovered_addr = None
             for addr in addresses_to_try:
                 if addr and addr not in tried:
                     tried.add(addr)
                     result = resolve_identity_xid(addr)
                     if result and result.get("name"):
-                        # Found their xID via this address — proceed
-                        return self._processCertXid(to, result["name"], linked_auth_address=addr)
+                        discovered_name = result["name"]
+                        discovered_addr = addr
+                        break
 
-            # No xID found for any address — ask user to open xID site to link identity
-            xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
-            return_url = "/%s" % self.site.address
-            xid_url = "/%s/?linkIdentity=%s&returnTo=%s" % (
-                xid_site, auth_address, return_url
-            )
+            if discovered_name:
+                # Found an xID on chain — offer to acquire it
+                body += (
+                    "<a href='#Select+account' class='select select-close cert' title='acquire:%s:%s'>"
+                    "<b>%s.epix</b> <small>(acquire certificate)</small></a>"
+                ) % (discovered_name, discovered_addr, discovered_name)
+            else:
+                # No xID found — show link to register
+                xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
+                return_url = "/%s" % self.site.address
+                xid_url = "/%s/?linkIdentity=%s&returnTo=%s" % (
+                    xid_site, auth_address, return_url
+                )
+                body += (
+                    "<a href='%s' target='_top' class='select'>"
+                    "<small style='float: right; margin-right: 40px; margin-top: -1px'>"
+                    "Register &raquo;</small>xid</a>"
+                ) % xid_url
 
-            self.cmd(
-                "confirm",
-                [
-                    "No xID found for your address.<br><br>"
-                    "Open the xID site to link <b>%s</b> as an identity?" %
-                    (auth_address[:20] + "..."),
-                    "Open xID"
-                ],
-                lambda res: self.cmd("redirect", xid_url)
-            )
-            return self.response(to, {
-                "error": "no_xid_found",
-                "auth_address": auth_address
-            })
+        script = """
+             $(".notification .select.cert").on("click", function() {
+                $(".notification .select").removeClass('active')
+                epixframe.response(%s, this.title)
+                return false
+             })
+        """ % self.next_message_id
 
-        self._processCertXid(to, xid_name)
+        self.cmd("notification", ["ask", body], lambda choice: self._cbCertXidSelect(to, choice))
+        self.cmd("injectScript", script)
+
+    def _cbCertXidSelect(self, to, choice):
+        """Handle user's selection from the xID cert dialog."""
+        if not choice or choice == "":
+            # User selected "None" — deactivate cert for this site
+            self.user.setCert(self.site.address, None)
+            self.site.updateWebsocket(cert_changed="xid")
+            return self.response(to, "ok")
+        elif choice == "xid":
+            # User selected their existing xID cert — activate for this site
+            self.user.setCert(self.site.address, "xid")
+            self.site.updateWebsocket(cert_changed="xid")
+            return self.response(to, "ok")
+        elif choice.startswith("acquire:"):
+            # User wants to acquire a discovered cert
+            parts = choice.split(":", 2)
+            if len(parts) == 3:
+                xid_name = parts[1]
+                linked_addr = parts[2]
+                return self._processCertXid(to, xid_name, linked_auth_address=linked_addr)
+            return self.response(to, {"error": "Invalid acquire choice"})
+        else:
+            return self.response(to, {"error": "Unknown selection"})
 
     def _processCertXid(self, to, xid_name, linked_auth_address=None):
         """Process xID cert acquisition for a given name."""
