@@ -805,6 +805,40 @@ class Site(object):
                 self.log.info("[FAILED] %s: %s" % (peer.key, result))
             time.sleep(0.01)
 
+    # Deferred publish retry: announce, wait for peers, then re-publish
+    def deferredPublish(self, inner_path, max_retries=5):
+        # Prevent recursive deferred spawns (publish() would spawn another deferredPublish)
+        self._deferred_publish_active = True
+        try:
+            for attempt in range(1, max_retries + 1):
+                # Announce to find peers
+                self.announce(mode="more")
+                # Wait with increasing backoff for peers to connect
+                wait_time = min(10 * attempt, 30)
+                self.log.debug("deferredPublish %s: attempt %s/%s, waiting %ss for peers..." % (
+                    inner_path, attempt, max_retries, wait_time
+                ))
+                time.sleep(wait_time)
+
+                peers = self.getConnectedPeers()
+                if not peers:
+                    peers = self.getRecentPeers(10)
+                if peers:
+                    self.log.info("deferredPublish %s: found %s peers, publishing" % (inner_path, len(peers)))
+                    back = self.publish(limit=5, inner_path=inner_path)
+                    if back > 0:
+                        self.log.info("deferredPublish %s: successfully published to %s peers" % (inner_path, back))
+                        return back
+                    else:
+                        self.log.debug("deferredPublish %s: publish returned 0, retrying..." % inner_path)
+                else:
+                    self.log.debug("deferredPublish %s: still no peers after attempt %s" % (inner_path, attempt))
+
+            self.log.warning("deferredPublish %s: failed after %s attempts" % (inner_path, max_retries))
+            return 0
+        finally:
+            self._deferred_publish_active = False
+
     # Update content.json on peers
     @util.Noparallel()
     def publish(self, limit="default", inner_path="content.json", diffs=None, cb_progress=None):
@@ -875,6 +909,10 @@ class Site(object):
         ))
 
         if not peers:
+            # Schedule a deferred retry for owned sites — announce and wait for peers
+            if self.settings.get("own") and not getattr(self, "_deferred_publish_active", False):
+                self.log.info("Publish %s: no peers available, scheduling deferred retry" % inner_path)
+                gevent.spawn(self.deferredPublish, inner_path)
             return 0  # No peers found
 
         event_done = gevent.event.AsyncResult()
@@ -1148,6 +1186,7 @@ class Site(object):
 
         Only runs for owned sites. Uses push_pool (size 2) to limit concurrent
         pushes, preventing PEX discovery storms from spawning many greenlets.
+        Also publishes content.json to the peer if they don't have our latest version.
         """
         # Only push if we have files to share and the peer is still known
         if peer.key not in self.peers:
@@ -1160,6 +1199,26 @@ class Site(object):
             peer.sendMyHashfield()
             if not peer.updateHashfield(force=True):
                 return  # Can't reach peer
+
+            # Publish content.json to peer if they don't have our latest version
+            for inner_path in ["content.json"] + list(self.content_manager.contents.get("content.json", {}).get("includes", {}).keys()):
+                content = self.content_manager.contents.get(inner_path)
+                if not content:
+                    continue
+                modified = content.get("modified", 0)
+                if peer.last_content_json_update == modified:
+                    continue  # Peer already has this version
+                try:
+                    body = self.storage.read(inner_path)
+                    result = peer.publish(self.address, inner_path, body, modified)
+                    if result and "ok" in result:
+                        self.log.info("onPeerConnect: published %s to %s" % (inner_path, peer.key))
+                        if "hashfield_raw" in result:
+                            peer.hashfield.replaceFromBytes(result["hashfield_raw"])
+                    else:
+                        self.log.debug("onPeerConnect: publish %s to %s failed: %s" % (inner_path, peer.key, result))
+                except Exception as err:
+                    self.log.debug("onPeerConnect: publish %s error: %s" % (inner_path, err))
 
             # Push files they're missing
             pushed = self.pushFilesToPeer(peer)
