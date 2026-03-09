@@ -372,6 +372,59 @@ def resolve_xid_name(name, tld="epix"):
     return {"owner": owner, "identities": identities}
 
 
+def _resolve_xid_name_profile(xid_directory):
+    """Forward-resolve an xID directory name (e.g. "smile.epix") to a profile dict.
+
+    Returns the same shape as resolve_identity_xid: {name, tld, owner, avatar, bio, ...}
+    so the frontend xid_profiles cache works uniformly for both address-based and
+    directory-name-based lookups.
+    """
+    parts = xid_directory.rsplit(".", 1)
+    if len(parts) != 2 or not parts[0] or not parts[1]:
+        return None
+
+    name, tld = parts
+    cache_key = "%s.%s" % (name, tld)
+    now = time.time()
+
+    # Check the identity cache (keyed by directory name for forward lookups)
+    cached = _identity_cache.get(cache_key)
+    if cached:
+        ttl = IDENTITY_CACHE_TTL if cached.get("name") else NEGATIVE_CACHE_TTL
+        if (now - cached["cached_at"]) < ttl:
+            if cached.get("name"):
+                return {
+                    "name": cached["name"], "tld": cached["tld"],
+                    "owner": cached.get("owner", ""),
+                    "avatar": cached.get("avatar", ""),
+                    "bio": cached.get("bio", ""),
+                }
+            return None
+
+    rpc_url = _get_rpc_url()
+    domain, verified = _resolve_with_proof(rpc_url, tld, name)
+    if not domain or not verified:
+        _identity_cache[cache_key] = {"name": None, "cached_at": now}
+        return None
+
+    record = domain.get("record", {})
+    profile = domain.get("profile") or {}
+    entry = {
+        "name": name, "tld": tld,
+        "owner": record.get("owner", ""),
+        "avatar": profile.get("avatar", ""),
+        "bio": profile.get("bio", ""),
+        "cached_at": now,
+    }
+    _identity_cache[cache_key] = entry
+    return {
+        "name": name, "tld": tld,
+        "owner": entry["owner"],
+        "avatar": entry["avatar"],
+        "bio": entry["bio"],
+    }
+
+
 def invalidate_xid_name_cache(name=None):
     """Invalidate xID name resolution cache."""
     if name:
@@ -779,16 +832,21 @@ class UiWebsocketPlugin(object):
         self.response(to, result)
 
     def actionXidResolveBatch(self, to, peer_addresses):
-        """Batch resolve multiple identity addresses to xID names.
+        """Batch resolve multiple identity addresses or xID directory names.
 
-        Takes a list of addresses (max 50), returns a dict of address -> result.
+        Takes a list of addresses/names (max 50), returns a dict of key -> result.
+        Entries containing a "." are treated as xID names (e.g. "mud.epix") and
+        forward-resolved; plain addresses are reverse-resolved as before.
         """
         if not isinstance(peer_addresses, list):
             return self.response(to, {"error": "peer_addresses must be a list"})
 
         results = {}
         for addr in peer_addresses[:50]:
-            results[addr] = resolve_identity_xid(addr)
+            if "." in addr:
+                results[addr] = _resolve_xid_name_profile(addr)
+            else:
+                results[addr] = resolve_identity_xid(addr)
         self.response(to, results)
 
     def actionCertXid(self, to, xid_name=None):
