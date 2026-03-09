@@ -754,7 +754,7 @@ class Site(object):
         if inline_files is None:
             inline_files = {}
         file_size = self.storage.getSize(inner_path)
-        content_json_modified = self.content_manager.contents[inner_path]["modified"]
+        content_json_modified = self.content_manager.contents.get(inner_path, {}).get("modified", 0)
         body = self.storage.read(inner_path)
 
         while 1:
