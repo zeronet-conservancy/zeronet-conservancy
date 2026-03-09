@@ -110,11 +110,12 @@ class UiWebsocketPlugin(object):
 
     # Gets the publickey of a given privatekey
     def actionEccPrivToPub(self, to, privatekey):
-        self.response(to, curve.private_to_public(curve.wif_to_private(privatekey.encode())))
+        pub = curve.private_to_public(curve.wif_to_private(privatekey.encode()))
+        self.response(to, pub.decode("utf8") if isinstance(pub, bytes) else pub)
 
     # Gets the address of a given publickey
     def actionEccPubToAddr(self, to, publickey):
-        self.response(to, curve.public_to_address(bytes.fromhex(publickey)))
+        self.response(to, curve.public_to_address(bytes.fromhex(publickey)).decode("utf8"))
 
 
 @PluginManager.registerTo("User")

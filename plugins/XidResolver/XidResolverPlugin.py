@@ -315,6 +315,33 @@ _xid_name_cache = {}
 XID_NAME_CACHE_TTL = 300  # 5 minutes
 
 
+def _resolve_account_pubkey(address):
+    """Query the chain's auth module for an account's public key.
+
+    Returns the base64-encoded compressed public key string, or None if not found.
+    The key is only available after the account has broadcast at least one transaction.
+    """
+    rpc_url = _get_rpc_url()
+    url = "%s/cosmos/auth/v1beta1/accounts/%s" % (rpc_url, address)
+    log.debug("_resolve_account_pubkey: fetching %s" % url)
+    data = _fetch_json(url)
+    if not data:
+        log.debug("_resolve_account_pubkey: no data for %s" % address)
+        return None
+    log.debug("_resolve_account_pubkey: response keys=%s" % list(data.keys()))
+    account = data.get("account", {})
+    log.debug("_resolve_account_pubkey: account keys=%s" % list(account.keys()))
+    # EthAccount wraps BaseAccount
+    base = account.get("base_account", account)
+    log.debug("_resolve_account_pubkey: base keys=%s" % list(base.keys()))
+    pub_key = base.get("pub_key") or base.get("public_key")
+    log.debug("_resolve_account_pubkey: pub_key=%s" % repr(pub_key))
+    if pub_key and isinstance(pub_key, dict):
+        # Protobuf Any: {"@type": "/.../ethsecp256k1.PubKey", "key": "<base64>"}
+        return pub_key.get("key")
+    return None
+
+
 def resolve_xid_name(name, tld="epix"):
     """Resolve an xID name to its owner address and linked identities.
 
@@ -355,14 +382,20 @@ def resolve_xid_name(name, tld="epix"):
     record = domain.get("record", {})
     owner = record.get("owner", "")
 
-    # Extract identities from the verified domain snapshot
+    # Extract identities from the verified domain snapshot and resolve pubkeys
     identities = []
     for p in domain.get("identities", []):
-        identities.append({
+        identity = {
             "address": p.get("address", ""),
             "active": p.get("active", False),
             "revoked_at_time": int(p.get("revoked_at_time", 0)),
-        })
+        }
+        # Resolve public key for active identities
+        if identity["active"] and identity["address"]:
+            pubkey = _resolve_account_pubkey(identity["address"])
+            if pubkey:
+                identity["pubkey"] = pubkey
+        identities.append(identity)
 
     _xid_name_cache[cache_key] = {
         "owner": owner,
