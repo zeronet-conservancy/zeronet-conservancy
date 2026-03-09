@@ -100,8 +100,11 @@ class Actions:
             address = CryptEpix.privatekeyToAddress(privatekey)
             if not address or address is False:
                 raise Exception("Failed to generate valid site address from privatekey")
+        # Convert WIF to raw hex for wallet import
+        privatekey_hex = CryptEpix.sslcurve.wif_to_private(privatekey.encode()).hex()
         logging.info("----------------------------------------------------------------------")
-        logging.info("Site private key: %s" % privatekey)
+        logging.info("Site private key (WIF): %s" % privatekey)
+        logging.info("Site private key (hex): %s" % privatekey_hex)
         logging.info("                  !!! ^ Save it now, required to modify the site ^ !!!")
         logging.info("Site address:     %s" % address)
         logging.info("----------------------------------------------------------------------")
