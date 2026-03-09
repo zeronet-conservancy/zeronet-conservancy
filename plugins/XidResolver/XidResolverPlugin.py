@@ -914,14 +914,14 @@ class UiWebsocketPlugin(object):
         ) % (none_class, " <small>(currently selected)</small>" if current_domain != "xid" else "")
 
         if existing_cert and existing_cert.get("auth_user_name"):
-            # Show existing xID cert
-            cert_title = "%s@xid" % existing_cert["auth_user_name"]
-            active_class = " active" if current_domain == "xid" else ""
-            active_label = " <small>(currently selected)</small>" if current_domain == "xid" else ""
-            body += (
-                "<a href='#Select+account' class='select select-close cert%s' title='xid'>"
-                "<b>%s</b>%s</a>"
-            ) % (active_class, cert_title, active_label)
+            if current_domain == "xid":
+                # Already active — nothing to do
+                return self.response(to, "ok")
+            else:
+                # Existing cert not yet active on this site — activate it directly
+                self.user.setCert(self.site.address, "xid")
+                self.site.updateWebsocket(cert_changed="xid")
+                return self.response(to, "ok")
         else:
             # No xID cert yet — try auto-discovery and show register link
             tried = set()
