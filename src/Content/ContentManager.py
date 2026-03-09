@@ -462,6 +462,22 @@ class ContentManager:
             content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
             content = self.contents.get(content_inner_path)
 
+            # Return the rules if user dir (check before files to ensure
+            # per-user signing takes precedence over parent file listings)
+            if content and "user_contents" in content:
+                back = content["user_contents"]
+                content_inner_path_dir = helper.getDirname(content_inner_path)
+                relative_content_path = inner_path[len(content_inner_path_dir):]
+                user_auth_address_match = re.match(r"([A-Za-z0-9.]+)/.*", relative_content_path)
+                if user_auth_address_match:
+                    user_auth_address = user_auth_address_match.group(1)
+                    back["content_inner_path"] = "%s%s/content.json" % (content_inner_path_dir, user_auth_address)
+                else:
+                    back["content_inner_path"] = content_inner_path_dir + "content.json"
+                back["optional"] = None
+                back["relative_path"] = "/".join(inner_path_parts)
+                return back
+
             # Check in files
             if content and "files" in content:
                 back = content["files"].get("/".join(inner_path_parts))
@@ -479,21 +495,6 @@ class ContentManager:
                     back["optional"] = True
                     back["relative_path"] = "/".join(inner_path_parts)
                     return back
-
-            # Return the rules if user dir
-            if content and "user_contents" in content:
-                back = content["user_contents"]
-                content_inner_path_dir = helper.getDirname(content_inner_path)
-                relative_content_path = inner_path[len(content_inner_path_dir):]
-                user_auth_address_match = re.match(r"([A-Za-z0-9.]+)/.*", relative_content_path)
-                if user_auth_address_match:
-                    user_auth_address = user_auth_address_match.group(1)
-                    back["content_inner_path"] = "%s%s/content.json" % (content_inner_path_dir, user_auth_address)
-                else:
-                    back["content_inner_path"] = content_inner_path_dir + "content.json"
-                back["optional"] = None
-                back["relative_path"] = "/".join(inner_path_parts)
-                return back
 
             if new_file and content:
                 back = {}
@@ -687,7 +688,8 @@ class ContentManager:
         return re.sub("[\x00-\x1F\"*:<>?\\|]", "", inner_path)
 
     # Hash files in directory
-    def hashFiles(self, dir_inner_path, ignore_pattern=None, optional_pattern=None):
+    def hashFiles(self, dir_inner_path, ignore_pattern=None, optional_pattern=None,
+                  has_user_contents=False, included_dirs=None):
         files_node = {}
         files_optional_node = {}
         db_inner_path = self.site.storage.getDbFile()
@@ -708,7 +710,18 @@ class ContentManager:
                 self.log.error("- [ERROR] Invalid filename: %s" % file_relative_path)
             elif dir_inner_path == "" and db_inner_path and file_relative_path.startswith(db_inner_path):
                 ignored = True
-            elif optional_pattern and SafeRe.match(optional_pattern, file_relative_path):
+            elif has_user_contents and "/" in file_relative_path:
+                # Skip files in user subdirectories — those are managed by
+                # per-user content.json files, not the parent
+                ignored = True
+            elif included_dirs:
+                # Skip files under directories managed by included content.json
+                file_full_path = (dir_inner_path + file_relative_path) if dir_inner_path else file_relative_path
+                for inc_dir in included_dirs:
+                    if file_full_path.startswith(inc_dir):
+                        ignored = True
+                        break
+            if not ignored and optional_pattern and SafeRe.match(optional_pattern, file_relative_path):
                 optional = True
 
             if ignored:  # Ignore content.json, defined regexp and files starting with .
@@ -769,8 +782,21 @@ class ContentManager:
         self.log.info("Opening site data directory: %s..." % directory)
 
         changed_files = [inner_path]
+        has_user_contents = "user_contents" in content
+
+        # Build list of directories managed by included content.json files
+        # so we don't hash their files into this content.json's files dict
+        included_dirs = None
+        if content.get("includes"):
+            included_dirs = []
+            for include_path in content["includes"]:
+                inc_dir = helper.getDirname(include_path)
+                if inc_dir:
+                    included_dirs.append(inner_directory + inc_dir if inner_directory else inc_dir)
+
         files_node, files_optional_node = self.hashFiles(
-            helper.getDirname(inner_path), content.get("ignore"), content.get("optional")
+            helper.getDirname(inner_path), content.get("ignore"), content.get("optional"),
+            has_user_contents=has_user_contents, included_dirs=included_dirs
         )
 
         if not remove_missing_optional:
