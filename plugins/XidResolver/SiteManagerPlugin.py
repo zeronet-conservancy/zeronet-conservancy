@@ -297,11 +297,6 @@ class SiteManagerPlugin(object):
         Merkle proof against the attested root or a chain-ID-verified
         forward resolution that confirmed domain -> address.
         """
-        # Already verified via forward resolution
-        cached = _reverse_cache.get(address)
-        if cached:
-            return cached
-
         # Check if the site claims a domain in content.json
         site = self.sites.get(address)
         if not site:
@@ -313,6 +308,11 @@ class SiteManagerPlugin(object):
         domain = content["domain"].lower()
         if not domain.endswith(".epix"):
             return None
+
+        # Fast path: already verified via forward resolution
+        cached = _reverse_cache.get(address)
+        if cached and cached == domain:
+            return cached
 
         # Verify against chain: resolve the claimed domain and check it points here
         resolved = self.resolveEpixDomain(domain)

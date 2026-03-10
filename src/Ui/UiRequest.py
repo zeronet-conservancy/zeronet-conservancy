@@ -464,7 +464,7 @@ class UiRequest:
 
     # Redirect to an url
     def actionRedirect(self, url):
-        self.start_response('301 Redirect', [('Location', str(url))])
+        self.start_response('302 Found', [('Location', str(url))])
         return self.formatRedirect(url)
 
     def actionIndex(self):
