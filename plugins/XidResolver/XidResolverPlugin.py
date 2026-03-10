@@ -44,7 +44,7 @@ _digest_cache = {"digest": None, "height": 0, "timestamp": 0}
 _attestation_cache = {}
 
 DIGEST_CACHE_TTL = 15  # seconds
-ATTESTATION_CACHE_TTL = 30  # seconds
+ATTESTATION_CACHE_TTL = 5  # seconds
 
 
 def _fetch_state_digest(rpc_url):
