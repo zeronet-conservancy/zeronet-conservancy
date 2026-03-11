@@ -228,5 +228,9 @@ class ConfigPlugin(object):
         group = self.parser.add_argument_group("Chain Attestation plugin")
         group.add_argument('--chain-rpc-url', help='Epix Chain REST API URL for xID attestation verification',
                            default='https://api.epix.zone', metavar='url')
+        group.add_argument('--chain-evm-rpc-url', help='Epix Chain EVM JSON-RPC URL',
+                           default='https://evmrpc.epix.zone', metavar='url')
+        group.add_argument('--chain-block-explorer-url', help='Epix Chain block explorer URL',
+                           default='https://scan.epix.zone', metavar='url')
 
         return super(ConfigPlugin, self).createArguments()

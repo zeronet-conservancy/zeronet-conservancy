@@ -366,6 +366,12 @@ class UiWebsocket(object):
                 'plugins_rev' : {},
                 'user_settings' : self.user.settings #?
             }
+
+        # Chain RPC URLs are available to all sites (not sensitive)
+        back['chain_rpc_url'] = getattr(config, 'chain_rpc_url', 'https://api.epix.zone')
+        back['chain_evm_rpc_url'] = getattr(config, 'chain_evm_rpc_url', 'https://evmrpc.epix.zone')
+        back['chain_block_explorer_url'] = getattr(config, 'chain_block_explorer_url', 'https://scan.epix.zone')
+
         return back
 
     def formatAnnouncerInfo(self, site):

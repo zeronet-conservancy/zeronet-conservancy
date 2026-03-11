@@ -1615,6 +1615,22 @@
         description: "Epix Chain REST API URL.",
         value_pos: "fullwidth"
       });
+      section.items.push({
+        key: "chain_evm_rpc_url",
+        title: "Chain EVM RPC URL",
+        type: "text",
+        placeholder: "https://evmrpc.epix.zone",
+        description: "Epix Chain EVM JSON-RPC URL for wallet connections.",
+        value_pos: "fullwidth"
+      });
+      section.items.push({
+        key: "chain_block_explorer_url",
+        title: "Block Explorer URL",
+        type: "text",
+        placeholder: "https://scan.epix.zone",
+        description: "Epix Chain block explorer URL.",
+        value_pos: "fullwidth"
+      });
       return section.items.push({
         key: "xid_clear_cache",
         title: "Clear xID Cache",
