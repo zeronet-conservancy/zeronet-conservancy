@@ -71,23 +71,23 @@ def _fetch_latest_beacon():
         return _latest_beacon_cache["data"]
 
     rpc_url = _get_rpc_url()
-    data = _fetch_json("%s/vrf/v1/beacon/latest" % rpc_url)
-    if not data or "beacon" not in data:
+
+    # Get the latest block height, then fetch that beacon.
+    # We subtract 1 because the current block's beacon may not be stored yet
+    # (it is produced during EndBlock of that height).
+    block_data = _fetch_json("%s/cosmos/base/tendermint/v1beta1/blocks/latest" % rpc_url)
+    if not block_data:
         return None
 
-    beacon_data = data["beacon"]
-    result = {
-        "height": int(beacon_data.get("height", 0)),
-        "beacon": beacon_data.get("beacon", ""),
-        "proposer": beacon_data.get("proposer", ""),
-        "timestamp": int(beacon_data.get("timestamp", 0)),
-    }
+    try:
+        latest_height = int(block_data["block"]["header"]["height"]) - 1
+    except (KeyError, TypeError, ValueError):
+        return None
 
-    # Also populate the per-height cache
-    _beacon_cache[result["height"]] = dict(result, cached_at=now)
+    if latest_height < 1:
+        return None
 
-    _latest_beacon_cache = {"data": result, "cached_at": now}
-    return result
+    return _fetch_beacon(latest_height)
 
 
 def _derive_random_values(beacon_hex, seed, count):

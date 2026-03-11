@@ -183,7 +183,7 @@ def _resolve_with_proof(rpc_url, tld, name):
 
 def _get_rpc_url():
     """Get the xID REST API base URL."""
-    return getattr(config, "xid_rpc_url", "https://api.testnet.epix.zone").rstrip("/")
+    return getattr(config, "chain_rpc_url", "https://api.epix.zone").rstrip("/")
 
 
 def _fetch_json(url, timeout=10):
