@@ -69,7 +69,10 @@ class UiWebsocketPlugin(object):
                         query_params = map(helper.sqlquote, params)
                         query = query.replace(":params", ",".join(query_params))
 
-                    full_query = query + " ORDER BY date_added DESC LIMIT %s" % limit
+                    if "GROUP BY" in query.upper():
+                        full_query = "SELECT * FROM (%s) ORDER BY date_added DESC LIMIT %s" % (query, limit)
+                    else:
+                        full_query = query + " ORDER BY date_added DESC LIMIT %s" % limit
                     res = site.storage.query(full_query)
 
                 except Exception as err:  # Log error
