@@ -57,11 +57,18 @@ class UiWebsocketPlugin(object):
                     for i, query_part in enumerate(query_parts):
                         db_query = DbQuery(query_part)
                         if day_limit:
-                            where = " WHERE %s > strftime('%%s', 'now', '-%s day')" % (db_query.fields.get("date_added", "date_added"), day_limit)
-                            if "WHERE" in query_part:
-                                query_part = re.sub("WHERE (.*?)(?=$| GROUP BY)", where+" AND (\\1)", query_part)
+                            date_field = db_query.fields.get("date_added", "date_added")
+                            has_group_by = "GROUP BY" in query_part.upper()
+                            if has_group_by:
+                                # Aggregate aliases can't go in WHERE; use HAVING
+                                having = " HAVING %s > strftime('%%s', 'now', '-%s day')" % (date_field, day_limit)
+                                query_part = query_part.rstrip() + having
                             else:
-                                query_part += where
+                                where = " WHERE %s > strftime('%%s', 'now', '-%s day')" % (date_field, day_limit)
+                                if "WHERE" in query_part:
+                                    query_part = re.sub("WHERE (.*?)(?=$| GROUP BY)", where+" AND (\\1)", query_part)
+                                else:
+                                    query_part += where
                         query_parts[i] = query_part
                     query = " UNION ".join(query_parts)
 
@@ -69,10 +76,7 @@ class UiWebsocketPlugin(object):
                         query_params = map(helper.sqlquote, params)
                         query = query.replace(":params", ",".join(query_params))
 
-                    if "GROUP BY" in query.upper():
-                        full_query = "SELECT * FROM (%s) ORDER BY date_added DESC LIMIT %s" % (query, limit)
-                    else:
-                        full_query = query + " ORDER BY date_added DESC LIMIT %s" % limit
+                    full_query = query + " ORDER BY date_added DESC LIMIT %s" % limit
                     res = site.storage.query(full_query)
 
                 except Exception as err:  # Log error
