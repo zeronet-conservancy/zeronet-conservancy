@@ -40,7 +40,7 @@
 			"post_id": 36,
 			"title": "Changelog: Apr 29, 2015",
 			"date_published": 1430388168.315,
-			"body": " - rev126\n - You can install the \"127.0.0.1:43110-less\" extension from [Chrome Web Store](https://chrome.google.com/webstore/detail/zeronet-protocol/cpkpdcdljfbnepgfejplkhdnopniieop). (thanks to g0ld3nrati0!)\n - You can disable the use of openssl using `--use_openssl False`\n - OpenSSL disabled on OSX because of possible segfault. You can enable it again using `zeronet.py --use_openssl True`,<br> please [give your feedback](https://github.com/HelloZeroNet/ZeroNet/issues/94)!\n - Update on non existent file bugfix\n - Save 20% memory using Python slots\n\n![Memory save](data/img/slots_memory.png)"
+			"body": " - rev126\n - You can install the \"127.0.0.1:43110-less\" extension from [Chrome Web Store](https://chrome.google.com/webstore/detail/zeronet-protocol/cpkpdcdljfbnepgfejplkhdnopniieop). (thanks to g0ld3nrati0!)\n - You can disable the use of openssl using `--use_openssl False`\n - OpenSSL disabled on OSX because of possible segfault. You can enable it again using `zeronet.py --use_openssl True`,<br> please [give your feedback](https://github.com/zeronet-conservancy/zeronet-conservancy/issues/94)!\n - Update on non existent file bugfix\n - Save 20% memory using Python slots\n\n![Memory save](data/img/slots_memory.png)"
 		},
 		{
 			"post_id": 35,
@@ -100,7 +100,7 @@
 			"post_id": 26,
 			"title": "Changelog: Apr 7, 2015",
 			"date_published": 1428454413.286,
-			"body": " - Fix for big sites confirmation display\n - Total objects in memory stat\n - Memory optimizations\n - Retry bad files in every 20min\n - Load files to db when executing external siteSign command\n - Fix for endless reconnect bug\n \nZeroTalk:\n \n - Added experimental P2P new bot\n - Bumped size limit to 20k for every user :)\n - Reply button\n\nExperimenting/researching possibilities of i2p/tor support (probably using DHT)\n\nAny help/suggestion/idea greatly welcomed: [github issue](https://github.com/HelloZeroNet/ZeroNet/issues/60)"
+			"body": " - Fix for big sites confirmation display\n - Total objects in memory stat\n - Memory optimizations\n - Retry bad files in every 20min\n - Load files to db when executing external siteSign command\n - Fix for endless reconnect bug\n \nZeroTalk:\n \n - Added experimental P2P new bot\n - Bumped size limit to 20k for every user :)\n - Reply button\n\nExperimenting/researching possibilities of i2p/tor support (probably using DHT)\n\nAny help/suggestion/idea greatly welcomed: [github issue](https://github.com/zeronet-conservancy/zeronet-conservancy/issues/60)"
 		},
 		{
 			"post_id": 25,

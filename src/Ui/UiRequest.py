@@ -525,7 +525,7 @@ class UiRequest:
                 gevent.spawn(site.update, announce=True)
 
             return iter([self.renderWrapper(site, path, inner_path, title, extra_headers, script_nonce=script_nonce)])
-            # Make response be sent at once (see https://github.com/HelloZeroNet/ZeroNet/issues/1092)
+            # Make response be sent at once (see https://github.com/zeronet-conservancy/zeronet-conservancy/issues/1092)
 
         else:  # Bad url
             return False
@@ -1079,7 +1079,7 @@ class UiRequest:
                 </style>
                 <h1>%s</h1>
                 <h2>%s</h3>
-                <h3>Please <a href="https://github.com/HelloZeroNet/ZeroNet/issues" target="_top">report it</a> if you think this an error.</h3>
+                <h3>Please <a href="https://github.com/zeronet-conservancy/zeronet-conservancy/issues" target="_top">report it</a> if you think this an error.</h3>
                 <h4>Details:</h4>
                 <pre>%s</pre>
             """ % (title, html.escape(message), html.escape(json.dumps(details, indent=4, sort_keys=True)))
