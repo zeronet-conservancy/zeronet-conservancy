@@ -1049,9 +1049,17 @@ class ContentManager:
                     for address in valid_signers:
                         if address in signs:
                             valid_signs += CryptBitcoin.verify(sign_content, address, signs[address])
+                        else:
+                            if 0:
+                                # debug
+                                print(f"valid_signers address not in signs: address={address} signs={list(signs.keys())}")
                         if valid_signs >= signs_required:
                             break  # Break if we has enough signs
                     if valid_signs < signs_required:
+                        # FIXME VerifyError: Valid signs: 0/1
+                        if 0:
+                            # debug: skip validation
+                            return True
                         raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
                     else:
                         return self.verifyContent(inner_path, new_content)
