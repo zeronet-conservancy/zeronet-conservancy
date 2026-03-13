@@ -886,6 +886,8 @@ class ContentManager:
     # Checks if the content.json content is valid
     # Return: True or False
     def verifyContent(self, inner_path, content):
+        if isinstance(inner_path, str):
+            inner_path = Path(inner_path)
         content_size = len(json.dumps(content, indent=1)) + sum([file["size"] for file in list(content["files"].values()) if file["size"] >= 0])  # Size of new content
         # Calculate old content size
         old_content = self.contents.get(inner_path)
