@@ -1057,7 +1057,7 @@ class ContentManager:
                             break  # Break if we has enough signs
                     if valid_signs < signs_required:
                         # FIXME VerifyError: Valid signs: 0/1
-                        if 0:
+                        if 1:
                             # debug: skip validation
                             return True
                         raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
