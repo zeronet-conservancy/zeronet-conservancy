@@ -6,6 +6,7 @@ import json
 import html
 import urllib
 import socket
+import pathlib
 
 import gevent
 
@@ -1064,7 +1065,12 @@ class UiRequest:
             details["version_python"] = sys.version
             details["version_gevent"] = gevent.__version__
             details["plugins"] = PluginManager.plugin_manager.plugin_names
-            arguments = {key: val for key, val in vars(config.arguments).items() if "password" not in key}
+            def fix_val(val):
+                if isinstance(val, pathlib.Path):
+                    # fix: TypeError: Object of type PosixPath is not JSON serializable
+                    return str(val)
+                return val
+            arguments = {key: fix_val(val) for key, val in vars(config.arguments).items() if "password" not in key}
             details["arguments"] = arguments
             return """
                 <style>
