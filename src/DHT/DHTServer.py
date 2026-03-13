@@ -62,7 +62,7 @@ class DHTServer:
             logging.warning(f'DHT not yet initialized, skipping announce for {site_hash.hex()}')
             return
         await self.dht.announce(site_hash, config.fileserver_port)
-        logging.info(f'DHT: announced {site_hash.hex()}, looking for peers')
+        logging.debug(f'DHT: announced {site_hash.hex()}, looking for peers')
         self.peers[site_hash] = await self.dht[site_hash]
 
     def announce(self, site_hash):
