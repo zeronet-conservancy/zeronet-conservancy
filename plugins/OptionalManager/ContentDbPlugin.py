@@ -123,7 +123,7 @@ class ContentDbPlugin(object):
         if not site_id:
             return False
         cur = self.getCursor()
-        res = cur.execute("SELECT * FROM content WHERE size_files_optional > 0 AND site_id = %s" % site_id)
+        res = cur.execute("SELECT * FROM content WHERE size_files_optional > 0 AND site_id = ?", (site_id,))
         num = 0
         for row in res.fetchall():
             content = site.content_manager.contents[row["inner_path"]]

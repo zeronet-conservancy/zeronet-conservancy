@@ -112,7 +112,9 @@ class ChartDb(Db):
                     "value": row["value"],
                     "date_added": row["date_added"]
                 })
-                cur.execute("DELETE FROM data WHERE data_id IN (%s)" % row["data_ids"])
+                data_id_list = [int(x) for x in row["data_ids"].split(",")]
+                placeholders = ",".join(["?"] * len(data_id_list))
+                cur.execute("DELETE FROM data WHERE data_id IN (%s)" % placeholders, data_id_list)
                 num_archived += row["num"]
             self.log.debug("Archived %s data from %s weeks ago in %.3fs" % (num_archived, week_back, time.time() - s))
             week_back += 1

@@ -2,6 +2,7 @@ import time
 import html
 import os
 import json
+import re
 import sys
 import itertools
 
@@ -155,6 +156,8 @@ class UiRequestPlugin(object):
             tables = [row["name"] for row in db.execute("SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()]
             table_rows = {}
             for table in tables:
+                if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', table):
+                    continue
                 table_rows[table] = db.execute("SELECT COUNT(*) AS c FROM %s" % table).fetchone()["c"]
             db_size = os.path.getsize(db.db_path) / 1024.0 / 1024.0
             yield "- %.3fs: %s %.3fMB, table rows: %s<br>" % (

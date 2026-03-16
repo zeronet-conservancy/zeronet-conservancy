@@ -491,7 +491,7 @@ class Db(object):
         # Cleanup json row
         if not data:
             self.log.debug("Cleanup json row for %s" % file_path)
-            cur.execute("DELETE FROM json WHERE json_id = %s" % json_row["json_id"])
+            cur.execute("DELETE FROM json WHERE json_id = ?", (json_row["json_id"],))
 
         return True
 

@@ -16,6 +16,11 @@ def guard(pattern):
     if unsafe_pattern_match:
         raise UnsafePatternError("Potentially unsafe part of the pattern: %s in %s" % (unsafe_pattern_match.group(0), pattern))
 
+    # Check for nested quantifiers like (x+)+ or (x*)* which cause catastrophic backtracking
+    nested_quantifier = re.search(r'\([^)]*[+*][^)]*\)[+*{]', pattern)
+    if nested_quantifier:
+        raise UnsafePatternError("Nested quantifier detected: %s in %s" % (nested_quantifier.group(0), pattern))
+
     repetitions1 = re.findall(r"\.[\*\{\+]", pattern)
     repetitions2 = re.findall(r"[^(][?]", pattern)
     if len(repetitions1) + len(repetitions2) >= 10:

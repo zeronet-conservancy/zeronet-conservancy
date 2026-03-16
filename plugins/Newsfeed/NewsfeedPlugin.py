@@ -8,6 +8,13 @@ from util import helper
 from util.Flag import flag
 
 
+def sanitize_sql_field(field, fallback="date_added"):
+    """Ensure a field name is a safe SQL identifier (letters, digits, underscores only)."""
+    if re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', field):
+        return field
+    return fallback
+
+
 @PluginManager.registerTo("UiWebsocket")
 class UiWebsocketPlugin(object):
     def formatSiteInfo(self, site, create_user=True):
@@ -31,6 +38,10 @@ class UiWebsocketPlugin(object):
     @flag.admin
     def actionFeedQuery(self, to, limit=10, day_limit=3):
         from Site import SiteManager
+
+        limit = int(limit)
+        day_limit = int(day_limit)
+
         rows = []
         stats = []
 
@@ -57,7 +68,7 @@ class UiWebsocketPlugin(object):
                     for i, query_part in enumerate(query_parts):
                         db_query = DbQuery(query_part)
                         if day_limit:
-                            date_field = db_query.fields.get("date_added", "date_added")
+                            date_field = sanitize_sql_field(db_query.fields.get("date_added", "date_added"))
                             has_group_by = "GROUP BY" in query_part.upper()
                             if has_group_by:
                                 # Aggregate aliases can't go in WHERE; use HAVING
@@ -119,6 +130,10 @@ class UiWebsocketPlugin(object):
             return self.response(to, "FeedSearch not allowed")
 
         from Site import SiteManager
+
+        limit = int(limit)
+        day_limit = int(day_limit)
+
         rows = []
         stats = []
         num_sites = 0
@@ -155,7 +170,9 @@ class UiWebsocketPlugin(object):
                     params = []
                     # Filters
                     if search_text:
-                        db_query.wheres.append("(%s LIKE ? OR %s LIKE ?)" % (db_query.fields["body"], db_query.fields["title"]))
+                        body_field = sanitize_sql_field(db_query.fields.get("body", "body"), "body")
+                        title_field = sanitize_sql_field(db_query.fields.get("title", "title"), "title")
+                        db_query.wheres.append("(%s LIKE ? OR %s LIKE ?)" % (body_field, title_field))
                         search_like = "%" + search_text.replace(" ", "%") + "%"
                         params.append(search_like)
                         params.append(search_like)
@@ -163,8 +180,9 @@ class UiWebsocketPlugin(object):
                         continue
 
                     if day_limit:
+                        search_date_field = sanitize_sql_field(db_query.fields.get("date_added", "date_added"))
                         db_query.wheres.append(
-                            "%s > strftime('%%s', 'now', '-%s day')" % (db_query.fields.get("date_added", "date_added"), day_limit)
+                            "%s > strftime('%%s', 'now', '-%s day')" % (search_date_field, day_limit)
                         )
 
                     # Order
