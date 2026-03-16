@@ -343,7 +343,7 @@ class FileRequest(object):
 
             with file_obj as file:
                 file.seek(params["location"])
-                read_bytes = params.get("read_bytes", FILE_BUFF)
+                read_bytes = min(params.get("read_bytes", FILE_BUFF), FILE_BUFF)
                 file_size = os.fstat(file.fileno()).st_size
 
                 if file_size > read_bytes:  # Check if file is readable at current position (for big files)

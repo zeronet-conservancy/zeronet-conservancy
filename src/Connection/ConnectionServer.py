@@ -147,11 +147,18 @@ class ConnectionServer(object):
             self.ip_incoming[ip] += 1
             if self.ip_incoming[ip] > 6:  # Allow 6 in 1 minute from same ip
                 self.log.debug("Connection flood detected from %s" % ip)
-                time.sleep(30)
+                gevent.sleep(30)  # Cooperative sleep — slows attacker without blocking other greenlets
                 sock.close()
                 return False
         else:
             self.ip_incoming[ip] = 1
+
+        # Global incoming connection limit
+        if len(self.connections) >= config.global_connected_limit:
+            self.log.debug("Incoming connection rejected: global limit reached (%s)" % len(self.connections))
+            sock.close()
+            gevent.spawn(self.checkMaxConnections)
+            return False
 
         connection = Connection(self, ip, port, sock)
         self.connections.append(connection)

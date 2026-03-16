@@ -187,6 +187,7 @@ class Connection(object):
             sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
 
         self.type = "in"
+        self.sock.settimeout(30)  # Timeout for handshake phase
         if self.ip not in config.ip_local:   # Clearnet: Check implicit SSL
             try:
                 first_byte = sock.recv(1, gevent.socket.MSG_PEEK)
@@ -397,6 +398,8 @@ class Connection(object):
             return False
 
         self.handshake = handshake
+        if self.sock:
+            self.sock.settimeout(None)  # Clear handshake timeout after successful handshake
         if handshake.get("port_opened", None) is False and "onion" not in handshake and not self.is_private_ip:  # Not connectable
             self.port = 0
         else:
