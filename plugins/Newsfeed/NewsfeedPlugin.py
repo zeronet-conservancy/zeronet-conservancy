@@ -40,7 +40,7 @@ class UiWebsocketPlugin(object):
         from Site import SiteManager
 
         limit = int(limit)
-        day_limit = int(day_limit)
+        day_limit = int(day_limit) if day_limit is not None else 0
 
         rows = []
         stats = []
@@ -132,7 +132,7 @@ class UiWebsocketPlugin(object):
         from Site import SiteManager
 
         limit = int(limit)
-        day_limit = int(day_limit)
+        day_limit = int(day_limit) if day_limit is not None else 0
 
         rows = []
         stats = []

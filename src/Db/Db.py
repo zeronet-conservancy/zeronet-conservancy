@@ -15,7 +15,7 @@ import errno
 import gevent
 
 from Debug import Debug
-from .DbCursor import DbCursor
+from .DbCursor import DbCursor, safe_sql_identifier
 from util import SafeRe
 from util import helper
 from util import ThreadPool
@@ -431,14 +431,14 @@ class Db(object):
             # Insert data to tables
             for table_settings in dbmap.get("to_table", []):
                 if isinstance(table_settings, dict):  # Custom settings
-                    table_name = table_settings["table"]  # Table name to insert datas
+                    table_name = safe_sql_identifier(table_settings["table"])  # Table name to insert datas
                     node = table_settings.get("node", table_name)  # Node keyname in data json file
                     key_col = table_settings.get("key_col")  # Map dict key as this col
                     val_col = table_settings.get("val_col")  # Map dict value as this col
                     import_cols = table_settings.get("import_cols")
                     replaces = table_settings.get("replaces")
                 else:  # Simple settings
-                    table_name = table_settings
+                    table_name = safe_sql_identifier(table_settings)
                     node = table_settings
                     key_col = None
                     val_col = None

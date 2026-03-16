@@ -275,7 +275,7 @@ class ContentDbPlugin(object):
         limit_start = 0
         while 1:
             num = 0
-            res = self.execute("%s LIMIT %s, 50" % (query, limit_start))
+            res = self.execute("%s LIMIT %d, 50" % (query, limit_start))
             for row in res:
                 yield row
                 num += 1
@@ -294,7 +294,7 @@ class ContentDbPlugin(object):
         limit_start = 0
         while 1:
             num = 0
-            res = self.execute("%s LIMIT %s, 50" % (query, limit_start))
+            res = self.execute("%s LIMIT %d, 50" % (query, limit_start))
             for row in res:
                 yield row
                 num += 1
@@ -313,7 +313,7 @@ class ContentDbPlugin(object):
         limit_start = 0
         while 1:
             num = 0
-            res = self.execute("%s LIMIT %s, 50" % (query, limit_start))
+            res = self.execute("%s LIMIT %d, 50" % (query, limit_start))
             for row in res:
                 yield row
                 num += 1
@@ -330,14 +330,14 @@ class ContentDbPlugin(object):
         return limit_bytes
 
     def getOptionalUsedWhere(self):
-        maxsize = config.optional_limit_exclude_minsize * 1024 * 1024
-        query = "is_downloaded = 1 AND is_pinned = 0 AND size < %s" % maxsize
+        maxsize = int(config.optional_limit_exclude_minsize * 1024 * 1024)
+        query = "is_downloaded = 1 AND is_pinned = 0 AND size < %d" % maxsize
 
         # Don't delete optional files from owned sites
         my_site_ids = []
         for address, site in self.sites.items():
             if site.settings["own"]:
-                my_site_ids.append(str(self.site_ids[address]))
+                my_site_ids.append(str(int(self.site_ids[address])))
 
         if my_site_ids:
             query += " AND site_id NOT IN (%s)" % ", ".join(my_site_ids)

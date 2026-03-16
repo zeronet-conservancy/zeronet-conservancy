@@ -30,7 +30,7 @@ def processAccessLog():
         num = 0
         for site_id in access_log_prev:
             content_db.execute(
-                "UPDATE file_optional SET time_accessed = %s WHERE ?" % now,
+                "UPDATE file_optional SET time_accessed = %d WHERE ?" % now,
                 {"site_id": site_id, "inner_path": list(access_log_prev[site_id].keys())}
             )
             num += len(access_log_prev[site_id])
@@ -52,7 +52,7 @@ def processRequestLog():
         for site_id in request_log_prev:
             for inner_path, uploaded in request_log_prev[site_id].items():
                 content_db.execute(
-                    "UPDATE file_optional SET uploaded = uploaded + %s WHERE ?" % uploaded,
+                    "UPDATE file_optional SET uploaded = uploaded + %d WHERE ?" % int(uploaded),
                     {"site_id": site_id, "inner_path": inner_path}
                 )
                 num += 1

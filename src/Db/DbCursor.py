@@ -4,6 +4,21 @@ from util import helper
 
 # Special sqlite cursor
 
+_safe_identifier_re = re.compile(r'^[a-zA-Z_][a-zA-Z0-9_]*$')
+
+
+def safe_sql_identifier(name):
+    """Validate that a name is a safe SQL identifier (table name, column name).
+
+    Sites on EpixNet define their own dbschema.json which controls table and
+    column names.  Since sites are authored by untrusted third parties, every
+    identifier that ends up in a SQL string via ``%s`` formatting must be
+    validated first to prevent SQL injection.
+    """
+    if not isinstance(name, str) or not _safe_identifier_re.match(name):
+        raise ValueError("Unsafe SQL identifier: %r" % name)
+    return name
+
 
 class DbCursor:
 
@@ -27,10 +42,10 @@ class DbCursor:
                 for key, value in params.items():
                     if type(value) is list:
                         if key.startswith("not__"):
-                            field = key.replace("not__", "")
+                            field = safe_sql_identifier(key.replace("not__", "").strip())
                             operator = "NOT IN"
                         else:
-                            field = key
+                            field = safe_sql_identifier(key.strip())
                             operator = "IN"
                         if len(value) > 100:
                             # Embed values in query to avoid "too many SQL variables" error
@@ -44,15 +59,15 @@ class DbCursor:
                         )
                     else:
                         if key.startswith("not__"):
-                            query_wheres.append(key.replace("not__", "") + " != ?")
+                            query_wheres.append(safe_sql_identifier(key.replace("not__", "").strip()) + " != ?")
                         elif key.endswith("__like"):
-                            query_wheres.append(key.replace("__like", "") + " LIKE ?")
+                            query_wheres.append(safe_sql_identifier(key.replace("__like", "").strip()) + " LIKE ?")
                         elif key.endswith(">"):
-                            query_wheres.append(key.replace(">", "") + " > ?")
+                            query_wheres.append(safe_sql_identifier(key.replace(">", "").strip()) + " > ?")
                         elif key.endswith("<"):
-                            query_wheres.append(key.replace("<", "") + " < ?")
+                            query_wheres.append(safe_sql_identifier(key.replace("<", "").strip()) + " < ?")
                         else:
-                            query_wheres.append(key + " = ?")
+                            query_wheres.append(safe_sql_identifier(key.strip()) + " = ?")
                         values.append(value)
                 wheres = " AND ".join(query_wheres)
                 if wheres == "":
@@ -61,7 +76,7 @@ class DbCursor:
                 params = values
             else:
                 # Convert param dict to INSERT INTO table (key, key2) VALUES (?, ?) format
-                keys = ", ".join(params.keys())
+                keys = ", ".join(safe_sql_identifier(k) for k in params.keys())
                 values = ", ".join(['?' for key in params.keys()])
                 keysvalues = "(%s) VALUES (%s)" % (keys, values)
                 query = re.sub("(.*)[?]", "\\1%s" % keysvalues, query)  # Replace the last ?
@@ -158,29 +173,31 @@ class DbCursor:
 
     # Creates on updates a database row without incrementing the rowid
     def insertOrUpdate(self, table, query_sets, query_wheres, oninsert={}):
-        sql_sets = ["%s = :%s" % (key, key) for key in query_sets.keys()]
-        sql_wheres = ["%s = :%s" % (key, key) for key in query_wheres.keys()]
+        safe_table = safe_sql_identifier(table)
+        sql_sets = ["%s = :%s" % (safe_sql_identifier(key), key) for key in query_sets.keys()]
+        sql_wheres = ["%s = :%s" % (safe_sql_identifier(key), key) for key in query_wheres.keys()]
 
         params = query_sets
         params.update(query_wheres)
         res = self.execute(
-            "UPDATE %s SET %s WHERE %s" % (table, ", ".join(sql_sets), " AND ".join(sql_wheres)),
+            "UPDATE %s SET %s WHERE %s" % (safe_table, ", ".join(sql_sets), " AND ".join(sql_wheres)),
             params
         )
         if res.rowcount == 0:
             params.update(oninsert)  # Add insert-only fields
-            self.execute("INSERT INTO %s ?" % table, params)
+            self.execute("INSERT INTO %s ?" % safe_table, params)
 
     # Create new table
     # Return: True on success
     def createTable(self, table, cols):
         # TODO: Check current structure
-        self.execute("DROP TABLE IF EXISTS %s" % table)
+        safe_table = safe_sql_identifier(table)
+        self.execute("DROP TABLE IF EXISTS %s" % safe_table)
         col_definitions = []
         for col_name, col_type in cols:
-            col_definitions.append("%s %s" % (col_name, col_type))
+            col_definitions.append("%s %s" % (safe_sql_identifier(col_name), col_type))
 
-        self.execute("CREATE TABLE %s (%s)" % (table, ",".join(col_definitions)))
+        self.execute("CREATE TABLE %s (%s)" % (safe_table, ",".join(col_definitions)))
         return True
 
     # Create indexes on table
@@ -195,6 +212,7 @@ class DbCursor:
     # Create table if not exist
     # Return: True if updated
     def needTable(self, table, cols, indexes=None, version=1):
+        safe_sql_identifier(table)  # Validate table name before any use
         current_version = self.db.getTableVersion(table)
         if int(current_version) < int(version):  # Table need update or not extis
             self.db.log.debug("Table %s outdated...version: %s need: %s, rebuilding..." % (table, current_version, version))

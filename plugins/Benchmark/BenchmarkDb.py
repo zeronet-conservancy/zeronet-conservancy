@@ -112,7 +112,7 @@ class ActionsPlugin:
             found_total = 0
             for i in range(num_run):  # 1000x by test_id
                 found = 0
-                res = db.execute("SELECT * FROM test WHERE test_id = %s" % (i % 100))
+                res = db.execute("SELECT * FROM test WHERE test_id = %d" % (i % 100))
                 for row in res:
                     found_total += 1
                     found += 1
@@ -130,7 +130,7 @@ class ActionsPlugin:
             found_total = 0
             for i in range(num_run):  # 1000x by test_id
                 found = 0
-                res = db.execute("SELECT * FROM test WHERE json_id = %s" % i)
+                res = db.execute("SELECT * FROM test WHERE json_id = %d" % i)
                 for row in res:
                     found_total += 1
                     found += 1
