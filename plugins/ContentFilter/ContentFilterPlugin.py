@@ -200,7 +200,8 @@ class SiteStoragePlugin(object):
     def updateDbFile(self, inner_path, file=None, cur=None):
         if file is not False:  # File deletion always allowed
             # Find for bitcoin addresses in file path
-            matches = re.findall("/(1[A-Za-z0-9]{26,35})/", inner_path)
+            # ugh, this isn't beautiful
+            matches = re.findall("/(1[A-Za-z0-9]{26,35})/", str(inner_path))
             # Check if any of the adresses are in the mute list
             for auth_address in matches:
                 if filter_storage.isMuted(auth_address):

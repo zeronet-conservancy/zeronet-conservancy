@@ -8,6 +8,7 @@ import warnings
 import base64
 import binascii
 import json
+from pathlib import Path
 
 import gevent
 import gevent.lock
@@ -329,7 +330,7 @@ class ContentManagerPlugin(object):
         }
 
     def hashFile(self, dir_inner_path, file_relative_path, optional=False):
-        inner_path = dir_inner_path + file_relative_path
+        inner_path = dir_inner_path / file_relative_path
 
         file_size = self.site.storage.getSize(inner_path)
         # Only care about optional files >1MB
@@ -474,7 +475,9 @@ class SiteStoragePlugin(object):
             del self.piecefields[sha512]
 
     def write(self, inner_path, content):
-        if "|" not in inner_path:
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
+        if '|' not in inner_path.name:
             return super(SiteStoragePlugin, self).write(inner_path, content)
 
         # Write to specific position by passing |{pos} after the filename
