@@ -199,9 +199,8 @@ class UiWebsocketPlugin(object):
 class SiteStoragePlugin(object):
     def updateDbFile(self, inner_path, file=None, cur=None):
         if file is not False:  # File deletion always allowed
-            # Find for bitcoin addresses in file path
-            # ugh, this isn't beautiful
-            matches = re.findall("/(1[A-Za-z0-9]{26,35})/", str(inner_path))
+            # Find user directory names (epix1... addresses or xID names) in file path
+            matches = re.findall("/([A-Za-z0-9][A-Za-z0-9.]{2,})/", str(inner_path))
             # Check if any of the adresses are in the mute list
             for auth_address in matches:
                 if filter_storage.isMuted(auth_address):
@@ -221,7 +220,7 @@ class SiteStoragePlugin(object):
 class SitePlugin(object):
     def needFile(self, inner_path, update=False, blocking=True, peer=None, priority=0):
         self.log.debug(f'needFile {inner_path}')
-        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        matches = re.findall('/([A-Za-z0-9][A-Za-z0-9.]{2,})/', str(inner_path))
         for auth_address in matches:
             if filter_storage.isMuted(auth_address):
                 self.log.info(f'Mute match in Site.needFile: {auth_address}, ignoring {inner_path}')
@@ -232,7 +231,7 @@ class SitePlugin(object):
 class FileRequestPlugin:
     def actionUpdate(self, params):
         inner_path = params.get('inner_path', '')
-        matches = re.findall('/(1[A-Za-z0-9]{26,35})/', inner_path)
+        matches = re.findall('/([A-Za-z0-9][A-Za-z0-9.]{2,})/', str(inner_path))
         for auth_address in matches:
             if filter_storage.isMuted(auth_address):
                 self.log.info(f'Mute match in FileRequest.actionUpdate: {auth_address}, ignoring {inner_path}')
