@@ -306,7 +306,7 @@ class SiteStoragePlugin(object):
             if merger_site.address == self.site.address:  # Avoid infinite loop
                 continue
             virtual_path = "merged-%s/%s/%s" % (merged_type, self.site.address, inner_path)
-            if inner_path.endswith(".json"):
+            if str(inner_path).endswith(".json"):
                 if file is not None:
                     merger_site.storage.onUpdated(virtual_path, file=file)
                 else:

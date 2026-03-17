@@ -464,7 +464,7 @@ class UiWebsocket(object):
 
         # Change to the file's content.json
         file_info = site.content_manager.getFileInfo(inner_path)
-        if not inner_path.endswith("content.json"):
+        if not str(inner_path).endswith("content.json"):
             if not file_info:
                 raise Exception("Invalid content.json file: %s" % inner_path)
             inner_path = file_info["content_inner_path"]
@@ -631,7 +631,7 @@ class UiWebsocket(object):
             content = base64.b64decode(content_base64)
             # Save old file to generate patch later
             if (
-                inner_path.endswith(".json") and not inner_path.endswith("content.json") and
+                str(inner_path).endswith(".json") and not str(inner_path).endswith("content.json") and
                 self.site.storage.isFile(inner_path) and not self.site.storage.isFile(inner_path + "-old")
             ):
                 try:
@@ -647,7 +647,7 @@ class UiWebsocket(object):
             self.log.error("File write error: %s" % Debug.formatException(err))
             return self.response(to, {"error": "Write error: %s" % Debug.formatException(err)})
 
-        if inner_path.endswith("content.json"):
+        if str(inner_path).endswith("content.json"):
             self.site.content_manager.loadContent(inner_path, add_bad_files=False, force=True)
 
         self.response(to, "ok")
@@ -789,7 +789,7 @@ class UiWebsocket(object):
                 content["cert_sign"] = cert["cert_sign"]
 
         rules = self.site.content_manager.getRules(inner_path, content)
-        if inner_path.endswith("content.json") and rules:
+        if str(inner_path).endswith("content.json") and rules:
             if content:
                 rules["current_size"] = len(json.dumps(content)) + sum([file["size"] for file in list(content.get("files", {}).values())])
             else:
@@ -1157,7 +1157,7 @@ class UiWebsocket(object):
             try:
                 is_mtime_newer = os.path.getmtime(self.site.storage.getPath(inner_path)) > min_mtime + 1
                 if is_mtime_newer:
-                    if inner_path.endswith("content.json"):
+                    if str(inner_path).endswith("content.json"):
                         is_modified = self.site.content_manager.isModified(inner_path)
                     else:
                         previous_size = content["files"][inner_path]["size"]

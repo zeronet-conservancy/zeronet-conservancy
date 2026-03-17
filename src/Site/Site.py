@@ -169,7 +169,7 @@ class Site(object):
                 (inner_path, download_files, check_modifications, diffs.keys())
             )
 
-        if not inner_path.endswith("content.json"):
+        if not str(inner_path).endswith("content.json"):
             return False
 
         found = self.needFile(inner_path, update=self.bad_files.get(inner_path))
@@ -811,7 +811,7 @@ class Site(object):
                         return False  # Content.json download failed
 
             file_info = None
-            if not inner_path.endswith("content.json"):
+            if not str(inner_path).endswith("content.json"):
                 file_info = self.needFileInfo(inner_path)
                 if not file_info:
                     return False

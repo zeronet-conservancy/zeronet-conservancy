@@ -400,7 +400,7 @@ class ContentManager:
     # Is modified since signing
     def isModified(self, inner_path):
         s = time.time()
-        if inner_path.endswith("content.json"):
+        if str(inner_path).endswith("content.json"):
             try:
                 is_valid = self.verifyFile(inner_path, self.site.storage.open(inner_path), ignore_same=False)
                 if is_valid:
@@ -989,7 +989,7 @@ class ContentManager:
     # Verify file validity
     # Return: None = Same as before, False = Invalid, True = Valid
     def verifyFile(self, inner_path, file, ignore_same=True):
-        if inner_path.endswith("content.json"):  # content.json: Check using sign
+        if str(inner_path).endswith("content.json"):  # content.json: Check using sign
             try:
                 if type(file) is dict:
                     new_content = file

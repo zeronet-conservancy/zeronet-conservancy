@@ -112,7 +112,7 @@ class FileRequest(object):
         current_content_modified = site.content_manager.contents.get(inner_path, {}).get("modified", 0)
         body = params["body"]
 
-        if not inner_path.endswith("content.json"):
+        if not str(inner_path).endswith("content.json"):
             self.response({"error": "Only content.json update allowed"})
             self.connection.badAction(5)
             return
@@ -161,7 +161,7 @@ class FileRequest(object):
 
             site.onFileDone(inner_path)  # Trigger filedone
 
-            if inner_path.endswith("content.json"):  # Download every changed file from peer
+            if str(inner_path).endswith("content.json"):  # Download every changed file from peer
                 peer = site.addPeer(self.connection.ip, self.connection.port, return_peer=True, source="update")  # Add or get peer
                 # On complete publish to other peers
                 diffs = params.get("diffs", {})

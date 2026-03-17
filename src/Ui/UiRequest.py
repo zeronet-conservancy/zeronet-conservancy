@@ -569,7 +569,7 @@ class UiRequest:
         if not file_inner_path:
             file_inner_path = "index.html"  # If inner path defaults to index.html
 
-        if file_inner_path.endswith("/"):
+        if str(file_inner_path).endswith("/"):
             file_inner_path = file_inner_path + "index.html"
 
         address = re.sub("/.*", "", path.lstrip("/"))
@@ -596,7 +596,7 @@ class UiRequest:
         wrapper_nonce = self.getWrapperNonce()
         inner_query_string = self.processQueryString(site, self.env.get("QUERY_STRING", ""))
 
-        if "?" in inner_path:
+        if "?" in str(inner_path):
             sep = "&"
         else:
             sep = "?"

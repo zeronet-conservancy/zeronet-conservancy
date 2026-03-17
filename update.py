@@ -58,7 +58,7 @@ def update():
     update_paths = {}
 
     for inner_path in inner_paths:
-        if ".." in inner_path:
+        if ".." in str(inner_path):
             continue
         inner_path = inner_path.replace("\\", "/").strip("/")  # Make sure we have unix path
         print(".", end=" ")
