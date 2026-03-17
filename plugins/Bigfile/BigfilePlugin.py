@@ -806,7 +806,7 @@ class SitePlugin(object):
                     return False
                 return self.needFile(inner_path, *args, **kwargs)
 
-            inner_path = inner_path.replace("|all", "")
+            inner_path = str(inner_path).replace("|all", "")
             file_info = self.needFileInfo(inner_path)
 
             # Use default function to download non-optional file

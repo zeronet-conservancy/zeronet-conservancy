@@ -2397,7 +2397,7 @@
               is_added = true;
             }
           } else {
-            dir_name = (ref1 = optional_file.inner_path.replace(this.inner_path, "").match(/(.*?)\//, "")) != null ? ref1[1] : void 0;
+            dir_name = (ref1 = str(optional_file.inner_path).replace(this.inner_path, "").match(/(.*?)\//, "")) != null ? ref1[1] : void 0;
             if (dir_name && !this.items_by_name[dir_name]) {
               row = {
                 "name": dir_name,
@@ -2429,14 +2429,14 @@
 
     FileItemList.prototype.getDirectory = function(inner_path) {
       if (inner_path.indexOf("/") !== -1) {
-        return inner_path.replace(/^(.*\/)(.*?)$/, "$1");
+        return str(inner_path).replace(/^(.*\/)(.*?)$/, "$1");
       } else {
         return "";
       }
     };
 
     FileItemList.prototype.getFileName = function(inner_path) {
-      return inner_path.replace(/^(.*\/)(.*?)$/, "$2");
+      return str(inner_path).replace(/^(.*\/)(.*?)$/, "$2");
     };
 
     FileItemList.prototype.isModified = function(inner_path) {

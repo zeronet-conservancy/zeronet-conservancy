@@ -60,7 +60,7 @@ def update():
     for inner_path in inner_paths:
         if ".." in str(inner_path):
             continue
-        inner_path = inner_path.replace("\\", "/").strip("/")  # Make sure we have unix path
+        inner_path = str(inner_path).replace("\\", "/").strip("/")  # Make sure we have unix path
         print(".", end=" ")
         if str(inner_path).startswith("core"):
             dest_path = source_path + "/" + re.sub("^core/", "", inner_path)

@@ -515,7 +515,7 @@ class TestBigfile:
         assert len([req for req in requests if req[1] == "streamFile"]) == 2  # 1 piece + piecemap
 
         # Rename the file
-        inner_path_new = inner_path.replace(".iso", "-new.iso")
+        inner_path_new = str(inner_path).replace(".iso", "-new.iso")
         site.storage.rename(inner_path, inner_path_new)
         site.storage.delete("data/optional.any.iso.piecemap.msgpack")
         assert site.content_manager.sign("content.json", self.privatekey, remove_missing_optional=True)
