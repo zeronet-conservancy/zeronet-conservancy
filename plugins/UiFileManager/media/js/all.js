@@ -2002,7 +2002,7 @@
 
     FileEditor.prototype.getMode = function(inner_path) {
       var ext, types;
-      ext = inner_path.split(".").pop();
+      ext = str(inner_path).split(".").pop();
       types = {
         "py": "python",
         "json": "application/json",
@@ -2287,7 +2287,7 @@
             inner_path = ref[i];
             _this.files_modified[inner_path] = true;
             dir_inner_path = "";
-            dir_parts = inner_path.split("/");
+            dir_parts = str(inner_path).split("/");
             ref1 = dir_parts.slice(0, -1);
             for (j = 0, len1 = ref1.length; j < len1; j++) {
               dir_part = ref1[j];
@@ -2718,7 +2718,7 @@
       var i, inner_path_parent, len, parent_dir, parent_links, ref;
       parent_links = [];
       inner_path_parent = "";
-      ref = this.inner_path.split("/");
+      ref = str(this.inner_path).split("/");
       for (i = 0, len = ref.length; i < len; i++) {
         parent_dir = ref[i];
         if (!parent_dir) {

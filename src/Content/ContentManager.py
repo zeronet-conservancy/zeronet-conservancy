@@ -420,11 +420,16 @@ class ContentManager:
     # Find the file info line from self.contents
     # Return: { "sha512": "c29d73d...21f518", "size": 41 , "content_inner_path": "content.json"}
     def getFileInfo(self, inner_path, new_file=False):
-        dirs = inner_path.split("/")  # Parent dirs of content.json
-        inner_path_parts = []  # Filename relative to content.json
-        while dirs:
-            inner_path_parts.insert(0, dirs.pop())
-            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
+        if not isinstance(inner_path, Path):
+            inner_path = Path(inner_path)
+        # inner_path=PosixPath('data/users/xxx/content.json')
+        # loop content_inner_path:
+        #   'data/users/content.json'
+        #   'data/content.json'
+        #   'content.json'
+        inner_path_parts = list(inner_path.parts)
+        for path_depth in range(len(inner_path_parts) - 1):
+            content_inner_path = "/".join(inner_path_parts[path_depth:-2] + ["content.json"])
             content = self.contents.get(content_inner_path)
 
             # Check in files

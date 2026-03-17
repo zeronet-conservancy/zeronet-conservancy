@@ -74,7 +74,7 @@ class ContentManagerPlugin(object):
 
     def optionalDownloaded(self, inner_path, hash_id, size=None, own=False):
         if "|" in str(inner_path):  # Big file piece
-            file_inner_path, file_range = inner_path.split("|")
+            file_inner_path, file_range = str(inner_path).split("|")
         else:
             file_inner_path = inner_path
 

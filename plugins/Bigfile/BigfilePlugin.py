@@ -254,7 +254,7 @@ class ContentManagerPlugin(object):
         if "|" not in str(inner_path):
             return super(ContentManagerPlugin, self).getFileInfo(inner_path, *args, **kwargs)
 
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
         file_info = super(ContentManagerPlugin, self).getFileInfo(inner_path, *args, **kwargs)
         return file_info
@@ -404,14 +404,14 @@ class ContentManagerPlugin(object):
         if "|" not in str(inner_path):
             return super(ContentManagerPlugin, self).verifyFile(inner_path, file, ignore_same)
 
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
 
         return self.verifyPiece(inner_path, pos_from, file)
 
     def optionalDownloaded(self, inner_path, hash_id, size=None, own=False):
         if "|" in str(inner_path):
-            inner_path, file_range = inner_path.split("|")
+            inner_path, file_range = str(inner_path).split("|")
             pos_from, pos_to = map(int, file_range.split("-"))
             file_info = self.getFileInfo(inner_path)
 
@@ -481,7 +481,7 @@ class SiteStoragePlugin(object):
             return super(SiteStoragePlugin, self).write(inner_path, content)
 
         # Write to specific position by passing |{pos} after the filename
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
         file_path = self.getPath(inner_path)
 
@@ -636,7 +636,7 @@ class WorkerManagerPlugin(object):
                 # Start download piece
                 task = super(WorkerManagerPlugin, self).addTask(inner_path, *args, **kwargs)
 
-                inner_path, file_range = inner_path.split("|")
+                inner_path, file_range = str(inner_path).split("|")
                 pos_from, pos_to = map(int, file_range.split("-"))
                 task["piece_i"] = int(pos_from / file_info["piece_size"])
                 task["sha512"] = file_info["sha512"]
@@ -768,7 +768,7 @@ class PeerPlugin(object):
 
     def getFile(self, site, inner_path, *args, **kwargs):
         if "|" in str(inner_path):
-            inner_path, file_range = inner_path.split("|")
+            inner_path, file_range = str(inner_path).split("|")
             pos_from, pos_to = map(int, file_range.split("-"))
             kwargs["pos_from"] = pos_from
             kwargs["pos_to"] = pos_to
