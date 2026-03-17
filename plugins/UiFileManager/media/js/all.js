@@ -2380,7 +2380,7 @@
       ref = this.files_optional;
       for (inner_path in ref) {
         optional_file = ref[inner_path];
-        if (optional_file.inner_path.startsWith(this.inner_path)) {
+        if (str(optional_file.inner_path).startsWith(this.inner_path)) {
           if (this.getDirectory(optional_file.inner_path) === this.inner_path) {
             file_name = this.getFileName(optional_file.inner_path);
             if (!this.items_by_name[file_name]) {

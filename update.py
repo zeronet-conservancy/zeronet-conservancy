@@ -62,9 +62,9 @@ def update():
             continue
         inner_path = inner_path.replace("\\", "/").strip("/")  # Make sure we have unix path
         print(".", end=" ")
-        if inner_path.startswith("core"):
+        if str(inner_path).startswith("core"):
             dest_path = source_path + "/" + re.sub("^core/", "", inner_path)
-        elif inner_path.startswith(config.dist_type):
+        elif str(inner_path).startswith(config.dist_type):
             dest_path = runtime_path + "/" + re.sub("^bundle[^/]+/", "", inner_path)
         else:
             continue

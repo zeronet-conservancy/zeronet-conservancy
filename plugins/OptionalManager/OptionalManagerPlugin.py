@@ -216,7 +216,7 @@ class SitePlugin(object):
             return is_downloadable
 
         for path in self.settings.get("optional_help", {}).keys():
-            if inner_path.startswith(path):
+            if str(inner_path).startswith(path):
                 return True
 
         return False

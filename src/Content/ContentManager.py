@@ -245,7 +245,7 @@ class ContentManager:
                     # Remove downloaded archived files
                     num_removed_contents = 0
                     for archived_inner_path in self.listModified(before=new_archived_before):
-                        if archived_inner_path.startswith(content_inner_dir) and archived_inner_path != content_inner_path:
+                        if str(archived_inner_path).startswith(content_inner_dir) and archived_inner_path != content_inner_path:
                             self.removeContent(archived_inner_path)
                             num_removed_contents += 1
                     self.site.settings["size"], self.site.settings["size_optional"] = self.getTotalSize()

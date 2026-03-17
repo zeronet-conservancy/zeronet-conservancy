@@ -132,7 +132,7 @@ class UiWebsocketPlugin(object):
 
     # Add support merger sites for file commands
     def mergerFuncWrapper(self, func_name, to, inner_path, *args, **kwargs):
-        if inner_path.startswith("merged-"):
+        if str(inner_path).startswith("merged-"):
             merged_address, merged_inner_path = checkMergerPath(self.site.address, inner_path)
 
             # Set the same cert for merged site
@@ -178,7 +178,7 @@ class UiWebsocketPlugin(object):
 
     def actionBigfileUploadInit(self, to, inner_path, *args, **kwargs):
         back = self.mergerFuncWrapper("actionBigfileUploadInit", to, inner_path, *args, **kwargs)
-        if inner_path.startswith("merged-"):
+        if str(inner_path).startswith("merged-"):
             merged_address, merged_inner_path = checkMergerPath(self.site.address, inner_path)
             back["inner_path"] = "merged-%s/%s/%s" % (merged_db[merged_address], merged_address, back["inner_path"])
         return back
@@ -186,7 +186,7 @@ class UiWebsocketPlugin(object):
     # Add support merger sites for file commands with privatekey parameter
     def mergerFuncWrapperWithPrivatekey(self, func_name, to, privatekey, inner_path, *args, **kwargs):
         func = getattr(super(UiWebsocketPlugin, self), func_name)
-        if inner_path.startswith("merged-"):
+        if str(inner_path).startswith("merged-"):
             merged_address, merged_inner_path = checkMergerPath(self.site.address, inner_path)
             merged_site = self.server.sites.get(merged_address)
 
