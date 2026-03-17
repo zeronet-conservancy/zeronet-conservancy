@@ -520,7 +520,7 @@ class ContentManager:
                 return False  # File not found
             inner_path = file_info["content_inner_path"]
 
-        if inner_path == Path('content.json'):  # Root content.json
+        if str(inner_path) == 'content.json':  # Root content.json
             rules = {}
             rules["signers"] = self.getValidSigners(inner_path, content)
             return rules
@@ -776,7 +776,7 @@ class ContentManager:
             else:
                 content = {"files": {}, "signs": {}}  # Default content.json
 
-            if inner_path == "content.json":  # It's the root content.json, add some more fields
+            if str(inner_path) == "content.json":  # It's the root content.json, add some more fields
                 content["title"] = "%s - EpixNet_" % self.site.address
                 content["description"] = ""
                 content["signs_required"] = 1
@@ -852,7 +852,7 @@ class ContentManager:
             del new_content["files_optional"]
 
         new_content["modified"] = int(time.time())  # Add timestamp
-        if inner_path == Path('content.json'):
+        if str(inner_path) == 'content.json':
             # add for backward compatibility, but don't expose user version
             new_content["epixnet_version"] = config.version
             new_content["signs_required"] = content.get("signs_required", 1)
@@ -871,7 +871,7 @@ class ContentManager:
             )
         self.log.info("Correct %s in valid signers: %s" % (privatekey_address, valid_signers))
 
-        if inner_path == Path('content.json') and privatekey_address == self.site.address:
+        if str(inner_path) == 'content.json' and privatekey_address == self.site.address:
             # If signing using the root key, then sign the valid signers
             signers_data = "%s:%s" % (new_content["signs_required"], ",".join(valid_signers))
             new_content["signers_sign"] = CryptEpix.sign(str(signers_data), privatekey)
@@ -935,7 +935,7 @@ class ContentManager:
         if not isinstance(inner_path, Path):
             inner_path = Path(inner_path)
         valid_signers = []
-        if inner_path == Path("content.json"):  # Root content.json
+        if str(inner_path) == "content.json":  # Root content.json
             if "content.json" in self.contents and "signers" in self.contents["content.json"]:
                 valid_signers += self.contents["content.json"]["signers"][:]
         else:
@@ -994,7 +994,7 @@ class ContentManager:
             old_content_size_optional = 0
 
         # Reset site site on first content.json
-        if not old_content and inner_path == "content.json":
+        if not old_content and str(inner_path) == "content.json":
             self.site.settings["size"] = 0
 
         content_size_optional = sum([file["size"] for file in list(content.get("files_optional", {}).values()) if file["size"] >= 0])
@@ -1008,11 +1008,11 @@ class ContentManager:
             raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site.address))
 
         # Check file inner path
-        if content.get('inner_path') and Path(content['inner_path']) != inner_path:
+        if content.get('inner_path') and content['inner_path'] != str(inner_path):
             raise VerifyError(f"Wrong inner_path: {content['inner_path']}")
 
         # If our content.json file bigger than the size limit throw error
-        if inner_path == Path('content.json'):
+        if str(inner_path) == 'content.json':
             content_size_file = len(json.dumps(content, indent=1))
             if content_size_file > site_size_limit:
                 # Save site size to display warning
@@ -1027,7 +1027,7 @@ class ContentManager:
             if not self.isValidRelativePath(file_relative_path):
                 raise VerifyError("Invalid relative path: %s" % file_relative_path)
 
-        if inner_path == Path('content.json'):
+        if str(inner_path) == 'content.json':
             self.site.settings["size"] = site_size
             self.site.settings["size_optional"] = site_size_optional
             return True  # Root content.json is passed
@@ -1124,12 +1124,12 @@ class ContentManager:
                     valid_signers = self.getValidSigners(inner_path, new_content)
                     signs_required = self.getSignsRequired(inner_path, new_content)
 
-                    if inner_path == "content.json" and len(valid_signers) > 1:  # Check signers_sign on root content.json
+                    if str(inner_path) == "content.json" and len(valid_signers) > 1:  # Check signers_sign on root content.json
                         signers_data = "%s:%s" % (signs_required, ",".join(valid_signers))
                         if not CryptEpix.verify(signers_data, self.site.address, new_content["signers_sign"]):
                             raise VerifyError("Invalid signers_sign!")
 
-                    if inner_path != "content.json" and not self.verifyCert(inner_path, new_content):  # Check if cert valid
+                    if str(inner_path) != "content.json" and not self.verifyCert(inner_path, new_content):  # Check if cert valid
                         raise VerifyError("Invalid cert!")
 
                     valid_signs = 0
