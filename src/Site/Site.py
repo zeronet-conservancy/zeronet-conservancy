@@ -891,6 +891,7 @@ class Site(object):
                 candidate_inner_paths.add(p)
 
         for file_inner_path in candidate_inner_paths:
+            file_inner_path = str(file_inner_path)
             file_relative_path = file_inner_path[len(content_inner_dir):]
             try:
                 file_info = self.content_manager.getFileInfo(file_inner_path)

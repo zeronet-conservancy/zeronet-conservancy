@@ -604,7 +604,7 @@ class UiWebsocket(object):
     # Callback of site publish
     def cbSitePublish(self, to, site, thread, notification=True, callback=True):
         published = thread.value
-        if published > 0:  # Successfully published
+        if published is not None and published > 0:  # Successfully published
             if notification:
                 # self.cmd("notification", ["done", _["Content published to {0} peers."].format(published), 5000])
                 site.updateWebsocket()  # Send updated site data to local websocket clients
