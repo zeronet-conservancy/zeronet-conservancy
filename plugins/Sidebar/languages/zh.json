@@ -43,6 +43,9 @@
 	"No database found": "没有找到数据库",
 
 	"Identity address": "身份地址",
+	"Certificate": "证书",
+	"Disconnect": "断开",
+	"New": "新建",
 	"Change": "更改",
 
 	"Site control": "站点控制",

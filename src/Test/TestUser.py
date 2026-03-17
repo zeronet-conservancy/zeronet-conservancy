@@ -22,22 +22,35 @@ class TestUser:
         # Re-generate auth_privatekey for site
         assert user.getSiteData(address)["auth_privatekey"] == site_data["auth_privatekey"]
 
-    def testAuthAddress(self, user):
-        # Auth address without Cert
+    def testMasterIdentityDefault(self, user):
+        # By default, getAuthAddress returns master_address (not a derived address)
         test_site_address = "epix1test0000000000000000000000000000000000"
         auth_address = user.getAuthAddress(test_site_address)
-        assert auth_address == "epix19mqssu8uf40xfuzfczlxrxauus9k8r5jaznrgf"
+        assert auth_address == user.master_address
         auth_privatekey = user.getAuthPrivatekey(test_site_address)
+        assert auth_privatekey == user.master_seed
         assert CryptEpix.privatekeyToAddress(auth_privatekey) == auth_address
+
+    def testAddCertMasterAddress(self, user):
+        # addCert should work when called with master_address
+        user.addCert(user.master_address, "testcert.epix", "xid", "testuser", "testsign")
+        cert = user.certs.get("testcert.epix")
+        assert cert is not None
+        assert cert["auth_address"] == user.master_address
+        assert cert["auth_privatekey"] == user.master_seed
+        assert CryptEpix.privatekeyToAddress(cert["auth_privatekey"]) == user.master_address
+        # Cleanup
+        user.deleteCert("testcert.epix")
 
     def testCert(self, user):
         cert_site_address = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
         test_site_address = "epix1test0000000000000000000000000000000000"
 
-        cert_auth_address = user.getAuthAddress(cert_site_address)  # Add site to user's registry
-        assert cert_auth_address == "epix1lxfgsrns0uex5gtlvn3ta74adnam2cwjvpet4q"
+        # Default auth address is now master_address
+        cert_auth_address = user.getAuthAddress(cert_site_address)
+        assert cert_auth_address == user.master_address
 
-        # Add cert
+        # Add cert using master_address
         user.addCert(cert_auth_address, "epixid.epix", "faketype", "fakeuser", "fakesign")
         user.setCert(test_site_address, "epixid.epix")
 
@@ -51,6 +64,31 @@ class TestUser:
         user.deleteSiteData(test_site_address)
         assert test_site_address not in user.sites
 
-        # Re-create add site should generate normal, unique auth_address
-        assert not user.getAuthAddress(test_site_address) == cert_auth_address
-        assert user.getAuthAddress(test_site_address) == "epix19mqssu8uf40xfuzfczlxrxauus9k8r5jaznrgf"
+        # After deleting site data, auth address returns master (default, no cert active)
+        assert user.getAuthAddress(test_site_address) == user.master_address
+
+    def testCertWithDerivedAddress(self, user):
+        # Cert with a derived address should work — cert takes precedence over master default
+        cert_site_address = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
+        test_site_address = "epix1test2000000000000000000000000000000000"
+
+        # Get derived address from site data
+        site_data = user.getSiteData(cert_site_address)
+        derived_auth = site_data["auth_address"]
+        assert derived_auth != user.master_address
+
+        # Add cert using derived address
+        user.addCert(derived_auth, "epixid2.epix", "faketype", "fakeuser2", "fakesign2")
+        user.setCert(test_site_address, "epixid2.epix")
+
+        # Cert takes precedence over master default
+        assert user.getAuthAddress(test_site_address) == derived_auth
+
+        # Without cert, falls back to master
+        user.setCert(test_site_address, None)
+        assert user.getAuthAddress(test_site_address) == user.master_address
+
+        # Cleanup
+        user.deleteCert("epixid2.epix")
+        user.deleteSiteData(test_site_address)
+        user.deleteSiteData(cert_site_address)

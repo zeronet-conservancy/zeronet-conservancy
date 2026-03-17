@@ -117,26 +117,58 @@ class User(object):
         self.save()
         return site_address, bip32_index, self.sites[site_address]
 
-    # Get BIP32 address from site address
-    # Return: BIP32 auth address
+    def generateNewIdentityAddress(self):
+        """Generate a new BIP32-derived identity address using a sequential index.
+
+        Uses a dedicated index range (starting at 100000001) separate from
+        site-derived keys. The address is stored in self.sites so its private
+        key can be found later for cert creation.
+
+        Returns: (address, privatekey)
+        """
+        index = self.settings.get("next_identity_index", 100000001)
+        privatekey = CryptEpix.hdPrivatekey(self.master_seed, index)
+        address = CryptEpix.privatekeyToAddress(privatekey)
+        if not address or address is False:
+            raise Exception("Failed to generate identity address at index %d" % index)
+
+        # Store so addCert can find the privatekey by auth_address
+        if address not in [sd.get("auth_address") for sd in self.sites.values()]:
+            # Create a synthetic site entry keyed by the address itself
+            self.sites["_identity_%d" % index] = {
+                "auth_address": address,
+                "auth_privatekey": privatekey
+            }
+
+        self.settings["next_identity_index"] = index + 1
+        self.save()
+        self.log.debug("Generated new identity address: %s (index %d)" % (address, index))
+        return address, privatekey
+
+    # Get auth address for site
+    # Return: cert auth_address if cert active, otherwise master address
     def getAuthAddress(self, address, create=True):
         cert = self.getCert(address)
         if cert:
             return cert["auth_address"]
-        else:
-            return self.getSiteData(address, create)["auth_address"]
+        return self.master_address
 
     def getAuthPrivatekey(self, address, create=True):
         cert = self.getCert(address)
         if cert:
             return cert["auth_privatekey"]
-        else:
-            return self.getSiteData(address, create)["auth_privatekey"]
+        return self.master_seed
 
     # Add cert for the user
     def addCert(self, auth_address, domain, auth_type, auth_user_name, cert_sign):
         # Find privatekey by auth address
-        auth_privatekey = [site["auth_privatekey"] for site in list(self.sites.values()) if site["auth_address"] == auth_address][0]
+        if auth_address == self.master_address:
+            auth_privatekey = self.master_seed
+        else:
+            matching = [site["auth_privatekey"] for site in list(self.sites.values()) if site["auth_address"] == auth_address]
+            if not matching:
+                raise Exception("Auth address %s not found in sites or master" % auth_address)
+            auth_privatekey = matching[0]
         cert_node = {
             "auth_address": auth_address,
             "auth_privatekey": auth_privatekey,

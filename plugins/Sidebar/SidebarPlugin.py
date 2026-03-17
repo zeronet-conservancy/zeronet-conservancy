@@ -397,6 +397,8 @@ class UiWebsocketPlugin(object):
         else:
             quota = used = 0
 
+        cert_user_id = self.user.getCertUserId(self.site.address)
+
         body.append(_("""
             <li>
              <label>{_[Identity address]} <small>({_[limit used]}: {used:.2f}kB / {quota:.2f}kB)</small></label>
@@ -406,6 +408,17 @@ class UiWebsocketPlugin(object):
              </div>
             </li>
         """))
+
+        if cert_user_id:
+            body.append(_("""
+            <li>
+             <label>{_[Certificate]}</label>
+             <div class='flex'>
+              <span class='input text disabled cert-active'>{cert_user_id}</span>
+              <a href='#Disconnect' class='button' id='button-cert-disconnect'>{_[Disconnect]}</a>
+             </div>
+            </li>
+            """))
 
     def sidebarRenderControls(self, body, site):
         auth_address = self.user.getAuthAddress(self.site.address, create=False)

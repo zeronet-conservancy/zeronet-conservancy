@@ -35,6 +35,9 @@
 	"No database found": "Veritabanı yok",
 
 	"Identity address": "Kimlik adresi",
+	"Certificate": "Sertifika",
+	"Disconnect": "Bağlantıyı kes",
+	"New": "Yeni",
 	"Change": "Değiştir",
 
 	"Site control": "Site kontrolü",

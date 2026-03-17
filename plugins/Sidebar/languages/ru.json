@@ -35,6 +35,9 @@
 	"No database found": "База данных не найдена",
 
 	"Identity address": "Уникальный адрес",
+	"Certificate": "Сертификат",
+	"Disconnect": "Отключить",
+	"New": "Новый",
 	"Change": "Изменить",
 
 	"Site control": "Управление сайтом",

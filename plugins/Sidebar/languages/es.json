@@ -35,6 +35,9 @@
 	"No database found": "No se ha encontrado la base de datos",
 
 	"Identity address": "Dirección de la identidad",
+	"Certificate": "Certificado",
+	"Disconnect": "Desconectar",
+	"New": "Nuevo",
 	"Change": "Cambiar",
 
 	"Update": "Actualizar",

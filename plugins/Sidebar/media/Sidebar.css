@@ -116,6 +116,12 @@
 .color-red:before { color: #E91E63 }
 
 
+/* Private identity toggle */
+#checkbox-privateidentity { margin-top: 3px; margin-bottom: 10px; }
+
+/* Certificate display */
+.cert-active { font-weight: bold; color: #eee; }
+
 /* Settings owned */
 
 .owned-title { float: left }

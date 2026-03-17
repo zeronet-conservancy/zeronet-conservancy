@@ -1184,7 +1184,25 @@ window.initScrollable = function () {
       })(this));
       this.tag.find("#button-identity").off("click touchend").on("click touchend", (function(_this) {
         return function() {
-          _this.wrapper.ws.cmd("certSelect");
+          _this.tag.find("#button-identity").css("pointer-events", "none").css("opacity", "0.6");
+          _this.wrapper.ws.cmd("certXid", {}, function(res) {
+            _this.tag.find("#button-identity").css("pointer-events", "").css("opacity", "");
+            if (res === "ok") {
+              _this.updateHtmlTag();
+            }
+          });
+          return false;
+        };
+      })(this));
+      this.tag.find("#button-cert-disconnect").off("click touchend").on("click touchend", (function(_this) {
+        return function(e) {
+          e.preventDefault();
+          _this.wrapper.ws.cmd("certSet", [""], function(res) {
+            if (res === "ok") {
+              _this.wrapper.notifications.add("cert-disconnect", "done", "Certificate disconnected", 5000);
+              _this.updateHtmlTag();
+            }
+          });
           return false;
         };
       })(this));

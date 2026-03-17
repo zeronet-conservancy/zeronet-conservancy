@@ -525,13 +525,13 @@ class ContentManager:
             rules["signers"] = self.getValidSigners(inner_path, content)
             return rules
 
-        dirs = inner_path.parts  # Parent dirs of content.json
+        dirs = list(inner_path.parts)  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
         # Dont check in self dir
         while dirs:
             inner_path_parts.insert(0, dirs.pop())
-            now_dir = reduce((lambda a, b: Path(a) / b), dirs)
-            content_inner_path = now_dir / 'content.json'
+            now_dir = str(Path(*dirs))
+            content_inner_path = now_dir + '/content.json' if now_dir != '.' else 'content.json'
             parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
                 return parent_content["includes"].get(now_dir)

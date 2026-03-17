@@ -45,6 +45,9 @@
 	"No database found": "データベースが見つかりません",
 
 	"Identity address": "あなたの識別アドレス",
+	"Certificate": "証明書",
+	"Disconnect": "切断",
+	"New": "新規",
 	"Change": "編集",
 
 	"Site control": "サイト管理",

@@ -641,15 +641,16 @@ class ContentManagerPlugin(object):
     def verifyCert(self, inner_path, content):
         """Override cert verification to handle xID self-signed certs.
 
-        For domain "xid", the cert is self-signed by the user's auth key using
-        keccak256. Verification recovers the signer, confirms self-signature,
-        then checks on-chain that the xID name has this identity address linked.
+        For domain "xid.epix", the cert is self-signed by the user's auth key
+        using keccak256. Verification recovers the signer, confirms
+        self-signature, then checks on-chain that the xID name has this
+        identity address linked.
 
         For all other domains, delegates to the standard verifyCert.
         """
         if content.get("cert_user_id") and "@" in content.get("cert_user_id", ""):
             name, domain = content["cert_user_id"].rsplit("@", 1)
-            if domain == "xid":
+            if domain == "xid.epix":
                 return self._verifyXidCert(inner_path, content, name)
 
         return super(ContentManagerPlugin, self).verifyCert(inner_path, content)
@@ -666,8 +667,8 @@ class ContentManagerPlugin(object):
         if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
             return True
 
-        # Check that "xid" is in cert_signers
-        cert_signer_entry = rules.get("cert_signers", {}).get("xid")
+        # Check that "xid.epix" is in cert_signers
+        cert_signer_entry = rules.get("cert_signers", {}).get("xid.epix")
         if not cert_signer_entry:
             raise VerifyError("xID cert signer not configured for this site")
 
@@ -897,9 +898,10 @@ class UiWebsocketPlugin(object):
             return self._processCertXid(to, xid_name)
 
         # Build the cert selection dialog
-        existing_cert = self.user.certs.get("xid")
+        existing_cert = self.user.certs.get("xid.epix")
         site_data = self.user.getSiteData(self.site.address)
         current_domain = site_data.get("cert", "") if site_data else ""
+        is_xid_active = current_domain == "xid.epix"
         auth_address = self.user.getAuthAddress(self.site.address)
 
         body = "<span style='padding-bottom: 5px; display: inline-block'>"
@@ -907,67 +909,99 @@ class UiWebsocketPlugin(object):
         body += "</span>"
 
         # "None" option
-        none_class = " active" if current_domain != "xid" else ""
+        none_class = " active" if not is_xid_active else ""
         body += (
             "<a href='#Select+account' class='select select-close cert%s' title=''>"
             "<b>None</b>%s</a>"
-        ) % (none_class, " <small>(currently selected)</small>" if current_domain != "xid" else "")
+        ) % (none_class, " <small>(currently selected)</small>" if not is_xid_active else "")
 
+        # Show existing cert if any
         if existing_cert and existing_cert.get("auth_user_name"):
-            if current_domain == "xid":
-                # Already active — nothing to do
-                return self.response(to, "ok")
+            cert_name = existing_cert["auth_user_name"]
+            cert_class = " active" if is_xid_active else ""
+            body += (
+                "<a href='#Select+account' class='select select-close cert%s' title='xid.epix'>"
+                "<b>%s@xid.epix</b>%s</a>"
+            ) % (cert_class, cert_name,
+                 " <small>(currently selected)</small>" if is_xid_active else "")
+
+        # Check master + auth address on-chain first
+        seen = set()
+        addresses_to_check = []
+        master = getattr(self.user, "master_address", None)
+        if master:
+            seen.add(master)
+            addresses_to_check.append(master)
+        if auth_address and auth_address not in seen:
+            seen.add(auth_address)
+            addresses_to_check.append(auth_address)
+
+        # Collect identity addresses in order
+        identity_addresses = []
+        for site_key, sd in sorted(self.user.sites.items()):
+            if site_key.startswith("_identity_"):
+                addr = sd.get("auth_address")
+                if addr and addr not in seen:
+                    seen.add(addr)
+                    identity_addresses.append(addr)
+
+        total = len(addresses_to_check) + len(identity_addresses)
+
+        invalidate_xid_name_cache()
+        for addr in addresses_to_check + identity_addresses:
+            invalidate_identity_cache(addr)
+
+        # Check master/auth addresses
+        discovered = []  # list of (name, addr) tuples
+        checked = 0
+        for addr in addresses_to_check:
+            checked += 1
+            self.cmd("injectScript",
+                "$('#button-identity').text('Checking %d/%d...')" % (checked, total))
+            result = resolve_identity_xid(addr)
+            if result and result.get("name"):
+                name = result["name"]
+                if not existing_cert or name != existing_cert.get("auth_user_name"):
+                    discovered.append((name, addr))
+
+        # Check identity addresses — stop at first unlinked one
+        new_addr = None
+        for addr in identity_addresses:
+            checked += 1
+            self.cmd("injectScript",
+                "$('#button-identity').text('Checking %d/%d...')" % (checked, total))
+            result = resolve_identity_xid(addr)
+            if result and result.get("name"):
+                name = result["name"]
+                if not existing_cert or name != existing_cert.get("auth_user_name"):
+                    discovered.append((name, addr))
             else:
-                # Existing cert not yet active on this site — activate it directly
-                self.user.setCert(self.site.address, "xid")
-                self.site.updateWebsocket(cert_changed="xid")
-                return self.response(to, "ok")
-        else:
-            # No xID cert yet — try auto-discovery and show register link
-            tried = set()
-            addresses_to_try = [auth_address]
-            master = getattr(self.user, "master_address", None)
-            if master:
-                addresses_to_try.append(master)
-            for sd in self.user.sites.values():
-                auth = sd.get("auth_address")
-                if auth:
-                    addresses_to_try.append(auth)
+                # First unlinked identity — use as "New" option, stop checking
+                new_addr = addr
+                break
 
-            for addr in addresses_to_try:
-                if addr:
-                    invalidate_identity_cache(addr)
-            invalidate_xid_name_cache()
+        # Restore button text
+        self.cmd("injectScript",
+            "$('#button-identity').text('Change')")
 
-            discovered_name = None
-            discovered_addr = None
-            for addr in addresses_to_try:
-                if addr and addr not in tried:
-                    tried.add(addr)
-                    result = resolve_identity_xid(addr)
-                    if result and result.get("name"):
-                        discovered_name = result["name"]
-                        discovered_addr = addr
-                        break
+        for name, addr in discovered:
+            body += (
+                "<a href='#Select+account' class='select select-close cert' title='acquire:%s:%s'>"
+                "<b>%s.epix</b> <small>(acquire certificate)</small></a>"
+            ) % (name, addr, name)
 
-            if discovered_name:
-                # Found an xID on chain — offer to acquire it
-                body += (
-                    "<a href='#Select+account' class='select select-close cert' title='acquire:%s:%s'>"
-                    "<b>%s.epix</b> <small>(acquire certificate)</small></a>"
-                ) % (discovered_name, discovered_addr, discovered_name)
-            else:
-                # No xID found — show link to register
-                xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
-                return_url = "/%s" % self.site.address
-                xid_url = "/%s/?linkIdentity=%s&returnTo=%s" % (
-                    xid_site, auth_address, return_url
-                )
-                body += (
-                    "<a href='%s' target='_top' class='select'>"
-                    "<small style='float: right; margin-right: 40px; margin-top: -1px'>"
-                    "Register &raquo;</small>xid</a>"
-                ) % xid_url
+        # Show one "New" option
+        xid_site = "epix1xauthduuyn63k6kj54jzgp4l8nnjlhrsyaku8c"
+        return_url = "/%s" % self.site.address
+        if not new_addr:
+            new_addr, _pk = self.user.generateNewIdentityAddress()
+        short_addr = new_addr[:10] + "..." + new_addr[-4:]
+        new_link = "/%s/?linkIdentity=%s&returnTo=%s" % (xid_site, new_addr, return_url)
+        body += (
+            "<a href='%s' target='_top' class='select'>"
+            "<b>New</b> %s "
+            "<small>Register &raquo;</small></a>"
+        ) % (new_link, short_addr)
 
         script = """
              $(".notification .select.cert").on("click", function() {
@@ -985,12 +1019,12 @@ class UiWebsocketPlugin(object):
         if not choice or choice == "":
             # User selected "None" — deactivate cert for this site
             self.user.setCert(self.site.address, None)
-            self.site.updateWebsocket(cert_changed="xid")
+            self.site.updateWebsocket(cert_changed="xid.epix")
             return self.response(to, "ok")
-        elif choice == "xid":
+        elif choice == "xid.epix":
             # User selected their existing xID cert — activate for this site
-            self.user.setCert(self.site.address, "xid")
-            self.site.updateWebsocket(cert_changed="xid")
+            self.user.setCert(self.site.address, "xid.epix")
+            self.site.updateWebsocket(cert_changed="xid.epix")
             return self.response(to, "ok")
         elif choice.startswith("acquire:"):
             # User wants to acquire a discovered cert
@@ -1019,11 +1053,14 @@ class UiWebsocketPlugin(object):
         if linked_auth_address:
             auth_address = linked_auth_address
             auth_privatekey = None
-            for site_addr, site_data in self.user.sites.items():
-                if site_data.get("auth_address") == linked_auth_address:
-                    auth_privatekey = self.user.getAuthPrivatekey(site_addr)
-                    if auth_privatekey:
-                        break
+            if linked_auth_address == self.user.master_address:
+                auth_privatekey = self.user.master_seed
+            else:
+                for site_addr, site_data in self.user.sites.items():
+                    if site_data.get("auth_address") == linked_auth_address:
+                        auth_privatekey = self.user.getAuthPrivatekey(site_addr)
+                        if auth_privatekey:
+                            break
         else:
             auth_address = self.user.getAuthAddress(self.site.address)
             auth_privatekey = self.user.getAuthPrivatekey(self.site.address)
@@ -1075,24 +1112,24 @@ class UiWebsocketPlugin(object):
         if not cert_sign:
             return self.response(to, {"error": "Failed to sign certificate"})
 
-        # Store the cert
-        result = self.user.addCert(auth_address, "xid", "xid", xid_name, cert_sign)
+        # Store the cert (domain="xid.epix", auth_type="xid")
+        result = self.user.addCert(auth_address, "xid.epix", "xid", xid_name, cert_sign)
 
         if result is True:
             self.cmd("notification", [
                 "done",
-                "xID certificate acquired: <b>%s@xid</b>" % xid_name
+                "xID certificate acquired: <b>%s@xid.epix</b>" % xid_name
             ])
-            self.user.setCert(self.site.address, "xid")
-            self.site.updateWebsocket(cert_changed="xid")
+            self.user.setCert(self.site.address, "xid.epix")
+            self.site.updateWebsocket(cert_changed="xid.epix")
             self.response(to, "ok")
         elif result is False:
-            # Already have a different cert for "xid" domain — replace
-            cert_current = self.user.certs["xid"]
+            # Already have a different cert for "xid.epix" domain — replace
+            cert_current = self.user.certs["xid.epix"]
             self.cmd(
                 "confirm",
                 [
-                    "You already have an xID cert: <b>%s@xid</b>. Replace?" %
+                    "You already have an xID cert: <b>%s@xid.epix</b>. Replace?" %
                     cert_current["auth_user_name"],
                     "Replace"
                 ],
@@ -1100,20 +1137,20 @@ class UiWebsocketPlugin(object):
             )
         else:
             # Same cert already exists
-            self.user.setCert(self.site.address, "xid")
-            self.site.updateWebsocket(cert_changed="xid")
+            self.user.setCert(self.site.address, "xid.epix")
+            self.site.updateWebsocket(cert_changed="xid.epix")
             self.response(to, "ok")
 
     def _cbCertXidReplace(self, to, auth_address, xid_name, cert_sign):
         """Callback to replace an existing xID cert after user confirmation."""
-        self.user.deleteCert("xid")
-        self.user.addCert(auth_address, "xid", "xid", xid_name, cert_sign)
+        self.user.deleteCert("xid.epix")
+        self.user.addCert(auth_address, "xid.epix", "xid", xid_name, cert_sign)
         self.cmd("notification", [
             "done",
-            "xID certificate updated: <b>%s@xid</b>" % xid_name
+            "xID certificate updated: <b>%s@xid.epix</b>" % xid_name
         ])
-        self.user.setCert(self.site.address, "xid")
-        self.site.updateWebsocket(cert_changed="xid")
+        self.user.setCert(self.site.address, "xid.epix")
+        self.site.updateWebsocket(cert_changed="xid.epix")
         self.response(to, "ok")
 
     def actionXidResolveSite(self, to, site_address=None):

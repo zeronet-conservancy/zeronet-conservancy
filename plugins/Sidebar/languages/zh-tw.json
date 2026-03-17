@@ -35,6 +35,9 @@
 	"No database found": "未找到資料庫",
 
 	"Identity address": "身分位址",
+	"Certificate": "憑證",
+	"Disconnect": "斷開",
+	"New": "新建",
 	"Change": "變更",
 
 	"Site control": "網站控制",
