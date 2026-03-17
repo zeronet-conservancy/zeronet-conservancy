@@ -300,6 +300,7 @@ class SiteStoragePlugin(object):
     def onUpdated(self, inner_path, file=None):
         super(SiteStoragePlugin, self).onUpdated(inner_path, file)
 
+        inner_path = str(inner_path)
         merged_type = merged_db.get(self.site.address)
 
         for merger_site in merged_to_merger.get(self.site.address, []):

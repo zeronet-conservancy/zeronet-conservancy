@@ -701,9 +701,14 @@ class ContentManager:
         files_node = {}
         files_optional_node = {}
         db_inner_path = self.site.storage.getDbFile()
-        if dir_inner_path and not self.isValidRelativePath(dir_inner_path):
+        dir_inner_path_str = str(dir_inner_path)
+        if dir_inner_path_str == ".":
+            dir_inner_path_str = ""
+        elif dir_inner_path_str and not dir_inner_path_str.endswith("/"):
+            dir_inner_path_str += "/"
+        if dir_inner_path_str and not self.isValidRelativePath(dir_inner_path_str):
             ignored = True
-            self.log.error("- [ERROR] Only ascii encoded directories allowed: %s" % dir_inner_path)
+            self.log.error("- [ERROR] Only ascii encoded directories allowed: %s" % dir_inner_path_str)
 
         for file_relative_path in self.site.storage.walk(Path(dir_inner_path), ignore_pattern):
             file_name = helper.getFilename(file_relative_path)
@@ -716,7 +721,7 @@ class ContentManager:
             elif not self.isValidRelativePath(file_relative_path):
                 ignored = True
                 self.log.error("- [ERROR] Invalid filename: %s" % file_relative_path)
-            elif dir_inner_path == "" and db_inner_path and file_relative_path.startswith(db_inner_path):
+            elif not dir_inner_path_str and db_inner_path and file_relative_path.startswith(db_inner_path):
                 ignored = True
             elif has_user_contents and "/" in file_relative_path:
                 # Skip files in user subdirectories — those are managed by
@@ -724,7 +729,7 @@ class ContentManager:
                 ignored = True
             elif included_dirs:
                 # Skip files under directories managed by included content.json
-                file_full_path = (dir_inner_path + file_relative_path) if dir_inner_path else file_relative_path
+                file_full_path = (dir_inner_path_str + file_relative_path) if dir_inner_path_str else file_relative_path
                 for inc_dir in included_dirs:
                     if file_full_path.startswith(inc_dir):
                         ignored = True
@@ -791,6 +796,7 @@ class ContentManager:
 
         directory = self.site.storage.getPath(inner_path).parent
         inner_directory = inner_path.parent
+        inner_dir_str = helper.getDirname(inner_path)  # String version for prefix matching
         self.log.info("Opening site data directory: %s..." % directory)
 
         changed_files = [inner_path]
@@ -804,7 +810,7 @@ class ContentManager:
             for include_path in content["includes"]:
                 inc_dir = helper.getDirname(include_path)
                 if inc_dir:
-                    included_dirs.append(inner_directory + inc_dir if inner_directory else inc_dir)
+                    included_dirs.append(inner_dir_str + inc_dir if inner_dir_str else inc_dir)
 
         files_node, files_optional_node = self.hashFiles(
             inner_directory, content.get("ignore"), content.get("optional"),
