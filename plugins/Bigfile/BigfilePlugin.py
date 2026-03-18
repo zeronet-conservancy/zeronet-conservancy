@@ -115,7 +115,7 @@ class UiRequestPlugin(object):
             file_info = site.content_manager.getFileInfo(inner_path, new_file=True)
             content_inner_path_dir = helper.getDirname(file_info["content_inner_path"])
             piecemap_relative_path = upload_info["piecemap"][len(content_inner_path_dir):]
-            file_relative_path = inner_path[len(content_inner_path_dir):]
+            file_relative_path = str(inner_path)[len(content_inner_path_dir):]
 
             # Add file to content.json
             if site.storage.isFile(file_info["content_inner_path"]):
@@ -183,7 +183,7 @@ class UiWebsocketPlugin(object):
         file_info = self.site.content_manager.getFileInfo(inner_path, new_file=True)
 
         content_inner_path_dir = helper.getDirname(file_info["content_inner_path"])
-        file_relative_path = inner_path[len(content_inner_path_dir):]
+        file_relative_path = str(inner_path)[len(content_inner_path_dir):]
 
         upload_nonces[nonce] = {
             "added": time.time(),

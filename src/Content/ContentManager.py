@@ -454,7 +454,7 @@ class ContentManager:
             if content and "user_contents" in content:
                 back = content["user_contents"]
                 content_inner_path_dir = helper.getDirname(content_inner_path)
-                relative_content_path = inner_path[len(content_inner_path_dir):]
+                relative_content_path = str(inner_path)[len(content_inner_path_dir):]
                 user_auth_address_match = re.match(r"([A-Za-z0-9]+)/.*", relative_content_path)
                 if user_auth_address_match:
                     user_auth_address = user_auth_address_match.group(1)
@@ -526,7 +526,7 @@ class ContentManager:
         # Delivered for directory
         if "inner_path" in parent_content:
             parent_content_dir = helper.getDirname(parent_content["inner_path"])
-            user_address = re.match(r"([A-Za-z0-9]*?)/", inner_path[len(parent_content_dir):]).group(1)
+            user_address = re.match(r"([A-Za-z0-9]*?)/", str(inner_path)[len(parent_content_dir):]).group(1)
         else:
             user_address = re.match(r".*/([A-Za-z0-9]*?)/.*?$", inner_path).group(1)
 
