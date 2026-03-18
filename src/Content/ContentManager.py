@@ -487,6 +487,8 @@ class ContentManager:
             if not file_info:
                 return False  # File not found
             inner_path = file_info["content_inner_path"]
+            if not isinstance(inner_path, Path):
+                inner_path = Path(inner_path)
 
         if inner_path == Path('content.json'):  # Root content.json
             rules = {}
