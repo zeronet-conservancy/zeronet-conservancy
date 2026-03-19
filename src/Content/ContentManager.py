@@ -503,6 +503,14 @@ class ContentManager:
         if not parent_content:
             return False
 
+        if inner_path == Path("data/users/content.json"):
+            if "includes" in parent_content:
+                content_inner_path = str(inner_path)
+                rules = parent_content["includes"].get(content_inner_path)
+                return rules
+            if "user_contents" in parent_content:
+                return self.getUserContentRules(parent_content, inner_path, content)
+
         # inner_path=PosixPath('data/users/xxx/content.json')
         # loop content_inner_path:
         #   'data/users/content.json'
