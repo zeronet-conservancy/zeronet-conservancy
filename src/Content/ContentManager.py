@@ -512,20 +512,19 @@ class ContentManager:
 
         Return: The rules for the file or False if not allowed"""
 
-        if not isinstance(inner_path, Path):
-            inner_path = Path(inner_path)
-        if not inner_path.name.endswith('content.json'):  # Find the files content.json first
+        inner_path = str(inner_path)
+        if not inner_path.endswith('content.json'):  # Find the files content.json first
             file_info = self.getFileInfo(inner_path)
             if not file_info:
                 return False  # File not found
             inner_path = file_info["content_inner_path"]
 
-        if str(inner_path) == 'content.json':  # Root content.json
+        if inner_path == 'content.json':  # Root content.json
             rules = {}
             rules["signers"] = self.getValidSigners(inner_path, content)
             return rules
 
-        dirs = list(inner_path.parts)  # Parent dirs of content.json
+        dirs = inner_path.split("/")  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
         # Dont check in self dir
         while dirs:
@@ -799,7 +798,7 @@ class ContentManager:
         inner_dir_str = helper.getDirname(inner_path)  # String version for prefix matching
         self.log.info("Opening site data directory: %s..." % directory)
 
-        changed_files = [inner_path]
+        changed_files = [str(inner_path)]
         has_user_contents = "user_contents" in content
 
         # Build list of directories managed by included content.json files
@@ -829,7 +828,7 @@ class ContentManager:
             old_hash = content.get("files", {}).get(file_relative_path, {}).get("sha512")
             new_hash = files_merged[file_relative_path]["sha512"]
             if old_hash != new_hash:
-                changed_files.append(inner_directory / file_relative_path)
+                changed_files.append(inner_dir_str + file_relative_path)
 
         self.log.debug("Changed files: %s" % changed_files)
         # Merge with any previously unpushed files so re-signing doesn't lose them
@@ -915,7 +914,7 @@ class ContentManager:
             if self.site.settings.get("own"):
                 inner_directory = helper.getDirname(inner_path)
                 for file_path in changed_files:
-                    if file_path == inner_path:
+                    if file_path == str(inner_path):
                         continue  # Skip content.json itself
                     relative = file_path[len(inner_directory):] if inner_directory else file_path
                     file_entry = files_merged.get(relative)

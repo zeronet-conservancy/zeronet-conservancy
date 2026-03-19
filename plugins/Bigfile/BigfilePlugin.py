@@ -251,6 +251,7 @@ class UiWebsocketPlugin(object):
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
     def getFileInfo(self, inner_path, *args, **kwargs):
+        inner_path = str(inner_path)
         if "|" not in inner_path:
             return super(ContentManagerPlugin, self).getFileInfo(inner_path, *args, **kwargs)
 

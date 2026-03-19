@@ -86,6 +86,10 @@ class User(object):
             if not create:
                 return {"auth_address": None, "auth_privatekey": None}  # Dont create user yet
             self.generateAuthAddress(address)
+            # Auto-activate global cert on new site (portable cert)
+            active_cert = self.getActiveCertDomain()
+            if active_cert:
+                self.sites[address]["cert"] = active_cert
         return self.sites[address]
 
     def deleteSiteData(self, address):
@@ -145,19 +149,21 @@ class User(object):
         self.log.debug("Generated new identity address: %s (index %d)" % (address, index))
         return address, privatekey
 
-    # Get auth address for site
-    # Return: cert auth_address if cert active, otherwise master address
+    # Get BIP32 address from site address
+    # Return: cert auth_address if cert active, otherwise BIP32 derived auth address
     def getAuthAddress(self, address, create=True):
         cert = self.getCert(address)
         if cert:
             return cert["auth_address"]
-        return self.master_address
+        else:
+            return self.getSiteData(address, create)["auth_address"]
 
     def getAuthPrivatekey(self, address, create=True):
         cert = self.getCert(address)
         if cert:
             return cert["auth_privatekey"]
-        return self.master_seed
+        else:
+            return self.getSiteData(address, create)["auth_privatekey"]
 
     # Add cert for the user
     def addCert(self, auth_address, domain, auth_type, auth_user_name, cert_sign):
@@ -200,6 +206,28 @@ class User(object):
                 del site_data["cert"]
         self.saveDelayed()
         return site_data
+
+    # Activate cert on ALL existing sites (portable cert)
+    def setCertGlobal(self, domain):
+        for address, site_data in self.sites.items():
+            if address.startswith("_identity_"):
+                continue  # Skip synthetic identity entries
+            if domain:
+                site_data["cert"] = domain
+            else:
+                if "cert" in site_data:
+                    del site_data["cert"]
+        self.saveDelayed()
+
+    # Get the globally active cert domain (if any site has a cert set)
+    def getActiveCertDomain(self):
+        for address, site_data in self.sites.items():
+            if address.startswith("_identity_"):
+                continue
+            cert_domain = site_data.get("cert")
+            if cert_domain and cert_domain in self.certs:
+                return cert_domain
+        return None
 
     # Get cert for the site address
     # Return: { "auth_address":.., "auth_privatekey":.., "auth_type": "web", "auth_user_name": "mud", "cert_sign":.. } or None

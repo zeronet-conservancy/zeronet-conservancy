@@ -837,7 +837,7 @@ class UiWebsocket(object):
                     "notification",
                     ["done", _("{_[New certificate added]:} <b>{auth_type}/{auth_user_name}@{domain}</b>.")]
                 )
-                self.user.setCert(self.site.address, domain)
+                self.user.setCertGlobal(domain)
                 self.site.updateWebsocket(cert_changed=domain)
                 self.response(to, "ok")
             elif res is False:
@@ -862,7 +862,7 @@ class UiWebsocket(object):
             "notification",
             ["done", _("Certificate changed to: <b>{auth_type}/{auth_user_name}@{domain}</b>.")]
         )
-        self.user.setCert(self.site.address, domain)
+        self.user.setCertGlobal(domain)
         self.site.updateWebsocket(cert_changed=domain)
         self.response(to, "ok")
 
@@ -966,7 +966,7 @@ class UiWebsocket(object):
     # Set certificate that used for authenticate user for site
     @flag.admin
     def actionCertSet(self, to, domain):
-        self.user.setCert(self.site.address, domain)
+        self.user.setCertGlobal(domain)
         self.site.updateWebsocket(cert_changed=domain)
         self.response(to, "ok")
 

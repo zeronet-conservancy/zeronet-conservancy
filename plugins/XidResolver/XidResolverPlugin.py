@@ -925,14 +925,10 @@ class UiWebsocketPlugin(object):
             ) % (cert_class, cert_name,
                  " <small>(currently selected)</small>" if is_xid_active else "")
 
-        # Check master + auth address on-chain first
+        # Check current site's auth address on-chain first
         seen = set()
         addresses_to_check = []
-        master = getattr(self.user, "master_address", None)
-        if master:
-            seen.add(master)
-            addresses_to_check.append(master)
-        if auth_address and auth_address not in seen:
+        if auth_address:
             seen.add(auth_address)
             addresses_to_check.append(auth_address)
 
@@ -1017,13 +1013,13 @@ class UiWebsocketPlugin(object):
     def _cbCertXidSelect(self, to, choice):
         """Handle user's selection from the xID cert dialog."""
         if not choice or choice == "":
-            # User selected "None" — deactivate cert for this site
-            self.user.setCert(self.site.address, None)
+            # User selected "None" — deactivate cert globally
+            self.user.setCertGlobal(None)
             self.site.updateWebsocket(cert_changed="xid.epix")
             return self.response(to, "ok")
         elif choice == "xid.epix":
-            # User selected their existing xID cert — activate for this site
-            self.user.setCert(self.site.address, "xid.epix")
+            # User selected their existing xID cert — activate globally
+            self.user.setCertGlobal("xid.epix")
             self.site.updateWebsocket(cert_changed="xid.epix")
             return self.response(to, "ok")
         elif choice.startswith("acquire:"):
@@ -1053,17 +1049,15 @@ class UiWebsocketPlugin(object):
         if linked_auth_address:
             auth_address = linked_auth_address
             auth_privatekey = None
-            if linked_auth_address == self.user.master_address:
-                auth_privatekey = self.user.master_seed
-            else:
-                for site_addr, site_data in self.user.sites.items():
-                    if site_data.get("auth_address") == linked_auth_address:
-                        auth_privatekey = self.user.getAuthPrivatekey(site_addr)
-                        if auth_privatekey:
-                            break
+            for site_addr, site_data in self.user.sites.items():
+                if site_data.get("auth_address") == linked_auth_address:
+                    auth_privatekey = site_data.get("auth_privatekey")
+                    if auth_privatekey:
+                        break
         else:
-            auth_address = self.user.getAuthAddress(self.site.address)
-            auth_privatekey = self.user.getAuthPrivatekey(self.site.address)
+            site_data = self.user.getSiteData(self.site.address)
+            auth_address = site_data["auth_address"]
+            auth_privatekey = site_data["auth_privatekey"]
 
         if not auth_address or not auth_privatekey:
             return self.response(to, {"error": "No auth credentials for this site"})
@@ -1120,7 +1114,7 @@ class UiWebsocketPlugin(object):
                 "done",
                 "xID certificate acquired: <b>%s@xid.epix</b>" % xid_name
             ])
-            self.user.setCert(self.site.address, "xid.epix")
+            self.user.setCertGlobal("xid.epix")
             self.site.updateWebsocket(cert_changed="xid.epix")
             self.response(to, "ok")
         elif result is False:
@@ -1137,7 +1131,7 @@ class UiWebsocketPlugin(object):
             )
         else:
             # Same cert already exists
-            self.user.setCert(self.site.address, "xid.epix")
+            self.user.setCertGlobal("xid.epix")
             self.site.updateWebsocket(cert_changed="xid.epix")
             self.response(to, "ok")
 
@@ -1149,7 +1143,7 @@ class UiWebsocketPlugin(object):
             "done",
             "xID certificate updated: <b>%s@xid.epix</b>" % xid_name
         ])
-        self.user.setCert(self.site.address, "xid.epix")
+        self.user.setCertGlobal("xid.epix")
         self.site.updateWebsocket(cert_changed="xid.epix")
         self.response(to, "ok")
 
