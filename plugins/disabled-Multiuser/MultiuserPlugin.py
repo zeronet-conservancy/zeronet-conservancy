@@ -39,7 +39,7 @@ class UiRequestPlugin(object):
             return False
 
         inner_path = match.group("inner_path").lstrip("/")
-        html_request = "." not in inner_path or inner_path.endswith(".html")  # Only inject html to html requests
+        html_request = "." not in str(inner_path) or str(inner_path).endswith(".html")  # Only inject html to html requests
 
         user_created = False
         if html_request:

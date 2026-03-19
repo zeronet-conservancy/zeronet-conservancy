@@ -73,8 +73,8 @@ class ContentManagerPlugin(object):
         super(ContentManagerPlugin, self).__init__(*args, **kwargs)
 
     def optionalDownloaded(self, inner_path, hash_id, size=None, own=False):
-        if "|" in inner_path:  # Big file piece
-            file_inner_path, file_range = inner_path.split("|")
+        if "|" in str(inner_path):  # Big file piece
+            file_inner_path, file_range = str(inner_path).split("|")
         else:
             file_inner_path = inner_path
 
@@ -216,20 +216,20 @@ class SitePlugin(object):
             return is_downloadable
 
         for path in self.settings.get("optional_help", {}).keys():
-            if inner_path.startswith(path):
+            if str(inner_path).startswith(path):
                 return True
 
         return False
 
     def fileForgot(self, inner_path):
-        if "|" in inner_path and self.content_manager.isPinned(re.sub(r"\|.*", "", inner_path)):
+        if "|" in str(inner_path) and self.content_manager.isPinned(re.sub(r"\|.*", "", inner_path)):
             self.log.debug("File %s is pinned, no fileForgot" % inner_path)
             return False
         else:
             return super(SitePlugin, self).fileForgot(inner_path)
 
     def fileDone(self, inner_path):
-        if "|" in inner_path and self.bad_files.get(inner_path, 0) > 5:  # Idle optional file done
+        if "|" in str(inner_path) and self.bad_files.get(inner_path, 0) > 5:  # Idle optional file done
             inner_path_file = re.sub(r"\|.*", "", inner_path)
             num_changed = 0
             for key, val in self.bad_files.items():

@@ -58,7 +58,7 @@ class UiRequestPlugin(object):
 
         if not lang_file_exist or inner_path not in content_json.get("translate", []):
             for part in file_generator:
-                if inner_path.endswith(".html"):
+                if str(inner_path).endswith(".html"):
                     yield part.replace(b"lang={lang}", b"lang=" + translate.lang.encode("utf8"))  # lang get parameter to .js file to avoid cache
                 else:
                     yield part
@@ -69,7 +69,7 @@ class UiRequestPlugin(object):
             # if site.content_manager.contents["content.json"]["files"].get(lang_file):
             site.needFile(lang_file, priority=10)
             try:
-                if inner_path.endswith("js"):
+                if str(inner_path).endswith("js"):
                     data = translate.translateData(data, site.storage.loadJson(lang_file), "js")
                 else:
                     data = translate.translateData(data, site.storage.loadJson(lang_file), "html")

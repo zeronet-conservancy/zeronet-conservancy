@@ -115,7 +115,7 @@ class UiRequestPlugin(object):
             file_info = site.content_manager.getFileInfo(inner_path, new_file=True)
             content_inner_path_dir = helper.getDirname(file_info["content_inner_path"])
             piecemap_relative_path = upload_info["piecemap"][len(content_inner_path_dir):]
-            file_relative_path = inner_path[len(content_inner_path_dir):]
+            file_relative_path = str(inner_path)[len(content_inner_path_dir):]
 
             # Add file to content.json
             if site.storage.isFile(file_info["content_inner_path"]):
@@ -183,7 +183,7 @@ class UiWebsocketPlugin(object):
         file_info = self.site.content_manager.getFileInfo(inner_path, new_file=True)
 
         content_inner_path_dir = helper.getDirname(file_info["content_inner_path"])
-        file_relative_path = inner_path[len(content_inner_path_dir):]
+        file_relative_path = str(inner_path)[len(content_inner_path_dir):]
 
         upload_nonces[nonce] = {
             "added": time.time(),
@@ -251,10 +251,10 @@ class UiWebsocketPlugin(object):
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
     def getFileInfo(self, inner_path, *args, **kwargs):
-        if "|" not in inner_path:
+        if "|" not in str(inner_path):
             return super(ContentManagerPlugin, self).getFileInfo(inner_path, *args, **kwargs)
 
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
         file_info = super(ContentManagerPlugin, self).getFileInfo(inner_path, *args, **kwargs)
         return file_info
@@ -401,17 +401,17 @@ class ContentManagerPlugin(object):
         return True
 
     def verifyFile(self, inner_path, file, ignore_same=True):
-        if "|" not in inner_path:
+        if "|" not in str(inner_path):
             return super(ContentManagerPlugin, self).verifyFile(inner_path, file, ignore_same)
 
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
 
         return self.verifyPiece(inner_path, pos_from, file)
 
     def optionalDownloaded(self, inner_path, hash_id, size=None, own=False):
-        if "|" in inner_path:
-            inner_path, file_range = inner_path.split("|")
+        if "|" in str(inner_path):
+            inner_path, file_range = str(inner_path).split("|")
             pos_from, pos_to = map(int, file_range.split("-"))
             file_info = self.getFileInfo(inner_path)
 
@@ -481,7 +481,7 @@ class SiteStoragePlugin(object):
             return super(SiteStoragePlugin, self).write(inner_path, content)
 
         # Write to specific position by passing |{pos} after the filename
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
         file_path = self.getPath(inner_path)
 
@@ -629,14 +629,14 @@ class WorkerManagerPlugin(object):
                 # Start download piecemap
                 piecemap_task = super(WorkerManagerPlugin, self).addTask(piecemap_inner_path, priority=30)
                 autodownload_bigfile_size_limit = self.site.settings.get("autodownload_bigfile_size_limit", config.autodownload_bigfile_size_limit)
-                if "|" not in inner_path and self.site.isDownloadable(inner_path) and file_info["size"] / 1024 / 1024 <= autodownload_bigfile_size_limit:
+                if "|" not in str(inner_path) and self.site.isDownloadable(inner_path) and file_info["size"] / 1024 / 1024 <= autodownload_bigfile_size_limit:
                     gevent.spawn_later(0.1, self.site.needFile, inner_path + "|all")  # Download all pieces
 
-            if "|" in inner_path:
+            if "|" in str(inner_path):
                 # Start download piece
                 task = super(WorkerManagerPlugin, self).addTask(inner_path, *args, **kwargs)
 
-                inner_path, file_range = inner_path.split("|")
+                inner_path, file_range = str(inner_path).split("|")
                 pos_from, pos_to = map(int, file_range.split("-"))
                 task["piece_i"] = int(pos_from / file_info["piece_size"])
                 task["sha512"] = file_info["sha512"]
@@ -767,8 +767,8 @@ class PeerPlugin(object):
             return super(PeerPlugin, self).updateHashfield(*args, **kwargs)
 
     def getFile(self, site, inner_path, *args, **kwargs):
-        if "|" in inner_path:
-            inner_path, file_range = inner_path.split("|")
+        if "|" in str(inner_path):
+            inner_path, file_range = str(inner_path).split("|")
             pos_from, pos_to = map(int, file_range.split("-"))
             kwargs["pos_from"] = pos_from
             kwargs["pos_to"] = pos_to
@@ -798,7 +798,7 @@ class SitePlugin(object):
         return back
 
     def needFile(self, inner_path, *args, **kwargs):
-        if inner_path.endswith("|all"):
+        if str(inner_path).endswith("|all"):
             @util.Pooled(20)
             def pooledNeedBigfile(inner_path, *args, **kwargs):
                 if inner_path not in self.bad_files:
@@ -806,7 +806,7 @@ class SitePlugin(object):
                     return False
                 return self.needFile(inner_path, *args, **kwargs)
 
-            inner_path = inner_path.replace("|all", "")
+            inner_path = str(inner_path).replace("|all", "")
             file_info = self.needFileInfo(inner_path)
 
             # Use default function to download non-optional file

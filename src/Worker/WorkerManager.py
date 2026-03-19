@@ -443,17 +443,17 @@ class WorkerManager(object):
             return 9999  # Content.json always priority
         if inner_path == "index.html":
             return 9998  # index.html also important
-        if "-default" in inner_path:
+        if "-default" in str(inner_path):
             return -4  # Default files are cloning not important
-        elif inner_path.endswith("all.css"):
+        elif str(inner_path).endswith("all.css"):
             return 14  # boost css files priority
-        elif inner_path.endswith("all.js"):
+        elif str(inner_path).endswith("all.js"):
             return 13  # boost js files priority
-        elif inner_path.endswith("dbschema.json"):
+        elif str(inner_path).endswith("dbschema.json"):
             return 12  # boost database specification
-        elif inner_path.endswith("content.json"):
+        elif str(inner_path).endswith("content.json"):
             return 1  # boost included content.json files priority a bit
-        elif inner_path.endswith(".json"):
+        elif str(inner_path).endswith(".json"):
             if len(inner_path) < 50:  # Boost non-user json files
                 return 11
             else:

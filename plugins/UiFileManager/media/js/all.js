@@ -2002,7 +2002,7 @@
 
     FileEditor.prototype.getMode = function(inner_path) {
       var ext, types;
-      ext = inner_path.split(".").pop();
+      ext = str(inner_path).split(".").pop();
       types = {
         "py": "python",
         "json": "application/json",
@@ -2287,7 +2287,7 @@
             inner_path = ref[i];
             _this.files_modified[inner_path] = true;
             dir_inner_path = "";
-            dir_parts = inner_path.split("/");
+            dir_parts = str(inner_path).split("/");
             ref1 = dir_parts.slice(0, -1);
             for (j = 0, len1 = ref1.length; j < len1; j++) {
               dir_part = ref1[j];
@@ -2380,7 +2380,7 @@
       ref = this.files_optional;
       for (inner_path in ref) {
         optional_file = ref[inner_path];
-        if (optional_file.inner_path.startsWith(this.inner_path)) {
+        if (str(optional_file.inner_path).startsWith(this.inner_path)) {
           if (this.getDirectory(optional_file.inner_path) === this.inner_path) {
             file_name = this.getFileName(optional_file.inner_path);
             if (!this.items_by_name[file_name]) {
@@ -2397,7 +2397,7 @@
               is_added = true;
             }
           } else {
-            dir_name = (ref1 = optional_file.inner_path.replace(this.inner_path, "").match(/(.*?)\//, "")) != null ? ref1[1] : void 0;
+            dir_name = (ref1 = str(optional_file.inner_path).replace(this.inner_path, "").match(/(.*?)\//, "")) != null ? ref1[1] : void 0;
             if (dir_name && !this.items_by_name[dir_name]) {
               row = {
                 "name": dir_name,
@@ -2429,14 +2429,14 @@
 
     FileItemList.prototype.getDirectory = function(inner_path) {
       if (inner_path.indexOf("/") !== -1) {
-        return inner_path.replace(/^(.*\/)(.*?)$/, "$1");
+        return str(inner_path).replace(/^(.*\/)(.*?)$/, "$1");
       } else {
         return "";
       }
     };
 
     FileItemList.prototype.getFileName = function(inner_path) {
-      return inner_path.replace(/^(.*\/)(.*?)$/, "$2");
+      return str(inner_path).replace(/^(.*\/)(.*?)$/, "$2");
     };
 
     FileItemList.prototype.isModified = function(inner_path) {
@@ -2718,7 +2718,7 @@
       var i, inner_path_parent, len, parent_dir, parent_links, ref;
       parent_links = [];
       inner_path_parent = "";
-      ref = this.inner_path.split("/");
+      ref = str(this.inner_path).split("/");
       for (i = 0, len = ref.length; i < len; i++) {
         parent_dir = ref[i];
         if (!parent_dir) {

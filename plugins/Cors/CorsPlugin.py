@@ -44,7 +44,7 @@ class UiWebsocketPlugin(object):
 
     # Add cors support for file commands
     def corsFuncWrapper(self, func_name, to, inner_path, *args, **kwargs):
-        if inner_path.startswith("cors-"):
+        if str(inner_path).startswith("cors-"):
             cors_address, cors_inner_path = getCorsPath(self.site, inner_path)
 
             req_self = copy.copy(self)

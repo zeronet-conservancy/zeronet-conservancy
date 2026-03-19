@@ -114,7 +114,7 @@ class ContentDbPlugin(object):
 
     # Predicts if the file is optional
     def isOptionalFile(self, site_id, inner_path):
-        return self.optional_files[site_id].get(inner_path[-8:])
+        return self.optional_files[site_id].get(str(inner_path)[-8:])
 
     # Fill file_optional table with optional files found in sites
     def fillTableFileOptional(self, site):
@@ -181,7 +181,7 @@ class ContentDbPlugin(object):
                 "peer": is_downloaded,
                 "is_pinned": is_pinned
             })
-            self.optional_files[site_id][file_inner_path[-8:]] = 1
+            self.optional_files[site_id][str(file_inner_path)[-8:]] = 1
             num += 1
 
         return num

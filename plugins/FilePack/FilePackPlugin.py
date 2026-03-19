@@ -140,7 +140,7 @@ class SiteStoragePlugin:
             archive = self.openArchive(archive_inner_path)
             path_within = path_within.lstrip("/")
 
-            if archive_inner_path.endswith(".zip"):
+            if str(archive_inner_path).endswith(".zip"):
                 namelist = [name for name in archive.namelist() if not name.endswith("/")]
             else:
                 namelist = [item.name for item in archive.getmembers() if not item.isdir()]
@@ -158,13 +158,13 @@ class SiteStoragePlugin:
             return super(SiteStoragePlugin, self).walk(inner_path, *args, **kwags)
 
     def list(self, inner_path, *args, **kwags):
-        if ".zip" in inner_path or ".tar.gz" in inner_path:
+        if ".zip" in str(inner_path) or ".tar.gz" in str(inner_path):
             match = re.match(r"^(.*\.(?:tar.gz|zip))(.*)", inner_path)
             archive_inner_path, path_within = match.groups()
             archive = self.openArchive(archive_inner_path)
             path_within = path_within.lstrip("/")
 
-            if archive_inner_path.endswith(".zip"):
+            if str(archive_inner_path).endswith(".zip"):
                 namelist = [name for name in archive.namelist()]
             else:
                 namelist = [item.name for item in archive.getmembers()]
@@ -185,13 +185,13 @@ class SiteStoragePlugin:
             return super(SiteStoragePlugin, self).list(inner_path, *args, **kwags)
 
     def read(self, inner_path, mode="rb", **kwargs):
-        if ".zip/" in inner_path or ".tar.gz/" in inner_path:
+        if ".zip/" in str(inner_path) or ".tar.gz/" in str(inner_path):
             match = re.match(r"^(.*\.(?:tar.gz|zip))(.*)", inner_path)
             archive_inner_path, path_within = match.groups()
             archive = self.openArchive(archive_inner_path)
             path_within = path_within.lstrip("/")
 
-            if archive_inner_path.endswith(".zip"):
+            if str(archive_inner_path).endswith(".zip"):
                 return archive.open(path_within).read()
             else:
                 return archive.extractfile(path_within).read()

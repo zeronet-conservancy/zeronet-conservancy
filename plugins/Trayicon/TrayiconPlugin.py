@@ -56,7 +56,7 @@ class ActionsPlugin(object):
             (_["ZeroNet Twitter"], lambda: self.opensite("https://twitter.com/HelloZeroNet")),
             (_["ZeroNet Reddit"], lambda: self.opensite("http://www.reddit.com/r/zeronet/")),
             (_["ZeroNet Github"], lambda: self.opensite("https://github.com/HelloZeroNet/ZeroNet")),
-            (_["Report bug/request feature"], lambda: self.opensite("https://github.com/HelloZeroNet/ZeroNet/issues")),
+            (_["Report bug/request feature"], lambda: self.opensite("https://github.com/zeronet-conservancy/zeronet-conservancy/issues")),
             "--",
             (_["!Open ZeroNet"], lambda: self.opensite("http://%s:%s/%s" % (ui_ip, config.ui_port, config.homepage))),
             "--",
