@@ -529,11 +529,12 @@ class ContentManager:
         # Dont check in self dir
         while dirs:
             inner_path_parts.insert(0, dirs.pop())
-            now_dir = str(Path(*dirs))
-            content_inner_path = now_dir + '/content.json' if now_dir != '.' else 'content.json'
+            # Build parent content.json path using forward slashes (inner paths are always /)
+            parent_dir = "/".join(dirs)
+            content_inner_path = parent_dir + "/content.json" if parent_dir else "content.json"
             parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
-                return parent_content["includes"].get(now_dir)
+                return parent_content["includes"].get("/".join(inner_path_parts))
             elif parent_content and "user_contents" in parent_content:
                 return self.getUserContentRules(parent_content, inner_path, content)
         return False
