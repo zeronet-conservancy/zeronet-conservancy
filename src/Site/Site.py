@@ -988,7 +988,7 @@ class Site(object):
                 del content_json["domain"]
             if "xid_name" in content_json:
                 del content_json["xid_name"]
-            if root_inner_path.startswith("template-"):
+            if str(root_inner_path).startswith("template-"):
                 content_json["title"] = "My New Epix Site"
             else:
                 content_json["title"] = "My " + content_json["title"]
@@ -1023,7 +1023,7 @@ class Site(object):
 
                 # Copy the file normally to keep the -default postfixed dir and file to allow cloning later
                 file_inner_path_dest = file_inner_path.relative_to(root_inner_path)
-                file_path_dest = new_site.storage.getPath(file_inner_path)
+                file_path_dest = new_site.storage.getPath(file_inner_path_dest)
 
                 self.log.debug("[COPY] %s to %s..." % (file_inner_path, file_path_dest))
                 dest_dir = file_path_dest.parent
