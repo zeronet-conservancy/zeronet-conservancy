@@ -696,24 +696,17 @@ class ContentManagerPlugin(object):
                 raise VerifyError("xID name '%s' not found on chain" % xid_name)
 
             # Try each linked identity as potential signer
-            linked_addrs = []
             for entry in xid_info["identities"]:
                 candidate = entry.get("address")
                 if not candidate:
                     continue
-                linked_addrs.append(candidate)
                 cert_subject = "%s#xid/%s" % (candidate, xid_name)
                 recovered = CryptEpix.get_sign_address_keccak(cert_subject, cert_sign)
-                log.debug("xID cert check: candidate=%s recovered=%s subject=%s" % (
-                    candidate, recovered, cert_subject))
                 if recovered == candidate:
                     user_address = candidate
                     break
             else:
-                raise VerifyError(
-                    "No linked identity matches xID cert signature "
-                    "(linked: %s)" % linked_addrs
-                )
+                raise VerifyError("No linked identity matches xID cert signature")
         else:
             # Standard case: user_address is a raw address
             cert_subject = "%s#xid/%s" % (user_address, xid_name)
