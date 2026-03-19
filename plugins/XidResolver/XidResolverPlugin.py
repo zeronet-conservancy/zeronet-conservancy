@@ -704,14 +704,12 @@ class ContentManagerPlugin(object):
                 linked_addrs.append(candidate)
                 cert_subject = "%s#xid/%s" % (candidate, xid_name)
                 recovered = CryptEpix.get_sign_address_keccak(cert_subject, cert_sign)
+                log.debug("xID cert check: candidate=%s recovered=%s subject=%s" % (
+                    candidate, recovered, cert_subject))
                 if recovered == candidate:
                     user_address = candidate
                     break
             else:
-                # Also try recovering signer directly to aid debugging
-                any_subject = "%s#xid/%s" % ("UNKNOWN", xid_name)
-                log.error("xID cert verify: name=%s linked=%s cert_sign=%s" % (
-                    xid_name, linked_addrs, cert_sign[:20] + "..."))
                 raise VerifyError(
                     "No linked identity matches xID cert signature "
                     "(linked: %s)" % linked_addrs
