@@ -1773,6 +1773,11 @@ if (window.getComputedStyle(document.body).transform) {
             this.loading.showTooLarge(site_info);
           } else {
             this.loading.printLine(site_info.event[1] + " download failed", "error");
+            // Only show "No peers found" after a file download has failed
+            if (site_info.peers <= 1) {
+              this.site_error = "No peers found";
+              this.loading.printLine("No peers found");
+            }
           }
         } else if (site_info.event[0] === "peers_added") {
           this.loading.printLine("Peers found: " + site_info.peers);
@@ -1782,8 +1787,8 @@ if (window.getComputedStyle(document.body).transform) {
         if (site_info.peers > 1) {
           this.loading.printLine("Peers found: " + site_info.peers);
         } else {
-          this.site_error = "No peers found";
-          this.loading.printLine("No peers found");
+          // Show "Searching for peers..." when no peers found yet (before any failures)
+          this.loading.printLine("Searching for peers...");
         }
       }
       if (!this.site_info && !this.loading.screen_visible && $("#inner-iframe").attr("src").replace("?wrapper=False", "").replace(/\?wrapper_nonce=[A-Za-z0-9]+/, "").indexOf("?") === -1) {

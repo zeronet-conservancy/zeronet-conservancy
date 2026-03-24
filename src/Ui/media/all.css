@@ -796,10 +796,10 @@ a {
 }
 
 
-/* Flipper loading anim */
+/* Flipper loading anim with Epix logo */
 .flipper-container {
-	width: 40px;
-	height: 40px;
+	width: 200px;
+	height: 200px;
 	position: absolute;
 	top: 0%;
 	left: 50%;
@@ -813,20 +813,30 @@ a {
 	-o-perspective: 1200;
 	-ms-perspective: 1200;
 	perspective: 1200;
-	opacity: 0
+	opacity: 0;
+	background-image: url('/uimedia/img/logo.png');
+	background-size: contain;
+	background-repeat: no-repeat;
+	background-position: center;
 }
 
 .flipper {
-	position: relative;
+	position: absolute;
 	display: block;
-	height: inherit;
-	width: inherit;
+	height: 50px;
+	width: 50px;
+	top: 50%;
+	left: 50%;
+	margin-top: -25px;
+	margin-left: -25px;
 	-webkit-animation: flip 1.2s infinite ease-in-out;
 	-moz-animation: flip 1.2s infinite ease-in-out;
 	-o-animation: flip 1.2s infinite ease-in-out;
 	-ms-animation: flip 1.2s infinite ease-in-out;
 	animation: flip 1.2s infinite ease-in-out;
 	-webkit-transform-style: preserve-3d;
+	-moz-transform-style: preserve-3d;
+	transform-style: preserve-3d;
 }
 
 .flipper .front,
@@ -839,11 +849,11 @@ a {
 	-o-backface-visibility: hidden;
 	-ms-backface-visibility: hidden;
 	backface-visibility: hidden;
-	/*transform-style: preserve-3d;*/
 	display: block;
 	background-color: #d50000;
 	height: 100%;
 	width: 100%;
+	border-radius: 4px;
 	/* outline: 1px solid transparent; /* FF AA fix */
 }
 
@@ -873,7 +883,7 @@ a {
 }
 
 .loadingscreen.ready .flipper-container {
-	top: 50%;
+	top: 35%;
 	opacity: 1;
 	-webkit-transition: all 1s cubic-bezier(1, 0, 0, 1);
 	-moz-transition: all 1s cubic-bezier(1, 0, 0, 1);
