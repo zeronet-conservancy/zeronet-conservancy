@@ -1183,7 +1183,7 @@ class ConfigPlugin(object):
         group.add_argument(
             '--xid-rpc-url',
             help='Epix Chain REST API URL for xID identity resolution',
-            default='https://api.testnet.epix.zone',
+            default='https://api.epix.zone',
             metavar='url'
         )
         return super(ConfigPlugin, self).createArguments()
