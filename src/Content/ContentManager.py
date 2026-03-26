@@ -685,12 +685,16 @@ class ContentManager:
             return False
         elif relative_path.name and relative_path.name[-1] in ('.', ' '):  # would bug out on Windows OS
             return False
+
         # ugh, can we please have better exps here? also check if this actually respects
         # common file systems
-        elif re.match(r'.*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)', str(relative_path)):  # Protected on Windows
+        # Convert to forward slashes for cross-platform compatibility
+        path_str = str(relative_path).replace('\\', '/')
+
+        if re.match(r'.*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)', path_str):  # Protected on Windows
             return False
         else:
-            return re.match(r'^[^\x00-\x1F\"*:<>?\\|]+$', str(relative_path))
+            return re.match(r'^[^\x00-\x1F\"*:<>?\\|]+$', path_str)
 
     def sanitizePath(self, inner_path):
         return Path(re.sub("[\x00-\x1F\"*:<>?\\|]", "", str(inner_path)))
