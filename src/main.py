@@ -95,16 +95,17 @@ def init_dirs():
         url = None
 
         # Try to fetch bootstrap URL from remote source
-        print(f'fetching {config.bootstrap_url}')
-        try:
-            response = requests.get(config.bootstrap_url, timeout=10)
-            if response.status_code == 200:
-                url = response.text.strip()
-                print(f'got {url}')
-            else:
-                print(f'Warning: Cannot load bootstrap URL (response status: {response.status_code})')
-        except Exception as err:
-            print(f'Warning: Error fetching bootstrap URL: {err}')
+        if config.bootstrap_url:
+            print(f'fetching {config.bootstrap_url}')
+            try:
+                response = requests.get(config.bootstrap_url, timeout=10)
+                if response.status_code == 200:
+                    url = response.text.strip()
+                    print(f'got {url}')
+                else:
+                    print(f'Warning: Cannot load bootstrap URL (response status: {response.status_code})')
+            except Exception as err:
+                print(f'Warning: Error fetching bootstrap URL: {err}')
 
         # Fallback to local bootstrap.url if remote fetch failed
         if not url:
@@ -113,7 +114,8 @@ def init_dirs():
                 try:
                     with open(local_bootstrap_file) as f:
                         url = f.read().strip()
-                    print(f'Using local bootstrap URL: {url}')
+                    if url:
+                        print(f'Using local bootstrap URL: {url}')
                 except Exception as err:
                     print(f'Warning: Error reading local bootstrap URL: {err}')
 
@@ -124,11 +126,11 @@ def init_dirs():
                 if response.status_code >= 200 and response.status_code < 300:
                     importBundle(BytesIO(response.content))
                 else:
-                    startupError(f"Cannot load bootstrap bundle (response status: {response.status_code})")
+                    print(f'Warning: Cannot load bootstrap bundle (response status: {response.status_code}), continuing without bootstrap')
             except Exception as err:
-                startupError(f"Error downloading bootstrap bundle: {err}")
+                print(f'Warning: Error downloading bootstrap bundle: {err}, continuing without bootstrap')
         else:
-            startupError("No bootstrap URL available (remote and local sources failed)")
+            print('No bootstrap URL available, sites will be resolved from peers')
 
     sites_json = private_dir / 'sites.json'
     if not os.path.isfile(sites_json):
