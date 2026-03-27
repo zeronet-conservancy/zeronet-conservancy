@@ -191,32 +191,79 @@ class TorManager(object):
 
                 # Auth cookie file
                 res_protocol = self.send("PROTOCOLINFO", conn)
+                if not res_protocol:
+                    raise Exception("PROTOCOLINFO timeout")
                 cookie_match = re.search('COOKIEFILE="(.*?)"', res_protocol)
 
                 if config.tor_password:
                     res_auth = self.send('AUTHENTICATE "%s"' % config.tor_password, conn)
                 elif cookie_match:
                     cookie_file = cookie_match.group(1).encode("ascii").decode("unicode_escape")
-                    if not os.path.isfile(cookie_file) and self.tor_process:
-                        # Workaround for tor client cookie auth file utf8 encoding bug (https://github.com/torproject/stem/issues/57)
+
+                    # Build list of cookie file locations to try
+                    cookie_locations = []
+
+                    # On Windows, if cookie path looks like a Linux/WSL path, try WSL first
+                    wsl_cookie = None
+                    if sys.platform.startswith("win") and cookie_file.startswith("/"):
+                        wsl_cookie = cookie_file
+
+                    if os.path.isfile(cookie_file):
+                        cookie_locations.append(cookie_file)
+
+                    if self.tor_process:
+                        # Workaround for tor client cookie auth file utf8 encoding bug
                         if sys.platform.startswith("win"):
-                            cookie_file = os.path.dirname(self.tor_exe) + "\\data\\control_auth_cookie"
+                            cookie_locations.append(os.path.dirname(self.tor_exe) + "\\data\\control_auth_cookie")
                         else:
-                            # Mac and Linux use forward slashes
-                            cookie_file = os.path.join(os.path.dirname(self.tor_exe), "data", "control_auth_cookie")
-                    try:
-                        auth_hex = binascii.b2a_hex(open(cookie_file, "rb").read())
-                        res_auth = self.send("AUTHENTICATE %s" % auth_hex.decode("utf8"), conn)
-                    except (FileNotFoundError, IOError) as err:
-                        # Cookie file not accessible (e.g., external Tor with Linux path on Windows)
-                        # Try authentication without cookie
-                        self.log.debug("Cookie file not accessible (%s), trying empty authentication" % err)
-                        res_auth = self.send("AUTHENTICATE", conn)
+                            cookie_locations.append(os.path.join(os.path.dirname(self.tor_exe), "data", "control_auth_cookie"))
+
+                    # Try each location until we find one that works
+                    auth_success = False
+
+                    # Try WSL path FIRST if detected (for Windows with WSL Tor)
+                    if wsl_cookie:
+                        try:
+                            self.log.debug("Trying WSL cookie file: %s" % wsl_cookie)
+                            # Use WSL to read the cookie file
+                            import subprocess
+                            cookie_data = subprocess.check_output(["wsl", "-e", "cat", wsl_cookie])
+                            auth_hex = binascii.b2a_hex(cookie_data)
+                            res_auth = self.send("AUTHENTICATE %s" % auth_hex.decode("utf8"), conn)
+                            if res_auth and "250 OK" in res_auth:
+                                self.log.info("Tor cookie authentication successful using WSL path: %s" % wsl_cookie)
+                                auth_success = True
+                        except Exception as err:
+                            self.log.debug("WSL cookie file failed: %s" % err)
+
+                    # Try regular file locations if WSL didn't work
+                    if not auth_success:
+                        for location in cookie_locations:
+                            try:
+                                if os.path.isfile(location):
+                                    self.log.debug("Trying cookie file: %s" % location)
+                                    auth_hex = binascii.b2a_hex(open(location, "rb").read())
+                                    res_auth = self.send("AUTHENTICATE %s" % auth_hex.decode("utf8"), conn)
+                                    if res_auth and "250 OK" in res_auth:
+                                        self.log.info("Tor cookie authentication successful using: %s" % location)
+                                        auth_success = True
+                                        break
+                            except Exception as err:
+                                self.log.debug("Cookie file %s failed: %s" % (location, err))
+                                continue
+
+                    if not auth_success:
+                        # Check if no-auth is supported
+                        if "METHODS=NULL" in res_protocol:
+                            self.log.debug("No accessible cookie file found, trying NULL authentication")
+                            res_auth = self.send("AUTHENTICATE", conn)
+                        else:
+                            raise Exception("Cookie authentication required but no accessible cookie file found")
                 else:
                     res_auth = self.send("AUTHENTICATE", conn)
 
-                if "250 OK" not in res_auth:
-                    raise Exception("Authenticate error %s" % res_auth)
+                if not res_auth or "250 OK" not in res_auth:
+                    raise Exception("Authenticate error: %s" % (res_auth or "timeout"))
 
                 # Version 0.2.7.5 required because ADD_ONION support
                 res_version = self.send("GETINFO version", conn)
@@ -300,17 +347,33 @@ class TorManager(object):
                     return ""
             return self.send(cmd)
 
-    def send(self, cmd, conn=None):
+    def send(self, cmd, conn=None, timeout=5.0):
         if not conn:
             conn = self.conn
         self.log.debug("> %s" % cmd)
         back = ""
+
         for retry in range(2):
             try:
-                conn.sendall(b"%s\r\n" % cmd.encode("utf8"))
-                while not back.endswith("250 OK\r\n"):
-                    back += conn.recv(1024 * 64).decode("utf8")
+                # Use gevent timeout for better compatibility with gevent sockets
+                with gevent.Timeout(timeout):
+                    conn.sendall(b"%s\r\n" % cmd.encode("utf8"))
+                    # Wait for response ending with \r\n and starting with a digit (Tor response code)
+                    while True:
+                        chunk = conn.recv(1024 * 64).decode("utf8")
+                        if not chunk:
+                            break
+                        back += chunk
+                        # Check if we have a complete response (ends with \r\n and has response code)
+                        if back.endswith("\r\n") and back and back[0].isdigit():
+                            break
                 break
+            except gevent.Timeout:
+                self.log.warning("Tor command timed out after %ss: %s" % (timeout, cmd))
+                if not self.connecting:
+                    self.disconnect()
+                back = None
+                break  # Don't retry on timeout
             except Exception as err:
                 self.log.error("Tor send error: %s, reconnecting..." % err)
                 if not self.connecting:
@@ -318,6 +381,7 @@ class TorManager(object):
                     time.sleep(1)
                     self.connect()
                 back = None
+
         if back:
             self.log.debug("< %s" % back.strip())
         return back
