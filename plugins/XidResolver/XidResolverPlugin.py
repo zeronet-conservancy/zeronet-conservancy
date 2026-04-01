@@ -849,20 +849,14 @@ class UiWebsocketPlugin(object):
         self.response(to, None)
 
     def actionXidResolveName(self, to, xid_name):
-        """Forward-resolve an xID name (e.g. "peet.epix") to its owner and identities.
+        """Forward-resolve an xID name (e.g. "peet.epix") to profile data.
 
-        Returns {owner, identities} or null if the name is not registered.
+        Returns {name, tld, owner, avatar, bio} or null if the name is not registered.
         """
         if not xid_name or not isinstance(xid_name, str):
             return self.response(to, None)
 
-        parts = xid_name.rsplit(".", 1)
-        if len(parts) == 2:
-            name, tld = parts
-        else:
-            name, tld = xid_name, "epix"
-
-        result = resolve_xid_name(name, tld)
+        result = _resolve_xid_name_profile(xid_name)
         self.response(to, result)
 
     def actionXidResolveBatch(self, to, peer_addresses):
