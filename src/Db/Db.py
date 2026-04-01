@@ -424,7 +424,7 @@ class Db(object):
             if dbmap.get("to_json_table"):
                 directory = relative_path.parent
                 file_name = relative_path.name
-                data_json_row = dict(cur.getJsonRow(directory + "/" + dbmap.get("file_name", file_name)))
+                data_json_row = dict(cur.getJsonRow(str(directory / dbmap.get("file_name", file_name))))
                 changed = False
                 for key in dbmap["to_json_table"]:
                     if data.get(key) != data_json_row.get(key):
