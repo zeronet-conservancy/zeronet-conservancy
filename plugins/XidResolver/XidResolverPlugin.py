@@ -218,9 +218,9 @@ def resolve_identity_xid(identity_address):
                 return {
                     "name": cached["name"],
                     "tld": cached["tld"],
-                    "owner": cached["owner"],
-                    "active": cached["active"],
-                    "revoked_at": cached["revoked_at"],
+                    "owner": cached.get("owner", ""),
+                    "active": cached.get("active", True),
+                    "revoked_at": cached.get("revoked_at", 0),
                     "revoked_at_time": cached.get("revoked_at_time", 0),
                     "avatar": cached.get("avatar", ""),
                     "bio": cached.get("bio", ""),
