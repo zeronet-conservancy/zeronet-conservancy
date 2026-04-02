@@ -177,11 +177,13 @@ class FileRequest(object):
                     peer.connect(self.connection)  # Assign current connection so downloader can reach sender
                 # On complete publish to other peers
                 diffs = params.get("diffs", {})
+                if not isinstance(diffs, dict):
+                    diffs = {}
                 site.onComplete.once(lambda: site.publish(inner_path=inner_path, diffs=diffs, limit=3), "publish_%s" % inner_path)
 
                 # Load new content file and download changed files in new thread
                 def downloader():
-                    site.downloadContent(inner_path, peer=peer, diffs=params.get("diffs", {}),
+                    site.downloadContent(inner_path, peer=peer, diffs=diffs,
                                         inline_files=params.get("inline_files", {}),
                                         publisher_port_open=params.get("port_opened", True))
                     del self.server.files_parsing[file_uri]
