@@ -120,6 +120,7 @@ def _resolve_with_proof(rpc_url, tld, name):
     """
     data = _fetch_json("%s/xid/v1/resolve_with_proof/%s/%s" % (rpc_url, tld, name))
     if not data or not data.get("domain"):
+        log.debug("_resolve_with_proof: no data for %s.%s" % (name, tld))
         return None, False
 
     domain = data["domain"]
@@ -159,7 +160,17 @@ def _resolve_with_proof(rpc_url, tld, name):
 
     attested_digest = digest_info["digest"]
 
-    # The proof root must match the current attested state digest
+    # The proof root must match the current attested state digest.
+    # If mismatch, the cached digest may be stale — force refresh and retry once.
+    if proof_root != attested_digest:
+        log.debug(
+            "Proof root %s... != cached digest %s... for %s.%s, refreshing" %
+            (proof_root[:16], attested_digest[:16], name, tld)
+        )
+        _digest_cache["timestamp"] = 0
+        digest_info = _fetch_state_digest(rpc_url)
+        if digest_info:
+            attested_digest = digest_info["digest"]
     if proof_root != attested_digest:
         log.warning(
             "Proof root %s... does not match attested digest %s... for %s.%s" %
@@ -286,6 +297,8 @@ def resolve_identity_xid(identity_address):
             "cached_at": now,
         }
         _identity_cache[identity_address] = entry
+        # Also cache under "name.tld" key so _resolve_xid_name_profile benefits
+        _identity_cache["%s.%s" % (name, tld)] = entry
         return {
             "name": entry["name"],
             "tld": entry["tld"],
