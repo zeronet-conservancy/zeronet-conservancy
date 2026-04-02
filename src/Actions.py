@@ -294,7 +294,10 @@ class Actions:
         if main.dht_server is not None:
             launched_greenlets.append(gevent.spawn(main.dht_server.start))
 
-        site = SiteManager.site_manager.add(address)
+        site = SiteManager.site_manager.need(address)
+        if not site:
+            print("Error: Invalid site address: %s" % address)
+            return
 
         on_completed = gevent.event.AsyncResult()
 
