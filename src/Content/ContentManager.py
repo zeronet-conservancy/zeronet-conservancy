@@ -872,7 +872,7 @@ class ContentManager:
             new_content["signs_required"] = content.get("signs_required", 1)
 
         new_content["address"] = self.site.address
-        new_content["inner_path"] = str(inner_path)
+        new_content["inner_path"] = inner_path.as_posix()
 
         # Verify private key
         self.log.info("Verifying private key...")
@@ -1021,8 +1021,8 @@ class ContentManager:
         if content.get("address") and content["address"] != self.site.address:
             raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site.address))
 
-        # Check file inner path
-        if content.get('inner_path') and content['inner_path'] != str(inner_path):
+        # Check file inner path (normalize backslashes for Windows-signed content)
+        if content.get('inner_path') and content['inner_path'].replace("\\", "/") != str(inner_path).replace("\\", "/"):
             raise VerifyError(f"Wrong inner_path: {content['inner_path']}")
 
         # If our content.json file bigger than the size limit throw error
