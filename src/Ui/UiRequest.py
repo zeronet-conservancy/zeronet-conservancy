@@ -386,7 +386,7 @@ class UiRequest:
                 other_port = config.ui_port
                 frame_src = 'self'
 
-            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
+            headers["Content-Security-Policy"] = f"default-src 'none'; script-src 'nonce-{script_nonce}' 'wasm-unsafe-eval'; img-src 'self' blob: data:; style-src 'self' blob: 'unsafe-inline'; connect-src *; frame-src {frame_src}"
 
         if allow_ajax:
             headers["Access-Control-Allow-Origin"] = "null"
