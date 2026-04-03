@@ -144,25 +144,39 @@ jobs:
           }
 
       - name: Install NSIS
-        run: choco install nsis -y
+        shell: pwsh
+        run: |
+          choco install nsis -y
+          # Import chocolatey profile to refresh PATH
+          $ChocolateyProfile = "$env:ChocolateyInstall\helpers\chocolateyProfile.psm1"
+          if (Test-Path $ChocolateyProfile) {
+            Import-Module $ChocolateyProfile
+            refreshenv
+          }
 
       - name: Create Windows installer with NSIS
         shell: pwsh
         run: |
           Write-Host "Running NSIS..."
-          # Refresh environment to pick up NSIS path
-          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
 
-          # Find NSIS executable
+          # Find NSIS executable - check multiple possible locations
           $nsisPath = $null
           $possiblePaths = @(
             "C:\Program Files (x86)\NSIS\makensis.exe",
             "C:\Program Files\NSIS\makensis.exe",
-            (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+            "$env:ChocolateyInstall\bin\makensis.exe",
+            "$env:ProgramData\chocolatey\bin\makensis.exe",
+            "C:\ProgramData\chocolatey\bin\makensis.exe"
           )
+
+          # Also try to find via Get-Command
+          $cmdPath = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          if ($cmdPath) { $possiblePaths += $cmdPath }
+
           foreach ($path in $possiblePaths) {
             if ($path -and (Test-Path $path)) {
               $nsisPath = $path
+              Write-Host "Found NSIS at: $path"
               break
             }
           }
@@ -170,6 +184,9 @@ jobs:
           if (-not $nsisPath) {
             Write-Host "ERROR: NSIS not found. Searched paths:"
             $possiblePaths | ForEach-Object { Write-Host "  - $_" }
+            Write-Host ""
+            Write-Host "Searching for makensis.exe on system..."
+            Get-ChildItem -Path "C:\Program Files*","C:\ProgramData" -Recurse -Filter "makensis.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  Found: $($_.FullName)" }
             exit 1
           }
 
