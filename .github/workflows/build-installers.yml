@@ -150,7 +150,31 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "Running NSIS..."
-          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+          # Refresh environment to pick up NSIS path
+          $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+
+          # Find NSIS executable
+          $nsisPath = $null
+          $possiblePaths = @(
+            "C:\Program Files (x86)\NSIS\makensis.exe",
+            "C:\Program Files\NSIS\makensis.exe",
+            (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
+          )
+          foreach ($path in $possiblePaths) {
+            if ($path -and (Test-Path $path)) {
+              $nsisPath = $path
+              break
+            }
+          }
+
+          if (-not $nsisPath) {
+            Write-Host "ERROR: NSIS not found. Searched paths:"
+            $possiblePaths | ForEach-Object { Write-Host "  - $_" }
+            exit 1
+          }
+
+          Write-Host "Using NSIS at: $nsisPath"
+          & $nsisPath installer.nsi
           if ($LASTEXITCODE -ne 0) {
             Write-Host "ERROR: NSIS failed with exit code $LASTEXITCODE"
             exit 1
