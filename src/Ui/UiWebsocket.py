@@ -781,7 +781,11 @@ class UiWebsocket(object):
             if required or inner_path in self.site.bad_files:
                 with gevent.Timeout(timeout):
                     self.site.needFile(inner_path, priority=priority)
-            body = self.site.storage.read(inner_path, "rb")
+            # Check if file exists before reading (avoids exception in thread pool)
+            if not self.site.storage.isFile(inner_path):
+                body = None
+            else:
+                body = self.site.storage.read(inner_path, "rb")
         except (Exception, gevent.Timeout) as err:
             self.log.debug("%s fileGet error: %s" % (inner_path, Debug.formatException(err)))
             body = None
