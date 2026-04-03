@@ -512,7 +512,11 @@ class ContentManager:
 
         Return: The rules for the file or False if not allowed"""
 
-        inner_path = str(inner_path)
+        # Normalize path separators to forward slashes (inner paths are always /)
+        if isinstance(inner_path, Path):
+            inner_path = inner_path.as_posix()
+        else:
+            inner_path = str(inner_path).replace("\\", "/")
         if not inner_path.endswith('content.json'):  # Find the files content.json first
             file_info = self.getFileInfo(inner_path)
             if not file_info:

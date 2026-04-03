@@ -357,12 +357,14 @@ class Db(object):
         if not file_path.is_relative_to(self.db_dir):
             return False  # Not from the db dir: Skipping
         relative_path = file_path.relative_to(self.db_dir)
+        # Normalize to forward slashes for cross-platform compatibility
+        relative_path_str = relative_path.as_posix()
 
         # Check if filename matches any of mappings in schema
         matched_maps = []
         for match, map_settings in self.schema["maps"].items():
             try:
-                if SafeRe.match(match, str(relative_path)):
+                if SafeRe.match(match, relative_path_str):
                     matched_maps.append(map_settings)
             except SafeRe.UnsafePatternError as err:
                 self.log.error(err)
@@ -394,7 +396,7 @@ class Db(object):
 
         # Row for current json file if required
         if not data or [dbmap for dbmap in matched_maps if "to_keyvalue" in dbmap or "to_table" in dbmap]:
-            json_row = cur.getJsonRow(str(relative_path))
+            json_row = cur.getJsonRow(relative_path_str)
 
         # Check matched mappings in schema
         for dbmap in matched_maps:
