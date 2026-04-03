@@ -172,48 +172,7 @@ jobs:
           Write-Host "NSIS installed successfully"
 
       - name: Create Windows installer with NSIS
-        shell: pwsh
-        run: |
-          Write-Host "Running NSIS..."
-
-          # Find NSIS executable - check multiple possible locations
-          $nsisPath = $null
-          $possiblePaths = @(
-            "C:\Program Files (x86)\NSIS\makensis.exe",
-            "C:\Program Files\NSIS\makensis.exe",
-            "$env:ChocolateyInstall\bin\makensis.exe",
-            "$env:ProgramData\chocolatey\bin\makensis.exe",
-            "C:\ProgramData\chocolatey\bin\makensis.exe"
-          )
-
-          # Also try to find via Get-Command
-          $cmdPath = (Get-Command makensis.exe -ErrorAction SilentlyContinue).Source
-          if ($cmdPath) { $possiblePaths += $cmdPath }
-
-          foreach ($path in $possiblePaths) {
-            if ($path -and (Test-Path $path)) {
-              $nsisPath = $path
-              Write-Host "Found NSIS at: $path"
-              break
-            }
-          }
-
-          if (-not $nsisPath) {
-            Write-Host "ERROR: NSIS not found. Searched paths:"
-            $possiblePaths | ForEach-Object { Write-Host "  - $_" }
-            Write-Host ""
-            Write-Host "Searching for makensis.exe on system..."
-            Get-ChildItem -Path "C:\Program Files*","C:\ProgramData" -Recurse -Filter "makensis.exe" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host "  Found: $($_.FullName)" }
-            exit 1
-          }
-
-          Write-Host "Using NSIS at: $nsisPath"
-          & $nsisPath installer.nsi
-          if ($LASTEXITCODE -ne 0) {
-            Write-Host "ERROR: NSIS failed with exit code $LASTEXITCODE"
-            exit 1
-          }
-          Write-Host "✓ NSIS completed successfully"
+        run: makensis installer.nsi
 
       - name: Verify installer was created
         shell: pwsh
