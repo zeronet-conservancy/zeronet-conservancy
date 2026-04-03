@@ -144,35 +144,18 @@ jobs:
           }
 
       - name: Install NSIS
-        shell: pwsh
-        run: |
-          # Retry logic for chocolatey install (handles transient 503 errors)
-          $maxRetries = 3
-          $retryDelay = 30
-          $success = $false
-
-          for ($i = 1; $i -le $maxRetries; $i++) {
-            Write-Host "Attempt $i of $maxRetries to install NSIS..."
-            choco install nsis -y
-            if ($LASTEXITCODE -eq 0) {
-              $success = $true
-              break
-            }
-            if ($i -lt $maxRetries) {
-              Write-Host "Install failed, waiting $retryDelay seconds before retry..."
-              Start-Sleep -Seconds $retryDelay
-            }
-          }
-
-          if (-not $success) {
-            Write-Host "ERROR: Failed to install NSIS after $maxRetries attempts"
-            exit 1
-          }
-
-          Write-Host "NSIS installed successfully"
+        run: choco install nsis -y
 
       - name: Create Windows installer with NSIS
-        run: makensis installer.nsi
+        shell: pwsh
+        run: |
+          Write-Host "Running NSIS..."
+          & "C:\Program Files (x86)\NSIS\makensis.exe" installer.nsi
+          if ($LASTEXITCODE -ne 0) {
+            Write-Host "ERROR: NSIS failed with exit code $LASTEXITCODE"
+            exit 1
+          }
+          Write-Host "✓ NSIS completed successfully"
 
       - name: Verify installer was created
         shell: pwsh
@@ -297,4 +280,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
