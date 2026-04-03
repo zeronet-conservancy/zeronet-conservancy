@@ -230,6 +230,8 @@ class DbCursor:
     # Get or create a row for json file
     # Return: The database row
     def getJsonRow(self, file_path):
+        # Normalize path separators for cross-platform compatibility
+        file_path = file_path.replace("\\", "/")
         directory, file_name = re.match("^(.*?)/*([^/]*)$", file_path).groups()
         if self.db.schema["version"] == 1:
             # One path field
