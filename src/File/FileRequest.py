@@ -153,7 +153,9 @@ class FileRequest(object):
 
             file_uri = "%s/%s:%s" % (site.address, inner_path, content["modified"])
 
-            if self.server.files_parsing.get(file_uri):  # Check if we already working on it
+            if content.get("modified", 0) <= current_content_modified:
+                valid = None  # Older or same content as we already have
+            elif self.server.files_parsing.get(file_uri):  # Check if we already working on it
                 valid = None  # Same file
             else:
                 try:
@@ -186,7 +188,7 @@ class FileRequest(object):
                     site.downloadContent(inner_path, peer=peer, diffs=diffs,
                                         inline_files=params.get("inline_files", {}),
                                         publisher_port_open=params.get("port_opened", True))
-                    del self.server.files_parsing[file_uri]
+                    self.server.files_parsing.pop(file_uri, None)
 
                 gevent.spawn(downloader)
             else:
