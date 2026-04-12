@@ -72,10 +72,10 @@ class Site(object):
             else:
                 main.file_server = FileServer()
                 self.connection_server = main.file_server
+            self.announcer = SiteAnnouncer(self, main.dht_server)  # Announce and get peer list from other nodes
         else:
             self.connection_server = FileServer()
-
-        self.announcer = SiteAnnouncer(self, main.dht_server)  # Announce and get peer list from other nodes
+            self.announcer = SiteAnnouncer(self, None)
 
         if not self.settings.get("wrapper_key"):  # To auth websocket permissions
             self.settings["wrapper_key"] = CryptHash.random()
@@ -1035,8 +1035,9 @@ class Site(object):
                 shutil.copy(file_path, file_path_dest)
 
                 # If -default in path, create a -default less copy of the file
-                if file_inner_path_dest.name.endswith('-default'):
-                    non_default_inner_path_dest = file_inner_path_dest.parent / file_inner_path_dest.name.replace('-default', '')
+                file_inner_path_dest_str = str(file_inner_path_dest)
+                if '-default' in file_inner_path_dest_str:
+                    non_default_inner_path_dest = file_inner_path_dest_str.replace('-default', '')
                     file_path_dest = new_site.storage.getPath(non_default_inner_path_dest)
                     if new_site.storage.isFile(non_default_inner_path_dest) and not overwrite:
                         # Don't overwrite site files with default ones

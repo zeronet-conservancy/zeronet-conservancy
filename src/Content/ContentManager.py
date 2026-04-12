@@ -126,7 +126,7 @@ class ContentManager:
     # Load content.json to self.content
     # Return: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
     def loadContent(self, content_inner_path="content.json", add_bad_files=True, delete_removed_files=True, load_includes=True, force=False):
-        content_inner_path = content_inner_path.strip("/")  # Remove / from beginning
+        content_inner_path = str(content_inner_path).strip("/")  # Remove / from beginning
         old_content = self.contents.get(content_inner_path)
         content_path = self.site.storage.getPath(content_inner_path)
         content_dir = os.path.dirname(content_path)
@@ -580,7 +580,7 @@ class ContentManager:
         if "signers" in rules:
             rules["signers"] = rules["signers"][:]  # Make copy of the signers
 
-        if content is not None and 'cert_user_id' in content:
+        if content is not None and 'cert_user_id' in content and '@' in content['cert_user_id']:
             name, domain = content['cert_user_id'].rsplit('@', 1)
             cert_addresses = parent_content['user_contents']['cert_signers'].get(domain)
         else:
@@ -615,6 +615,10 @@ class ContentManager:
                 elif hasattr(val, "startswith"):  # String, update if longer
                     if len(val) > len(rules[key]):
                         rules[key] = val
+                elif type(val) is dict:  # Dict (e.g. max_items), merge per-key taking larger values
+                    for k, v in val.items():
+                        if k not in rules[key] or (isinstance(v, int) and v > rules[key].get(k, 0)):
+                            rules[key][k] = v
                 elif type(val) is list:  # List, append
                     rules[key] += val
 
@@ -702,6 +706,69 @@ class ContentManager:
 
     def sanitizePath(self, inner_path):
         return Path(re.sub("[\x00-\x1F\"*:<>?\\|]", "", str(inner_path)))
+
+    def _pruneDataFiles(self, inner_directory, max_items, max_items_age=None, max_items_min=None):
+        """Trim arrays in data.json files under inner_directory per pruning rules.
+
+        max_items: {key: N} — hard cap, keep last N entries.
+        max_items_age: {key: seconds} — prune entries with timestamp older than N seconds.
+        max_items_min: {key: N} — minimum entries to keep regardless of age (default 100).
+
+        Age-based pruning keeps all entries within the time window (even if thousands),
+        but prunes older entries down to max_items_min. The hard cap from max_items
+        is always enforced last as an absolute maximum.
+
+        Called during sign() before hashFiles() so the hash reflects the trimmed data."""
+        import time as _time
+        now = int(_time.time())
+
+        for file_path in self.site.storage.walk(inner_directory):
+            if not str(file_path).endswith("data.json"):
+                continue
+            inner_dir_str = str(inner_directory)
+            if inner_dir_str and inner_dir_str != ".":
+                full_path = inner_dir_str + "/" + str(file_path) if not inner_dir_str.endswith("/") else inner_dir_str + str(file_path)
+            else:
+                full_path = str(file_path)
+            try:
+                data = self.site.storage.loadJson(full_path)
+            except Exception:
+                continue
+            if not data or not isinstance(data, dict):
+                continue
+            changed = False
+
+            # Age-based pruning: keep entries within time window + minimum count
+            if max_items_age and isinstance(max_items_age, dict):
+                for key, max_age in max_items_age.items():
+                    if key not in data or not isinstance(data[key], list):
+                        continue
+                    entries = data[key]
+                    if len(entries) <= (max_items_min or {}).get(key, 100):
+                        continue
+                    min_keep = (max_items_min or {}).get(key, 100)
+                    cutoff = now - max_age
+                    # Sort oldest first so last N are newest
+                    entries.sort(key=lambda e: e.get("timestamp", 0))
+                    total = len(entries)
+                    keep_from = total - min_keep
+                    pruned = [
+                        e for i, e in enumerate(entries)
+                        if i >= keep_from or e.get("timestamp", 0) >= cutoff
+                    ]
+                    if len(pruned) < total:
+                        data[key] = pruned
+                        changed = True
+
+            # Hard cap: keep last N entries
+            for key, limit in max_items.items():
+                if key in data and isinstance(data[key], list) and len(data[key]) > limit:
+                    data[key] = data[key][-limit:]
+                    changed = True
+
+            if changed:
+                self.log.info("[max_items] Pruned %s" % full_path)
+                self.site.storage.writeJson(full_path, data)
 
     # Hash files in directory
     def hashFiles(self, dir_inner_path, ignore_pattern=None, optional_pattern=None,
@@ -819,6 +886,15 @@ class ContentManager:
                 inc_dir = helper.getDirname(include_path)
                 if inc_dir:
                     included_dirs.append(inner_dir_str + inc_dir if inner_dir_str else inc_dir)
+
+        # Auto-prune data files based on max_items rules before hashing
+        rules = self.getRules(inner_path, content)
+        if rules and isinstance(rules, dict):
+            max_items = rules.get("max_items")
+            if max_items and isinstance(max_items, dict):
+                max_items_age = rules.get("max_items_age")
+                max_items_min = rules.get("max_items_min")
+                self._pruneDataFiles(inner_directory, max_items, max_items_age, max_items_min)
 
         files_node, files_optional_node = self.hashFiles(
             inner_directory, content.get("ignore"), content.get("optional"),
@@ -1073,6 +1149,26 @@ class ContentManager:
                 raise VerifyError("Include optional files too large %sB > %sB" % (
                     content_size_optional, rules["max_size_optional"])
                 )
+
+        # Check item count limits for user data files
+        max_items = rules.get("max_items")
+        if max_items and isinstance(max_items, dict):
+            content_dir = helper.getDirname(inner_path)
+            for file_rel_path in content.get("files", {}):
+                if not file_rel_path.endswith("data.json"):
+                    continue
+                data_path = content_dir + file_rel_path
+                try:
+                    data = self.site.storage.loadJson(data_path)
+                except Exception:
+                    continue
+                if not data or not isinstance(data, dict):
+                    continue
+                for key, limit in max_items.items():
+                    if key in data and isinstance(data[key], list) and len(data[key]) > limit:
+                        raise VerifyError(
+                            "Too many items in %s.%s: %d > %d" % (file_rel_path, key, len(data[key]), limit)
+                        )
 
         # Filename limit
         if rules.get("files_allowed"):

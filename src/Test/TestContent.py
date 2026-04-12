@@ -27,14 +27,14 @@ class TestContent:
 
         # Valid signers for "data/test_include/content.json"
         valid_signers = site.content_manager.getValidSigners("data/test_include/content.json")
-        assert "15ik6LeBWnACWfaika1xqGapRZ1zh3JpCo" in valid_signers  # Extra valid signer defined in parent content.json
-        assert "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT" in valid_signers  # The site itself
+        assert "epix1lse5uxxkqz472zvr25y4upc63hwk7ldza54k9j" in valid_signers  # Extra valid signer defined in parent content.json
+        assert "epix18w3j2ftdj5078sw4qhxudp5wxxj3zc5k72vsl8" in valid_signers  # The site itself
         assert len(valid_signers) == 2  # No more
 
         # Valid signers for "data/users/content.json"
         valid_signers = site.content_manager.getValidSigners("data/users/content.json")
-        assert "1LSxsKfC9S9TVXGGNSM3vPHjyW82jgCX5f" in valid_signers  # Extra valid signer defined in parent content.json
-        assert "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT" in valid_signers  # The site itself
+        assert "epix1erhadgd54y5f62rqqldaszfagywll8adf4n5z5" in valid_signers  # Extra valid signer defined in parent content.json
+        assert "epix18w3j2ftdj5078sw4qhxudp5wxxj3zc5k72vsl8" in valid_signers  # The site itself
         assert len(valid_signers) == 2
 
         # Valid signers for root content.json
@@ -154,7 +154,7 @@ class TestContent:
         assert "cert_signers" in site.content_manager.getFileInfo("data/users/unknown/content.json")
 
         # Optional user file
-        file_info_optional = site.content_manager.getFileInfo("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
+        file_info_optional = site.content_manager.getFileInfo("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
         assert "sha512" in file_info_optional
         assert file_info_optional["optional"] is True
 
@@ -255,8 +255,8 @@ class TestContent:
 
         site.content_manager.contents["data/users/content.json"]["user_contents"]["permission_rules"]["([a-zA-Z]+)*"] = {"max_size": 0}
         with pytest.raises(UnsafePatternError) as err:
-            with site.storage.open("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json") as data:
-                site.content_manager.verifyFile("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", data, ignore_same=False)
+            with site.storage.open("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json") as data:
+                site.content_manager.verifyFile("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", data, ignore_same=False)
         assert "Potentially unsafe" in str(err.value)
 
     def testPathValidation(self, site):
