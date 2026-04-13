@@ -48,11 +48,9 @@ class UDPServerAdapter:
         if self._transport:
             self._transport.sendto(data, addr)
 
-    def run(self, host, port, loop=None):
-        """Start the UDP server (schedules endpoint creation)."""
+    async def run(self, host, port, loop=None):
+        """Start the UDP server and wait for it to be ready."""
         self._loop = loop or asyncio.get_event_loop()
-        self._host = host
-        self._port = port
 
         # Create the protocol class
         adapter = self
@@ -73,17 +71,12 @@ class UDPServerAdapter:
                 if exc:
                     logging.debug(f"UDP connection lost: {exc}")
 
-        self._protocol_class = _Protocol
-
-        # Schedule the endpoint creation as a task
-        asyncio.ensure_future(self._create_endpoint(), loop=self._loop)
-
-    async def _create_endpoint(self):
-        """Create the datagram endpoint."""
-        _, self._protocol = await self._loop.create_datagram_endpoint(
-            self._protocol_class,
-            local_addr=(self._host, self._port)
+        # Create the endpoint and wait for it to be ready
+        transport, self._protocol = await self._loop.create_datagram_endpoint(
+            _Protocol,
+            local_addr=(host, port)
         )
+        self._transport = transport
 
 initial_nodes = [
     ("67.215.246.10", 6881),  # router.bittorrent.com
@@ -115,7 +108,8 @@ class DHTServer:
 
     async def run(self, loop):
         udp = UDPServerAdapter()
-        udp.run("0.0.0.0", 12346, loop=loop)
+        # Use port 0 to let OS assign an available ephemeral port
+        await udp.run("0.0.0.0", 0, loop=loop)
 
         # TODO: preserve DHT id among sessions
         node_id = randomNodeId()
