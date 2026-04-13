@@ -45,8 +45,17 @@ class UDPServerAdapter:
 
     def send(self, data, addr):
         """Send data to the specified address."""
-        if self._transport:
-            self._transport.sendto(data, addr)
+        if self._transport and not self._transport.is_closing():
+            try:
+                # Validate addr is a tuple (host, port), not just a port
+                if not isinstance(addr, tuple) or len(addr) != 2:
+                    import traceback
+                    logging.warning(f"UDP send: invalid addr format: {addr} (type={type(addr).__name__})\n{''.join(traceback.format_stack())}")
+                    return
+                self._transport.sendto(data, addr)
+            except (AttributeError, OSError, TypeError) as e:
+                # Transport may have been closed between check and send
+                logging.debug(f"UDP send failed: {e}")
 
     async def run(self, host, port, loop=None):
         """Start the UDP server and wait for it to be ready."""
@@ -68,6 +77,7 @@ class UDPServerAdapter:
                 logging.debug(f"UDP error received: {exc}")
 
             def connection_lost(self, exc):
+                adapter._transport = None
                 if exc:
                     logging.debug(f"UDP connection lost: {exc}")
 
