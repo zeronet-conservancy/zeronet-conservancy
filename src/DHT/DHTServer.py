@@ -12,9 +12,78 @@ from .aiobtdht_fix import patch_aiobtdht
 patch_aiobtdht()
 
 from aiobtdht import DHT
-from aioudp import UDPServer
 
 from Config import config
+
+
+class UDPServerAdapter:
+    """
+    Adapter class that provides the old aioudp UDPServer interface
+    expected by aiokrpc/aiobtdht using asyncio's DatagramProtocol.
+
+    Required interface:
+    - subscribe(callback) - register async callback(data, addr)
+    - send(data, addr) - send datagram to address
+    - run(host, port, loop=loop) - start the server
+    """
+    def __init__(self):
+        self._subscribers = {}
+        self._subscriber_id = 0
+        self._transport = None
+        self._protocol = None
+        self._loop = None
+
+    def subscribe(self, callback):
+        """Register a callback to receive datagrams."""
+        self._subscriber_id += 1
+        self._subscribers[self._subscriber_id] = callback
+        return self._subscriber_id
+
+    def unsubscribe(self, sub_id):
+        """Unregister a callback."""
+        self._subscribers.pop(sub_id, None)
+
+    def send(self, data, addr):
+        """Send data to the specified address."""
+        if self._transport:
+            self._transport.sendto(data, addr)
+
+    def run(self, host, port, loop=None):
+        """Start the UDP server (schedules endpoint creation)."""
+        self._loop = loop or asyncio.get_event_loop()
+        self._host = host
+        self._port = port
+
+        # Create the protocol class
+        adapter = self
+
+        class _Protocol(asyncio.DatagramProtocol):
+            def connection_made(self, transport):
+                adapter._transport = transport
+
+            def datagram_received(self, data, addr):
+                # Notify all subscribers
+                for callback in adapter._subscribers.values():
+                    asyncio.ensure_future(callback(data, addr), loop=adapter._loop)
+
+            def error_received(self, exc):
+                logging.debug(f"UDP error received: {exc}")
+
+            def connection_lost(self, exc):
+                if exc:
+                    logging.debug(f"UDP connection lost: {exc}")
+
+        self._protocol_class = _Protocol
+
+        # Schedule the endpoint creation as a task
+        asyncio.ensure_future(self._create_endpoint(), loop=self._loop)
+
+    async def _create_endpoint(self):
+        """Create the datagram endpoint."""
+        _, self._protocol = await self._loop.create_datagram_endpoint(
+            self._protocol_class,
+            local_addr=(self._host, self._port)
+        )
 
 initial_nodes = [
     ("67.215.246.10", 6881),  # router.bittorrent.com
@@ -45,7 +114,7 @@ class DHTServer:
         logging.info('DHTServer finished..')
 
     async def run(self, loop):
-        udp = UDPServer()
+        udp = UDPServerAdapter()
         udp.run("0.0.0.0", 12346, loop=loop)
 
         # TODO: preserve DHT id among sessions
