@@ -37,20 +37,20 @@ class TestWeb:
         assert "Not Found" in getUrl("%s/media/sites.json" % site_url)
         assert "Forbidden" in getUrl("%s/media/./sites.json" % site_url)
         assert "Forbidden" in getUrl("%s/media/../config.py" % site_url)
-        assert "Forbidden" in getUrl("%s/media/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/../sites.json" % site_url)
-        assert "Forbidden" in getUrl("%s/media/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/..//sites.json" % site_url)
-        assert "Forbidden" in getUrl("%s/media/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/../../epixnet.py" % site_url)
+        assert "Forbidden" in getUrl("%s/media/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/../sites.json" % site_url)
+        assert "Forbidden" in getUrl("%s/media/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/..//sites.json" % site_url)
+        assert "Forbidden" in getUrl("%s/media/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/../../epixnet.py" % site_url)
 
         assert "Not Found" in getUrl("%s/raw/sites.json" % site_url)
         assert "Forbidden" in getUrl("%s/raw/./sites.json" % site_url)
         assert "Forbidden" in getUrl("%s/raw/../config.py" % site_url)
-        assert "Forbidden" in getUrl("%s/raw/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/../sites.json" % site_url)
-        assert "Forbidden" in getUrl("%s/raw/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/..//sites.json" % site_url)
-        assert "Forbidden" in getUrl("%s/raw/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/../../epixnet.py" % site_url)
+        assert "Forbidden" in getUrl("%s/raw/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/../sites.json" % site_url)
+        assert "Forbidden" in getUrl("%s/raw/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/..//sites.json" % site_url)
+        assert "Forbidden" in getUrl("%s/raw/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/../../epixnet.py" % site_url)
 
-        assert "Forbidden" in getUrl("%s/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/../sites.json" % site_url)
-        assert "Forbidden" in getUrl("%s/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/..//sites.json" % site_url)
-        assert "Forbidden" in getUrl("%s/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/../../epixnet.py" % site_url)
+        assert "Forbidden" in getUrl("%s/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/../sites.json" % site_url)
+        assert "Forbidden" in getUrl("%s/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/..//sites.json" % site_url)
+        assert "Forbidden" in getUrl("%s/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/../../epixnet.py" % site_url)
 
         assert "Forbidden" in getUrl("%s/content.db" % site_url)
         assert "Forbidden" in getUrl("%s/./users.json" % site_url)
@@ -58,9 +58,9 @@ class TestWeb:
         assert "Forbidden" in getUrl("%s/././././././././././//////sites.json" % site_url)
 
     def testLinkSecurity(self, browser, site_url):
-        browser.get("%s/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/test/security.html" % site_url)
+        browser.get("%s/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/test/security.html" % site_url)
         WebDriverWait(browser, 10).until(title_is("ZeroHello - EpixNet"))
-        assert getContextUrl(browser) == "%s/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/test/security.html" % site_url
+        assert getContextUrl(browser) == "%s/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/test/security.html" % site_url
 
         # Switch to inner frame
         browser.switch_to.frame(browser.find_element_by_id("inner-iframe"))
@@ -98,8 +98,8 @@ class TestWeb:
         browser.switch_to.default_content()
 
     def testRaw(self, browser, site_url):
-        browser.get("%s/raw/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/test/security.html" % site_url)
+        browser.get("%s/raw/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/test/security.html" % site_url)
         WebDriverWait(browser, 10).until(title_is("Security tests"))
-        assert getContextUrl(browser) == "%s/raw/1EU1tbG9oC1A8jz2ouVwGZyQ5asrNsE4Vr/test/security.html" % site_url
+        assert getContextUrl(browser) == "%s/raw/epix1j94jrkp4q0vrs9xzjrnvdmd3jj27radnhsp9da/test/security.html" % site_url
 
         assert browser.find_element_by_id("script_output").text == "Result: Fail"

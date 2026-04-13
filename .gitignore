@@ -58,10 +58,5 @@ src/Test/__pycache__/
 *.pyc
 test_address_mappings.json
 
-# Test generated site directories (Epix addresses)
-src/Test/testdata/epix1*/
-
-# Test configuration files generated during tests
-src/Test/testdata/filters.json
-src/Test/testdata/sites.json
-src/Test/testdata/users.json
+# Test data — all generated at runtime or restored from git history
+src/Test/testdata/

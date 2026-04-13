@@ -9,20 +9,20 @@ TEST_DATA_PATH = "src/Test/testdata"
 @pytest.mark.usefixtures("resetSettings")
 class TestSite:
     def testClone(self, site):
-        assert site.storage.directory == TEST_DATA_PATH + "/1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT"
+        assert str(site.storage.directory) == TEST_DATA_PATH + "/epix18w3j2ftdj5078sw4qhxudp5wxxj3zc5k72vsl8"
 
         # Remove old files
-        if os.path.isdir(TEST_DATA_PATH + "/159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL"):
-            shutil.rmtree(TEST_DATA_PATH + "/159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL")
-        assert not os.path.isfile(TEST_DATA_PATH + "/159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL/content.json")
+        if os.path.isdir(TEST_DATA_PATH + "/epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9"):
+            shutil.rmtree(TEST_DATA_PATH + "/epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9")
+        assert not os.path.isfile(TEST_DATA_PATH + "/epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9/content.json")
 
-        # Clone 1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT to 15E5rhcAUD69WbiYsYARh4YHJ4sLm2JEyc
+        # Clone epix18w3j2ftdj5078sw4qhxudp5wxxj3zc5k72vsl8 to epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9
         new_site = site.clone(
-            "159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL", "5JU2p5h3R7B1WrbaEdEDNZR7YHqRLGcjNcqwqVQzX2H4SuNe2ee", address_index=1
+            "epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9", "5JU2p5h3R7B1WrbaEdEDNZR7YHqRLGcjNcqwqVQzX2H4SuNe2ee", address_index=1
         )
 
         # Check if clone was successful
-        assert new_site.address == "159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL"
+        assert new_site.address == "epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9"
         assert new_site.storage.isFile("content.json")
         assert new_site.storage.isFile("index.html")
         assert new_site.storage.isFile("data/users/content.json")
@@ -54,7 +54,7 @@ class TestSite:
 
         # Re-clone the site
         site.log.debug("Re-cloning")
-        site.clone("159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL")
+        site.clone("epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9")
 
         assert new_site.storage.loadJson("data/data.json")["title"] == "UpdateTest"
         assert new_site.storage.loadJson("content.json")["description"] == "Update Description Test"
@@ -62,7 +62,7 @@ class TestSite:
 
         # Delete created files
         new_site.storage.deleteFiles()
-        assert not os.path.isdir(TEST_DATA_PATH + "/159EGD5srUsMP97UpcLy8AtKQbQLK2AbbL")
+        assert not os.path.isdir(TEST_DATA_PATH + "/epix1t9gw466rzahpn6tuftg78gt8v62n9z0n3uakk9")
 
         # Delete from site registry
         assert new_site.address in SiteManager.site_manager.sites

@@ -14,6 +14,15 @@ import socket
 import pytest
 import mock
 
+# Pre-import sslcrypto before gevent monkey-patching.
+# sslcrypto's openssl discovery calls ctypes.util.find_library("ssl") which
+# spawns a subprocess (ldconfig). After monkey.patch_all(subprocess=False),
+# os.fork is patched but subprocess is not, causing os.read on the error pipe
+# to block forever. Pre-importing caches the library handle.
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/../lib"))
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))
+from lib import sslcrypto  # noqa: E402,F401
+
 import gevent
 if "libev" not in str(gevent.config.loop):
     # Workaround for random crash when libuv used with threads
@@ -47,13 +56,13 @@ else:
 SITE_URL = "http://127.0.0.1:42222"
 
 TEST_DATA_PATH = 'src/Test/testdata'
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/../lib"))  # External modules directory
-sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))  # Imports relative to src dir
+SITE_ADDRESS = "epix18w3j2ftdj5078sw4qhxudp5wxxj3zc5k72vsl8"
 
 from Config import config
 config.argv = ["none"]  # Dont pass any argv to config parser
 config.parse(silent=True, parse_config=False)  # Plugins need to access the configuration
 config.action = "test"
+config.threads_fs_read = 0  # Must be set BEFORE Site/SiteStorage import (module-level ThreadPool init)
 
 # Load plugins
 from Plugin import PluginManager
@@ -73,6 +82,7 @@ config.verbose = True  # Use test data for unittests
 config.tor = "disable"  # Don't start Tor client
 config.trackers = []
 from pathlib import Path
+config.start_dir = Path(TEST_DATA_PATH)  # ContentDb uses start_dir/content.db
 config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
 config.private_dir = Path(TEST_DATA_PATH)  # Use test data for unittests (for users.json)
 if "EPIXNET_LOG_DIR" in os.environ:
@@ -132,6 +142,13 @@ from Debug import Debug
 
 gevent.get_hub().NOT_ERROR += (Debug.Notify,)
 
+# Patch ThreadPool.main_loop.call to always execute directly.
+# The MainLoopCaller greenlet dies with LoopExit during module-level init (before the
+# gevent hub is fully running). Without this patch, any Db.close() called from a thread
+# pool worker (e.g. SiteStorage.deleteFiles) would block forever waiting on the dead greenlet.
+from util import ThreadPool
+ThreadPool.main_loop.call = lambda func, *args, **kwargs: func(*args, **kwargs)
+
 def cleanup():
     try:
         Db.dbCloseAll()
@@ -171,7 +188,7 @@ def resetSettings(request):
 
 @pytest.fixture(scope="session")
 def resetTempSettings(request):
-    data_dir_temp = config.data_dir + "-temp"
+    data_dir_temp = Path(str(config.data_dir) + "-temp")
     if not os.path.isdir(data_dir_temp):
         os.mkdir(data_dir_temp)
     open("%s/sites.json" % data_dir_temp, "w").write("{}")
@@ -200,52 +217,63 @@ def site(request):
     RateLimit.queue_db = {}
     RateLimit.called_db = {}
 
-    site = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
+    site = Site(SITE_ADDRESS)
 
     # Always use original data
-    assert "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT" in site.storage.getPath("")  # Make sure we dont delete everything
-    shutil.rmtree(site.storage.getPath(""), True)
-    shutil.copytree(site.storage.getPath("") + "-original", site.storage.getPath(""))
+    site_path = str(site.storage.getPath(""))
+    assert SITE_ADDRESS in site_path  # Make sure we dont delete everything
+    shutil.rmtree(site_path, True)
+    shutil.copytree(site_path + "-original", site_path)
 
     # Add to site manager
-    SiteManager.site_manager.get("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
+    SiteManager.site_manager.get(SITE_ADDRESS)
     site.announce = mock.MagicMock(return_value=True)  # Don't try to find peers from the net
 
     def cleanup():
         site.delete()
         site.content_manager.contents.db.close("Test cleanup")
-        site.content_manager.contents.db.timer_check_optional.kill()
+        if hasattr(site.content_manager.contents.db, 'timer_check_optional'):
+            site.content_manager.contents.db.timer_check_optional.kill()
         SiteManager.site_manager.sites.clear()
-        db_path = "%s/content.db" % config.data_dir
-        os.unlink(db_path)
-        del ContentDb.content_dbs[db_path]
+        db_path = config.data_dir / "content.db"
+        if os.path.isfile(db_path):
+            os.unlink(db_path)
+        if db_path in ContentDb.content_dbs:
+            del ContentDb.content_dbs[db_path]
         gevent.killall([obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet) and obj not in threads_before])
     request.addfinalizer(cleanup)
 
     site.greenlet_manager.stopGreenlets()
-    site = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")  # Create new Site object to load content.json files
+    site = Site(SITE_ADDRESS)  # Create new Site object to load content.json files
     if not SiteManager.site_manager.sites:
         SiteManager.site_manager.sites = {}
-    SiteManager.site_manager.sites["1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT"] = site
+    SiteManager.site_manager.sites[SITE_ADDRESS] = site
     site.settings["serving"] = True
+    site.settings["downloaded"] = int(time.time())  # Mark as downloaded (files exist from fixtures)
     return site
 
 
 @pytest.fixture()
 def site_temp(request):
     threads_before = [obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet)]
-    with mock.patch("Config.config.data_dir", config.data_dir + "-temp"):
-        site_temp = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
+    temp_dir = Path(str(config.data_dir) + "-temp")
+    with mock.patch("Config.config.data_dir", temp_dir), \
+         mock.patch("Config.config.start_dir", temp_dir):
+        site_temp = Site(SITE_ADDRESS)
         site_temp.settings["serving"] = True
         site_temp.announce = mock.MagicMock(return_value=True)  # Don't try to find peers from the net
 
     def cleanup():
         site_temp.delete()
         site_temp.content_manager.contents.db.close("Test cleanup")
-        site_temp.content_manager.contents.db.timer_check_optional.kill()
-        db_path = "%s-temp/content.db" % config.data_dir
-        os.unlink(db_path)
-        del ContentDb.content_dbs[db_path]
+        if hasattr(site_temp.content_manager.contents.db, 'timer_check_optional'):
+            site_temp.content_manager.contents.db.timer_check_optional.kill()
+        # Clean up the temp content.db (both the site-specific and global ContentDb)
+        db_path = temp_dir / "content.db"
+        if os.path.isfile(db_path):
+            os.unlink(db_path)
+        if db_path in ContentDb.content_dbs:
+            del ContentDb.content_dbs[db_path]
         gevent.killall([obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet) and obj not in threads_before])
     request.addfinalizer(cleanup)
     site_temp.log = logging.getLogger("Temp:%s" % site_temp.address_short)

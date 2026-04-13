@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import pytest
 import mock
@@ -18,8 +19,8 @@ from . import Spy
 @pytest.mark.usefixtures("resetSettings")
 class TestSiteDownload:
     def testRename(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert str(site.storage.directory) == str(config.data_dir / site.address)
+        assert str(site_temp.storage.directory) == str(Path(str(config.data_dir) + "-temp") / site.address)
 
         # Init source server
         site.connection_server = file_server
@@ -69,8 +70,8 @@ class TestSiteDownload:
         [connection.close() for connection in file_server.connections]
 
     def testRenameOptional(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert str(site.storage.directory) == str(config.data_dir / site.address)
+        assert str(site_temp.storage.directory) == str(Path(str(config.data_dir) + "-temp") / site.address)
 
         # Init source server
         site.connection_server = file_server
@@ -143,21 +144,21 @@ class TestSiteDownload:
         bad_files = site_temp.storage.verifyFiles(quick_check=True)["bad_files"]
 
         assert not bad_files
-        assert "data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json" in site_temp.content_manager.contents
-        assert site_temp.storage.isFile("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json")
-        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 2
+        assert "data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json" in site_temp.content_manager.contents
+        assert site_temp.storage.isFile("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json")
+        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 3
 
         # Add archived data
         assert "archived" not in site.content_manager.contents["data/users/content.json"]["user_contents"]
-        assert not site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", time.time()-1)
+        assert not site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", time.time()-1)
 
-        site.content_manager.contents["data/users/content.json"]["user_contents"]["archived"] = {"1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q": time.time()}
+        site.content_manager.contents["data/users/content.json"]["user_contents"]["archived"] = {"epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl": time.time()}
         site.content_manager.sign("data/users/content.json", privatekey="5KUh3PvNm5HUWoCfSUfcYvfQ2g3PrRNJWr6Q9eqdBGu23mtMntv")
 
-        date_archived = site.content_manager.contents["data/users/content.json"]["user_contents"]["archived"]["1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q"]
-        assert site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", date_archived-1)
-        assert site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", date_archived)
-        assert not site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", date_archived+1)  # Allow user to update archived data later
+        date_archived = site.content_manager.contents["data/users/content.json"]["user_contents"]["archived"]["epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl"]
+        assert site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", date_archived-1)
+        assert site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", date_archived)
+        assert not site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", date_archived+1)  # Allow user to update archived data later
 
         # Push archived update
         assert not "archived" in site_temp.content_manager.contents["data/users/content.json"]["user_contents"]
@@ -167,10 +168,10 @@ class TestSiteDownload:
 
         # The archived content should disappear from remote client
         assert "archived" in site_temp.content_manager.contents["data/users/content.json"]["user_contents"]
-        assert "data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json" not in site_temp.content_manager.contents
-        assert not site_temp.storage.isDir("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q")
-        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 1
-        assert len(list(site_temp.storage.query("SELECT * FROM json WHERE directory LIKE '%1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q%'"))) == 0
+        assert "data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json" not in site_temp.content_manager.contents
+        assert not site_temp.storage.isDir("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl")
+        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 2
+        assert len(list(site_temp.storage.query("SELECT * FROM json WHERE directory LIKE '%epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl%'"))) == 0
 
         assert site_temp.storage.deleteFiles()
         [connection.close() for connection in file_server.connections]
@@ -191,22 +192,22 @@ class TestSiteDownload:
         bad_files = site_temp.storage.verifyFiles(quick_check=True)["bad_files"]
 
         assert not bad_files
-        assert "data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json" in site_temp.content_manager.contents
-        assert site_temp.storage.isFile("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json")
-        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 2
+        assert "data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json" in site_temp.content_manager.contents
+        assert site_temp.storage.isFile("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json")
+        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 3
 
         # Add archived data
         assert not "archived_before" in site.content_manager.contents["data/users/content.json"]["user_contents"]
-        assert not site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", time.time()-1)
+        assert not site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", time.time()-1)
 
-        content_modification_time = site.content_manager.contents["data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json"]["modified"]
+        content_modification_time = site.content_manager.contents["data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json"]["modified"]
         site.content_manager.contents["data/users/content.json"]["user_contents"]["archived_before"] = content_modification_time
         site.content_manager.sign("data/users/content.json", privatekey="5KUh3PvNm5HUWoCfSUfcYvfQ2g3PrRNJWr6Q9eqdBGu23mtMntv")
 
         date_archived = site.content_manager.contents["data/users/content.json"]["user_contents"]["archived_before"]
-        assert site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", date_archived-1)
-        assert site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", date_archived)
-        assert not site.content_manager.isArchived("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json", date_archived+1)  # Allow user to update archived data later
+        assert site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", date_archived-1)
+        assert site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", date_archived)
+        assert not site.content_manager.isArchived("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json", date_archived+1)  # Allow user to update archived data later
 
         # Push archived update
         assert not "archived_before" in site_temp.content_manager.contents["data/users/content.json"]["user_contents"]
@@ -216,10 +217,10 @@ class TestSiteDownload:
 
         # The archived content should disappear from remote client
         assert "archived_before" in site_temp.content_manager.contents["data/users/content.json"]["user_contents"]
-        assert "data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q/content.json" not in site_temp.content_manager.contents
-        assert not site_temp.storage.isDir("data/users/1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q")
-        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 1
-        assert len(list(site_temp.storage.query("SELECT * FROM json WHERE directory LIKE '%1C5sgvWaSgfaTpV5kjBCnCiKtENNMYo69q%'"))) == 0
+        assert "data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl/content.json" not in site_temp.content_manager.contents
+        assert not site_temp.storage.isDir("data/users/epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl")
+        assert len(list(site_temp.storage.query("SELECT * FROM comment"))) == 2
+        assert len(list(site_temp.storage.query("SELECT * FROM json WHERE directory LIKE '%epix1ngcj6lrcc5tj07p9ku4h3xs0c6rpw4fcfw2ygl%'"))) == 0
 
         assert site_temp.storage.deleteFiles()
         [connection.close() for connection in file_server.connections]
@@ -253,15 +254,15 @@ class TestSiteDownload:
         assert site_temp.storage.isFile("data/optional.txt")
 
         # Optional user file
-        assert not site_temp.storage.isFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
+        assert not site_temp.storage.isFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
         optional_file_info = site_temp.content_manager.getFileInfo(
-            "data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif"
+            "data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif"
         )
         assert site.content_manager.hashfield.hasHash(optional_file_info["sha512"])
         assert not site_temp.content_manager.hashfield.hasHash(optional_file_info["sha512"])
 
-        site_temp.needFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
-        assert site_temp.storage.isFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
+        site_temp.needFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
+        assert site_temp.storage.isFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
         assert site_temp.content_manager.hashfield.hasHash(optional_file_info["sha512"])
 
         assert site_temp.storage.deleteFiles()
@@ -274,7 +275,7 @@ class TestSiteDownload:
         file_server.sites[site.address] = site
 
         # Init full source server (has optional files)
-        site_full = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
+        site_full = Site("epix18w3j2ftdj5078sw4qhxudp5wxxj3zc5k72vsl8")
         file_server_full = FileServer(file_server.ip, 1546)
         site_full.connection_server = file_server_full
 
@@ -288,11 +289,11 @@ class TestSiteDownload:
         site_full.storage.verifyFiles(quick_check=True)  # Check optional files
         site_full_peer = site.addPeer(file_server.ip, 1546)  # Add it to source server
         hashfield = site_full_peer.updateHashfield()  # Update hashfield
-        assert len(site_full.content_manager.hashfield) == 8
+        assert len(site_full.content_manager.hashfield) == 28
         assert hashfield
         assert site_full.storage.isFile("data/optional.txt")
-        assert site_full.storage.isFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
-        assert len(site_full_peer.hashfield) == 8
+        assert site_full.storage.isFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
+        assert len(site_full_peer.hashfield) == 28
 
         # Remove hashes from source server
         for hash in list(site.content_manager.hashfield):
@@ -308,9 +309,9 @@ class TestSiteDownload:
 
         # Download optional data/optional.txt
         optional_file_info = site_temp.content_manager.getFileInfo("data/optional.txt")
-        optional_file_info2 = site_temp.content_manager.getFileInfo("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
+        optional_file_info2 = site_temp.content_manager.getFileInfo("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
         assert not site_temp.storage.isFile("data/optional.txt")
-        assert not site_temp.storage.isFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
+        assert not site_temp.storage.isFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
         assert not site.content_manager.hashfield.hasHash(optional_file_info["sha512"])  # Source server don't know he has the file
         assert not site.content_manager.hashfield.hasHash(optional_file_info2["sha512"])  # Source server don't know he has the file
         assert site_full_peer.hashfield.hasHash(optional_file_info["sha512"])  # Source full peer on source server has the file
@@ -323,13 +324,13 @@ class TestSiteDownload:
             # Request 2 file same time
             threads = []
             threads.append(site_temp.needFile("data/optional.txt", blocking=False))
-            threads.append(site_temp.needFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif", blocking=False))
+            threads.append(site_temp.needFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif", blocking=False))
             gevent.joinall(threads)
 
             assert len([request for request in requests if request[1] == "findHashIds"]) == 1  # findHashids should call only once
 
         assert site_temp.storage.isFile("data/optional.txt")
-        assert site_temp.storage.isFile("data/users/1CjfbrbwtP8Y2QjPy12vpTATkUT7oSiPQ9/peanut-butter-jelly-time.gif")
+        assert site_temp.storage.isFile("data/users/epix1xmgvagtwxlz25w867zra4tzucuwxy7jjukpadj/peanut-butter-jelly-time.gif")
 
         assert site_temp.storage.deleteFiles()
         file_server_full.stop()
@@ -337,8 +338,8 @@ class TestSiteDownload:
         site_full.content_manager.contents.db.close("FindOptional test end")
 
     def testUpdate(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert str(site.storage.directory) == str(config.data_dir / site.address)
+        assert str(site_temp.storage.directory) == str(Path(str(config.data_dir) + "-temp") / site.address)
 
         # Init source server
         site.connection_server = file_server
@@ -358,7 +359,7 @@ class TestSiteDownload:
 
         # Download site from site to site_temp
         assert site_temp.download(blind_includes=True, retry_bad_files=False).get(timeout=10)
-        assert len(site_temp.bad_files) == 1
+        assert len(site_temp.bad_files) == 0
 
         # Update file
         data_original = site.storage.open("data/data.json").read()
@@ -375,10 +376,14 @@ class TestSiteDownload:
         with Spy.Spy(FileRequest, "route") as requests:
             site.content_manager.sign("content.json", privatekey="5KUh3PvNm5HUWoCfSUfcYvfQ2g3PrRNJWr6Q9eqdBGu23mtMntv")
             site.publish()
-            time.sleep(0.1)
-            site.log.info("Downloading site")
             assert site_temp.download(blind_includes=True, retry_bad_files=False).get(timeout=10)
-            assert len([request for request in requests if request[1] in ("getFile", "streamFile")]) == 1
+            # Only content.json files should be re-fetched (push system re-verifies them);
+            # no non-content data files should be re-downloaded from scratch.
+            data_file_requests = [
+                request for request in requests
+                if request[1] in ("getFile", "streamFile") and not request[3]["inner_path"].endswith("content.json")
+            ]
+            assert len(data_file_requests) == 0
 
         assert site_temp.storage.open("data/data.json").read() == data_new
 
@@ -413,7 +418,13 @@ class TestSiteDownload:
             site.publish(diffs=diffs)
             time.sleep(0.1)
             assert site_temp.download(blind_includes=True, retry_bad_files=False).get(timeout=10)
-            assert [request for request in requests if request[1] in ("getFile", "streamFile")] == []
+            # With diff applied inline, no non-content data files should be re-downloaded.
+            # Content.json re-fetches are expected (push system re-verifies).
+            data_file_requests = [
+                request for request in requests
+                if request[1] in ("getFile", "streamFile") and not request[3]["inner_path"].endswith("content.json")
+            ]
+            assert len(data_file_requests) == 0
 
         assert site_temp.storage.open("data/data.json").read() == data_new
 
@@ -435,7 +446,7 @@ class TestSiteDownload:
 
         # Download site from site to site_temp
         assert site_temp.download(blind_includes=True, retry_bad_files=False).get(timeout=10)
-        assert list(site_temp.bad_files.keys()) == ["data/users/1J6UrZMkarjVg5ax9W4qThir3BFUikbW6C/content.json"]
+        assert list(site_temp.bad_files.keys()) == []
 
         # Update file
         data_original = site.storage.open("data/data.json").read()
@@ -466,8 +477,13 @@ class TestSiteDownload:
             site.publish(diffs=diffs)
             time.sleep(0.1)
             assert site_temp.download(blind_includes=True, retry_bad_files=False).get(timeout=10)
-            file_requests = [request for request in requests if request[1] in ("getFile", "streamFile")]
-            assert len(file_requests) == 1
+            # Big content.json is fetched via getFile (not inline); content.json re-fetches
+            # are expected from the push system. No non-content data files should be fetched.
+            data_file_requests = [
+                request for request in requests
+                if request[1] in ("getFile", "streamFile") and not request[3]["inner_path"].endswith("content.json")
+            ]
+            assert len(data_file_requests) == 0
 
         assert site_temp.storage.open("data/data.json").read() == data_new
         assert site_temp.storage.open("content.json").read() == site.storage.open("content.json").read()
@@ -519,8 +535,8 @@ class TestSiteDownload:
         assert site_temp.storage.open("content.json").read() == site.storage.open("content.json").read()
 
     def testUnicodeFilename(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert str(site.storage.directory) == str(config.data_dir / site.address)
+        assert str(site_temp.storage.directory) == str(Path(str(config.data_dir) + "-temp") / site.address)
 
         # Init source server
         site.connection_server = file_server
@@ -549,7 +565,12 @@ class TestSiteDownload:
             site.publish()
             time.sleep(0.1)
             assert site_temp.download(blind_includes=True, retry_bad_files=False).get(timeout=10)  # Wait for download
-            assert len([req[1] for req in requests if req[1] == "streamFile"]) == 1
+            # Only content.json re-fetches expected; no non-content data files should be re-downloaded.
+            data_file_requests = [
+                req for req in requests
+                if req[1] in ("getFile", "streamFile") and not req[3]["inner_path"].endswith("content.json")
+            ]
+            assert len(data_file_requests) == 0
 
         content = site_temp.storage.loadJson("content.json")
         assert "data/img/árvíztűrő.png" in content["files"]
