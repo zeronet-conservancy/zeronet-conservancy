@@ -107,13 +107,12 @@ class SiteAnnouncer:
             greenlets.append(thread)
             thread.tracker = tracker
 
-        dht_greenlet = self.site.greenlet_manager.spawn(self.announceDHT)
+        self.announceDHT()
 
         time.sleep(0.01)
         self.updateWebsocket(trackers="announcing")
 
         gevent.joinall(greenlets, timeout=20)  # Wait for tracker announce finish
-        gevent.joinall([dht_greenlet], timeout=10)  # Wait for DHT (has its own internal timeout)
 
         for thread in greenlets:
             if thread.value is None:
@@ -184,18 +183,24 @@ class SiteAnnouncer:
     def announceDHT(self):
         if self.dht_server is None:
             return
-        peers = self.dht_server.announce(self.site.address_sha1)
-        added = 0
-        for peer in peers:
-            if self.site.addPeer(peer['addr'], peer['port'], source='dht'):
-                added += 1
-        self.site.log.debug(
-            f'DHT announce: found {len(peers)} peers, {added} new '
-            f'(routing table: {self.dht_server.getNodeCount()} nodes)'
-        )
-        if added:
-            self.site.worker_manager.onPeers()
-            self.site.updateWebsocket(peers_added=added)
+        site = self.site
+
+        def onDHTPeers(peers):
+            """Called from asyncio context when DHT announce finds peers."""
+            added = 0
+            for peer in peers:
+                if site.addPeer(peer['addr'], peer['port'], source='dht'):
+                    added += 1
+            if added:
+                site.log.debug(f'DHT: got {added} new peers')
+                site.worker_manager.onPeers()
+                site.updateWebsocket(peers_added=added)
+
+        # Fire-and-forget: returns cached peers immediately,
+        # calls onDHTPeers() later when async announce completes
+        cached_peers = self.dht_server.announce(self.site.address_sha1, callback=onDHTPeers)
+        for peer in cached_peers:
+            site.addPeer(peer['addr'], peer['port'], source='dht')
 
     def announceTracker(self, tracker, mode="start", num_want=10):
         """Announces site to tracker, receives site peers from it

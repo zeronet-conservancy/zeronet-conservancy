@@ -88,9 +88,11 @@ class UDPServerAdapter:
         self._transport = transport
 
 initial_nodes = [
-    ("67.215.246.10", 6881),  # router.bittorrent.com
-    ("87.98.162.88", 6881),  # dht.transmissionbt.com
-    ("82.221.103.244", 6881)  # router.utorrent.com
+    ("67.215.246.10", 6881),   # router.bittorrent.com
+    ("87.98.162.88", 6881),    # dht.transmissionbt.com
+    ("82.221.103.244", 6881),  # router.utorrent.com
+    ("212.129.33.50", 6881),   # dht.aelitis.com
+    ("router.silotis.us", 6881),
 ]
 
 def randomNodeId():
@@ -105,7 +107,14 @@ ANNOUNCE_TIMEOUT = 5    # Seconds to wait for a single DHT announce
 
 
 class DHTServer:
-    """Process DHT requests"""
+    """Process DHT requests.
+
+    DHT runs on its own asyncio event loop inside a gevent greenlet.
+    To avoid gevent<->asyncio starvation (gevent callers blocking while the
+    asyncio loop can't run), announce() is fire-and-forget: it submits the
+    async task and immediately returns cached peers. When the async task
+    completes, it calls the provided callback with fresh results.
+    """
     def __init__(self):
         self.peers = {}
         self.dht = None
@@ -135,8 +144,14 @@ class DHTServer:
         self.dht = DHT(int(node_id, 16), server=udp, loop=self.loop)
 
         logging.info('Bootstrapping DHT')
-        await self.dht.bootstrap(initial_nodes)
-        num_nodes = self.getNodeCount()
+        for attempt in range(3):
+            await self.dht.bootstrap(initial_nodes)
+            num_nodes = self.getNodeCount()
+            if num_nodes >= 4:
+                break
+            if attempt < 2:
+                logging.info(f'DHT bootstrap got only {num_nodes} nodes, retrying ({attempt + 1}/3)...')
+                await asyncio.sleep(2)
         logging.info(f'DHT bootstrap complete, routing table has {num_nodes} nodes')
 
     def getNodeCount(self):
@@ -159,14 +174,12 @@ class DHTServer:
                 f'{self.num_announces} announces, {self.num_peers_found} peers found'
             )
 
-    async def _announce_one(self, site_hash):
-        """Announce a single site hash. Returns (site_hash, peers_list)."""
+    async def _announce_one(self, site_hash, callback=None):
+        """Announce a single site hash. Calls callback(peers) when done."""
         now = time.time()
         last = self.last_announce_time.get(site_hash, 0)
         if now - last < ANNOUNCE_INTERVAL:
-            # Recently announced, just return cached peers
-            cached = self.peers.get(site_hash, set())
-            return (site_hash, [{'addr': p[0], 'port': p[1]} for p in cached])
+            return  # Recently announced, skip
 
         try:
             s = time.time()
@@ -191,56 +204,26 @@ class DHTServer:
                 logging.debug(
                     f'DHT: {site_hash.hex()}: 0 peers in {elapsed:.2f}s'
                 )
-            return (site_hash, [{'addr': p[0], 'port': p[1]} for p in peers])
+            if callback and peers:
+                peer_list = [{'addr': p[0], 'port': p[1]} for p in peers]
+                callback(peer_list)
         except asyncio.TimeoutError:
-            logging.debug(f'DHT: {site_hash.hex()}: announce timed out after {ANNOUNCE_TIMEOUT}s')
-            cached = self.peers.get(site_hash, set())
-            return (site_hash, [{'addr': p[0], 'port': p[1]} for p in cached])
+            logging.debug(f'DHT: {site_hash.hex()}: timed out after {ANNOUNCE_TIMEOUT}s')
         except Exception as e:
-            logging.debug(f'DHT: {site_hash.hex()}: announce error: {e}')
-            cached = self.peers.get(site_hash, set())
-            return (site_hash, [{'addr': p[0], 'port': p[1]} for p in cached])
+            logging.debug(f'DHT: {site_hash.hex()}: error: {e}')
 
-    async def _announce_batch(self, site_hashes):
-        """Announce multiple site hashes concurrently. Returns dict of hash -> peers."""
-        tasks = [self._announce_one(h) for h in site_hashes]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        out = {}
-        for result in results:
-            if isinstance(result, Exception):
-                logging.debug(f'DHT: batch announce exception: {result}')
-                continue
-            site_hash, peers = result
-            out[site_hash] = peers
-        return out
+    def announce(self, site_hash, callback=None):
+        """Submit a DHT announce (fire-and-forget).
 
-    def announce(self, site_hash, timeout=ANNOUNCE_TIMEOUT + 2):
-        """Announce a single site to DHT and wait for peer results.
-
-        Returns list of {'addr': ip, 'port': port} dicts.
+        Immediately returns cached peers. When the async announce completes
+        and finds new peers, calls callback(peers_list) if provided.
+        This avoids blocking gevent greenlets waiting for the asyncio loop.
         """
-        import gevent
-        import gevent.event
-
         if self.loop is None or self.dht is None:
             return [{'addr': p[0], 'port': p[1]} for p in self.peers.get(site_hash, set())]
 
-        result_event = gevent.event.AsyncResult()
+        # Fire-and-forget: submit to asyncio loop, don't block
+        self.loop.create_task(self._announce_one(site_hash, callback=callback))
 
-        async def _run():
-            try:
-                _hash, peers = await self._announce_one(site_hash)
-                result_event.set(peers)
-            except Exception as e:
-                result_event.set_exception(e)
-
-        self.loop.create_task(_run())
-
-        try:
-            return result_event.get(timeout=timeout)
-        except gevent.Timeout:
-            logging.debug(f'DHT: {site_hash.hex()}: gevent timeout after {timeout}s')
-            return [{'addr': p[0], 'port': p[1]} for p in self.peers.get(site_hash, set())]
-        except Exception as e:
-            logging.debug(f'DHT: {site_hash.hex()}: gevent error: {e}')
-            return [{'addr': p[0], 'port': p[1]} for p in self.peers.get(site_hash, set())]
+        # Return whatever we have cached
+        return [{'addr': p[0], 'port': p[1]} for p in self.peers.get(site_hash, set())]
