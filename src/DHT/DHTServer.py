@@ -12,9 +12,81 @@ from .aiobtdht_fix import patch_aiobtdht
 patch_aiobtdht()
 
 from aiobtdht import DHT
-from aioudp import UDPServer
 
 from Config import config
+
+
+class UDPServerAdapter:
+    """
+    Adapter class that provides the old aioudp UDPServer interface
+    expected by aiokrpc/aiobtdht using asyncio's DatagramProtocol.
+
+    Required interface:
+    - subscribe(callback) - register async callback(data, addr)
+    - send(data, addr) - send datagram to address
+    - run(host, port, loop=loop) - start the server
+    """
+    def __init__(self):
+        self._subscribers = {}
+        self._subscriber_id = 0
+        self._transport = None
+        self._protocol = None
+        self._loop = None
+
+    def subscribe(self, callback):
+        """Register a callback to receive datagrams."""
+        self._subscriber_id += 1
+        self._subscribers[self._subscriber_id] = callback
+        return self._subscriber_id
+
+    def unsubscribe(self, sub_id):
+        """Unregister a callback."""
+        self._subscribers.pop(sub_id, None)
+
+    def send(self, data, addr):
+        """Send data to the specified address."""
+        if self._transport and not self._transport.is_closing():
+            try:
+                # Validate addr is a tuple (host, port), not just a port
+                if not isinstance(addr, tuple) or len(addr) != 2:
+                    import traceback
+                    logging.warning(f"UDP send: invalid addr format: {addr} (type={type(addr).__name__})\n{''.join(traceback.format_stack())}")
+                    return
+                self._transport.sendto(data, addr)
+            except (AttributeError, OSError, TypeError) as e:
+                # Transport may have been closed between check and send
+                logging.debug(f"UDP send failed: {e}")
+
+    async def run(self, host, port, loop=None):
+        """Start the UDP server and wait for it to be ready."""
+        self._loop = loop or asyncio.get_event_loop()
+
+        # Create the protocol class
+        adapter = self
+
+        class _Protocol(asyncio.DatagramProtocol):
+            def connection_made(self, transport):
+                adapter._transport = transport
+
+            def datagram_received(self, data, addr):
+                # Notify all subscribers
+                for callback in adapter._subscribers.values():
+                    asyncio.ensure_future(callback(data, addr), loop=adapter._loop)
+
+            def error_received(self, exc):
+                logging.debug(f"UDP error received: {exc}")
+
+            def connection_lost(self, exc):
+                adapter._transport = None
+                if exc:
+                    logging.debug(f"UDP connection lost: {exc}")
+
+        # Create the endpoint and wait for it to be ready
+        transport, self._protocol = await self._loop.create_datagram_endpoint(
+            _Protocol,
+            local_addr=(host, port)
+        )
+        self._transport = transport
 
 initial_nodes = [
     ("67.215.246.10", 6881),  # router.bittorrent.com
@@ -45,8 +117,9 @@ class DHTServer:
         logging.info('DHTServer finished..')
 
     async def run(self, loop):
-        udp = UDPServer()
-        udp.run("0.0.0.0", 12346, loop=loop)
+        udp = UDPServerAdapter()
+        # Use port 0 to let OS assign an available ephemeral port
+        await udp.run("0.0.0.0", 0, loop=loop)
 
         # TODO: preserve DHT id among sessions
         node_id = randomNodeId()

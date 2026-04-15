@@ -126,7 +126,7 @@ class ContentManager:
     # Load content.json to self.content
     # Return: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
     def loadContent(self, content_inner_path="content.json", add_bad_files=True, delete_removed_files=True, load_includes=True, force=False):
-        content_inner_path = str(content_inner_path).strip("/")  # Remove / from beginning
+        content_inner_path = str(content_inner_path).replace("\\", "/").strip("/")  # Normalize separators and strip leading /
         old_content = self.contents.get(content_inner_path)
         content_path = self.site.storage.getPath(content_inner_path)
         content_dir = os.path.dirname(content_path)
@@ -987,7 +987,7 @@ class ContentManager:
         if filewrite:
             self.log.info("Saving to %s..." % inner_path)
             self.site.storage.writeJson(inner_path, new_content)
-            self.contents[str(inner_path)] = new_content
+            self.contents[str(inner_path).replace("\\", "/")] = new_content
 
         self.log.info("File %s signed!" % inner_path)
 

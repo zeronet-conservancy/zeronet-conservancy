@@ -122,6 +122,9 @@ class SiteStorage(object):
     # Return possible db files for the site
     @thread_pool_fs_read.wrap
     def getDbFiles(self):
+        # Only drop stale content.db entries if the site directory itself is
+        # readable — protects against flaky mounts making every file look missing
+        site_dir_ok = os.path.isdir(self.directory)
         found = 0
         for content_inner_path in list(self.site.content_manager.contents.keys()):
             try:
@@ -132,8 +135,17 @@ class SiteStorage(object):
             # content.json file itself
             if self.isFile(content_inner_path):
                 yield content_inner_path, self.getPath(content_inner_path)
+            elif site_dir_ok:
+                # Drop stale content.db entry so checkModifications re-fetches it from peers
+                self.log.debug("[MISSING] %s (dropping stale contents entry)" % content_inner_path)
+                try:
+                    del self.site.content_manager.contents[content_inner_path]
+                except KeyError:
+                    pass
+                continue
             else:
-                self.log.debug("[MISSING] %s" % content_inner_path)
+                self.log.debug("[MISSING] %s (site dir unreadable, keeping entry)" % content_inner_path)
+                continue
             # Data files in content.json
             content_inner_path_dir = helper.getDirname(content_inner_path)  # Content.json dir relative to site
             for file_relative_path in list(content.get("files", {}).keys()) + list(content.get("files_optional", {}).keys()):
