@@ -251,7 +251,11 @@ class DbCursor:
                 row = res.fetchone()
         elif self.db.schema["version"] == 3:
             # Separate site, directory, file_name (for merger sites)
-            site_address, directory = re.match("^([^/]*)/(.*)$", directory).groups()
+            site_match = re.match("^([^/]*)/(.*)$", directory)
+            if site_match:
+                site_address, directory = site_match.groups()
+            else:
+                site_address, directory = directory, ""
             res = self.execute("SELECT * FROM json WHERE ? LIMIT 1", {"site": site_address, "directory": directory, "file_name": file_name})
             row = res.fetchone()
             if not row:  # No row yet, create it
