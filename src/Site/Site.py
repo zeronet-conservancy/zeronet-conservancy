@@ -322,7 +322,27 @@ class Site(object):
         if config.verbose:
             self.log.debug("DownloadContent %s: Includes download ended" % inner_path)
 
-        if check_modifications:  # Check if every file is up-to-date
+        # After includes are loaded, check if any declare user_contents with no
+        # known user subdirectories yet. User dirs aren't listed as regular
+        # files/includes, so on first load we need to query peers for them via
+        # checkModifications(since=0). Once at least one user subdir is in
+        # content_manager.contents, normal checkModifications handles updates.
+        user_contents_needs_scan = False
+        for file_relative_path in list(self.content_manager.contents[inner_path].get("includes", {}).keys()):
+            include_inner_path = content_inner_dir + file_relative_path
+            include_content = self.content_manager.contents.get(include_inner_path)
+            if not include_content or "user_contents" not in include_content:
+                continue
+            include_dir = helper.getDirname(include_inner_path)
+            has_known_users = any(
+                key != include_inner_path and key.startswith(include_dir) and key.endswith("/content.json")
+                for key in self.content_manager.contents.keys()
+            )
+            if not has_known_users:
+                user_contents_needs_scan = True
+                break
+
+        if check_modifications or user_contents_needs_scan:  # Check if every file is up-to-date
             self.checkModifications(0)
 
         if config.verbose:
