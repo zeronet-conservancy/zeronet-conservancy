@@ -121,6 +121,7 @@ class DHTServer:
         self.loop = None
         self.num_announces = 0
         self.num_peers_found = 0
+        self.num_timeouts = 0
         self.last_announce_time = {}  # site_hash -> timestamp of last announce
 
     def start(self):
@@ -163,15 +164,30 @@ class DHTServer:
         return count
 
     async def _periodic_status(self):
+        last_announces = 0
+        last_peers_found = 0
+        last_timeouts = 0
         while True:
-            await asyncio.sleep(300)  # Every 5 minutes
+            await asyncio.sleep(60)
             num_nodes = self.getNodeCount()
-            num_sites = len(self.peers)
+            sites_with_peers = sum(1 for p in self.peers.values() if p)
+            total_sites = len(self.peers)
             total_peers = sum(len(p) for p in self.peers.values())
+            unique_ips = set()
+            for peer_set in self.peers.values():
+                for addr, port in peer_set:
+                    unique_ips.add(addr)
+            new_announces = self.num_announces - last_announces
+            new_peers = self.num_peers_found - last_peers_found
+            new_timeouts = self.num_timeouts - last_timeouts
+            last_announces = self.num_announces
+            last_peers_found = self.num_peers_found
+            last_timeouts = self.num_timeouts
             logging.info(
-                f'DHT status: {num_nodes} routing table nodes, '
-                f'{num_sites} sites tracked, {total_peers} total peers cached, '
-                f'{self.num_announces} announces, {self.num_peers_found} peers found'
+                f'DHT: {num_nodes} nodes, '
+                f'{sites_with_peers}/{total_sites} sites with peers, '
+                f'{len(unique_ips)} unique peers, '
+                f'last 60s: {new_announces} ok / {new_timeouts} timeout / {new_peers} peers'
             )
 
     async def _announce_one(self, site_hash, callback=None):
@@ -196,20 +212,17 @@ class DHTServer:
             self.num_announces += 1
             self.num_peers_found += len(peers)
             elapsed = time.time() - s
-            if peers:
-                logging.info(
-                    f'DHT: {site_hash.hex()}: found {len(peers)} peers in {elapsed:.2f}s'
-                )
-            else:
-                logging.debug(
-                    f'DHT: {site_hash.hex()}: 0 peers in {elapsed:.2f}s'
-                )
+            logging.debug(
+                f'DHT: {site_hash.hex()}: {len(peers)} peers in {elapsed:.1f}s'
+            )
             if callback and peers:
                 peer_list = [{'addr': p[0], 'port': p[1]} for p in peers]
                 callback(peer_list)
         except asyncio.TimeoutError:
+            self.num_timeouts += 1
             logging.debug(f'DHT: {site_hash.hex()}: timed out after {ANNOUNCE_TIMEOUT}s')
         except Exception as e:
+            self.num_timeouts += 1
             logging.debug(f'DHT: {site_hash.hex()}: error: {e}')
 
     def announce(self, site_hash, callback=None):
