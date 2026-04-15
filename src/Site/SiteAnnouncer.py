@@ -107,12 +107,13 @@ class SiteAnnouncer:
             greenlets.append(thread)
             thread.tracker = tracker
 
-        self.announceDHT()
+        dht_greenlet = self.site.greenlet_manager.spawn(self.announceDHT)
 
         time.sleep(0.01)
         self.updateWebsocket(trackers="announcing")
 
-        gevent.joinall(greenlets, timeout=20)  # Wait for announce finish
+        gevent.joinall(greenlets, timeout=20)  # Wait for tracker announce finish
+        gevent.joinall([dht_greenlet], timeout=10)  # Wait for DHT (has its own internal timeout)
 
         for thread in greenlets:
             if thread.value is None:
@@ -184,9 +185,17 @@ class SiteAnnouncer:
         if self.dht_server is None:
             return
         peers = self.dht_server.announce(self.site.address_sha1)
-        self.site.log.debug(f'DHT {self.site.address_sha1.hex()} got {peers=}')
+        added = 0
         for peer in peers:
-            self.site.addPeer(peer['addr'], peer['port'], source='dht')
+            if self.site.addPeer(peer['addr'], peer['port'], source='dht'):
+                added += 1
+        self.site.log.debug(
+            f'DHT announce: found {len(peers)} peers, {added} new '
+            f'(routing table: {self.dht_server.getNodeCount()} nodes)'
+        )
+        if added:
+            self.site.worker_manager.onPeers()
+            self.site.updateWebsocket(peers_added=added)
 
     def announceTracker(self, tracker, mode="start", num_want=10):
         """Announces site to tracker, receives site peers from it
