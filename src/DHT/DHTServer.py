@@ -103,7 +103,7 @@ def randomNodeId():
     return f'0x{r}'
 
 ANNOUNCE_INTERVAL = 60  # Don't re-announce same hash within this many seconds
-ANNOUNCE_TIMEOUT = 5    # Seconds to wait for a single DHT announce
+ANNOUNCE_TIMEOUT = 30   # Seconds to wait for a single DHT announce/lookup
 
 
 class DHTServer:
