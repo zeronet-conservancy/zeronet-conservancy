@@ -15,6 +15,14 @@ from pathlib import Path
 import pytest
 import mock
 
+# trio/libp2p MUST be imported before gevent monkey-patches -- see the comment
+# in src/main.py above the matching import for why (trio's socket subclass
+# bakes in socket.SocketType at its own import time, not dynamically). Without
+# this, P2P tests only pass by accident, if some pytest plugin (e.g. anyio's)
+# happens to import trio first during plugin discovery.
+import trio  # noqa: F401
+import libp2p  # noqa: F401
+
 import gevent
 if "libev" not in str(gevent.config.loop):
     # Workaround for random crash when libuv used with threads
@@ -23,6 +31,15 @@ if "libev" not in str(gevent.config.loop):
 import gevent.event
 from gevent import monkey
 monkey.patch_all(thread=False)
+
+# NOTE: P2P/* tests that call trio.run() need select.epoll/socket.socket
+# temporarily restored to their real (non-gevent-patched) versions -- see
+# P2P/compat.py's run(), which brackets that restoration around each
+# trio.run() call and swaps gevent's patched versions back immediately
+# after, rather than restoring them process-wide here. A process-wide
+# restore breaks gevent's own cooperative networking permanently for the
+# rest of the test session (confirmed while building this) -- it is not
+# thread-liveness-dependent, so don't reintroduce it here.
 
 atexit_register = atexit.register
 atexit.register = lambda func, *args, **kwargs: ""  # Don't register shutdown functions to avoid IO error on exit

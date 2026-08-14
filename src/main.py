@@ -14,6 +14,19 @@ def startupError(msg):
     print("Startup error: %s" % msg)
 
 # Third party modules
+
+# trio/libp2p MUST be imported before gevent monkey-patches the process: trio's
+# raw-socket wrapper (trio._socket._SocketType) subclasses socket.SocketType at
+# *class definition time* (its own module import), not via a dynamic lookup --
+# so if gevent has already swapped socket.socket for its own greenlet-aware
+# class by the time trio/libp2p are first imported anywhere in the process,
+# that wrong base class is baked in permanently, and no amount of restoring
+# socket.socket afterward (see P2P/geventtrio.py) can fix it. See src/P2P/geventtrio.py
+# for the rest of the story (select.epoll/socket.socket also get deleted/replaced
+# by patch_all() at runtime, independently of this import-order issue).
+import trio  # noqa: F401
+import libp2p  # noqa: F401
+
 import gevent
 import gevent.monkey
 gevent.monkey.patch_all(thread=False)
