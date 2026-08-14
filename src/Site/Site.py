@@ -55,6 +55,7 @@ class Site(object):
         self.websockets = []  # Active site websocket connections
 
         self.connection_server = None
+        self.private_key = None  # Content AES key for private (encrypted) sites
         self.loadSettings(settings)  # Load settings from sites.json
         self.storage = SiteStorage(self, allow_create=allow_create)  # Save and load site files
         self.content_manager = ContentManager(self)
@@ -139,6 +140,66 @@ class Site(object):
             return False
         else:
             return self.settings["serving"]
+
+    def isPrivate(self):
+        return self.content_manager.isPrivate()
+
+    def getPrivatekey(self):
+        """Return the content AES key for the private site, unlocking it if possible."""
+        if self.private_key is None:
+            self.unlockPrivate()
+        return self.private_key
+
+    def unlockPrivate(self):
+        """Try to obtain the site content key (as owner from settings, or as an approved recipient)."""
+        import base64
+        # Owner path: content key stored locally in settings
+        key_b64 = self.settings.get("private_key")
+        if key_b64:
+            try:
+                self.private_key = base64.b64decode(key_b64)
+                return True
+            except Exception:
+                self.private_key = None
+        # Viewer path: unwrap our own key from the envelope
+        try:
+            envelope = self.storage.loadJson("content.json")
+        except Exception:
+            return False
+        if envelope.get("privatekey") is not True:
+            return False
+        keys = envelope.get("keys", {})
+        if not keys:
+            return False
+        # Verify the key map signature to prevent tampering
+        keys_sign = envelope.get("keys_sign")
+        if not keys_sign:
+            self.log.warning("Missing keys_sign on private site content.json")
+            return False
+        from Crypt import CryptBitcoin
+        keys_data = json.dumps(keys, sort_keys=True)
+        if not CryptBitcoin.verify(keys_data, self.address, keys_sign):
+            self.log.warning("Invalid keys_sign on private site content.json")
+            return False
+        from User import UserManager
+        user = UserManager.user_manager.get()
+        if not user:
+            return False
+        auth_address = user.getAuthAddress(self.address)
+        auth_privatekey = user.getAuthPrivatekey(self.address)
+        wrapped = keys.get(auth_address)
+        if not wrapped:
+            return False
+        try:
+            from Crypt import CryptEcies
+            self.private_key = CryptEcies.unwrapKey(base64.b64decode(wrapped), auth_privatekey)
+            return True
+        except Exception as err:
+            self.log.debug("Private key unwrap failed: %s" % err)
+            return False
+
+    def lockPrivate(self):
+        self.private_key = None
 
     def getSettingsCache(self):
         back = {}

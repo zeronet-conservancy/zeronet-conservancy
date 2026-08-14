@@ -1,4 +1,4 @@
-FROM python:3.12-alpine
+FROM python:3.12-alpine@sha256:78098ea6a3a9c6a7727a5d4674e4a44e57e01fac878ee9cb4d24a86bd93916ff
 
 RUN apk --update --no-cache --no-progress add git gcc libffi-dev musl-dev make openssl g++ autoconf automake libtool
 
@@ -8,9 +8,9 @@ USER service-0net:service-0net
 
 WORKDIR /home/service-0net
 
-COPY requirements.txt .
+COPY requirements.lock .
 
-RUN python3 -m pip install -r requirements.txt
+RUN python3 -m pip install --require-hashes --no-cache-dir -r requirements.lock
 
 # the part below is updated with source updates
 

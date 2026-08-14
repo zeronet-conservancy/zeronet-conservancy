@@ -13,6 +13,8 @@ import gevent
 from Debug import Debug
 from Crypt import CryptHash
 from Crypt import CryptBitcoin
+from Crypt import CryptAes
+from Crypt import CryptEcies
 from Config import config
 from util import helper
 from util import Diff
@@ -27,6 +29,10 @@ class VerifyError(Exception):
 
 
 class SignError(Exception):
+    pass
+
+
+class PrivateKeyError(Exception):
     pass
 
 
@@ -49,6 +55,7 @@ class ContentManager:
         self.contents = ContentDbDict(site)
         self.hashfield = PeerHashfield()
         self.has_optional_files = False
+        self.private = None  # Cached private-site status (None = unknown)
 
     def addBadCert(self, sign):
         addr = CryptBitcoin.get_sign_address_64('compromised', sign)
@@ -73,6 +80,101 @@ class ContentManager:
         self.has_optional_files = bool(self.hashfield)
 
         self.contents.db.initSite(self.site)
+
+    def isPrivate(self):
+        """Return True if the site content.json is an encrypted private envelope."""
+        if self.private is not None:
+            return self.private
+        try:
+            raw = self.site.storage.loadJson("content.json")
+            self.private = raw.get("privatekey") is True
+        except Exception:
+            self.private = False
+        return self.private
+
+    def getContentKey(self):
+        """Get the site's content key (stored locally for the owner), or create it."""
+        import base64
+        key_b64 = self.site.settings.get("private_key")
+        if key_b64:
+            return base64.b64decode(key_b64)
+        key = CryptAes.newKey()
+        self.site.settings["private_key"] = base64.b64encode(key).decode("ascii")
+        self.site.saveSettings()
+        return key
+
+    def getRecipients(self):
+        """Return the approved recipients {auth_address: public_key_bytes}."""
+        import base64
+        recipients = {}
+        for address, pubkey_b64 in self.site.settings.get("private_recipients", {}).items():
+            try:
+                recipients[address] = base64.b64decode(pubkey_b64)
+            except Exception:
+                continue
+        return recipients
+
+    def addRecipient(self, address, signature):
+        """Approve a recipient by recovering their public key from a signed access request."""
+        message = CryptEcies.ACCESS_REQUEST_MESSAGE % self.site.address
+        publickey = CryptEcies.recoverPublicKey(signature, message)
+        if CryptEcies.publicToAddress(publickey) != address:
+            raise SignError("Access request signature does not match address %s" % address)
+        recipients = self.site.settings.setdefault("private_recipients", {})
+        recipients[address] = base64.b64encode(publickey).decode("ascii")
+        self.site.saveSettings()
+        self.getContentKey()  # Ensure a content key exists
+        return True
+
+    def removeRecipient(self, address):
+        recipients = self.site.settings.get("private_recipients", {})
+        if address in recipients:
+            del recipients[address]
+            self.site.saveSettings()
+            return True
+        return False
+
+    def wrapContent(self, content, content_key, privatekey):
+        """Wrap a signed content.json dict into a private encrypted envelope."""
+        import base64
+        keys = {}
+        for address, publickey in self.getRecipients().items():
+            wrapped = CryptEcies.wrapKey(content_key, publickey)
+            keys[address] = base64.b64encode(wrapped).decode("ascii")
+        keys_sign = CryptBitcoin.sign(json.dumps(keys, sort_keys=True), privatekey)
+        body = CryptAes.encrypt(helper.jsonDumps(content).encode("utf8"), content_key)
+        envelope = {
+            "privatekey": True,
+            "keys": keys,
+            "body": base64.b64encode(body).decode("ascii")
+        }
+        if keys_sign:
+            envelope["keys_sign"] = keys_sign
+        return envelope
+
+    def unwrapContent(self, content):
+        """Decrypt a private envelope back into the inner signed content.json dict."""
+        import base64
+        import json
+        key = self.site.getPrivatekey()
+        if key is None:
+            raise PrivateKeyError("You are not authorized to access this private site")
+        body = base64.b64decode(content["body"])
+        inner_bytes = CryptAes.decrypt(body, key)
+        return json.loads(inner_bytes.decode("utf8"))
+
+    def encryptFiles(self, dir_inner_path, key):
+        """Encrypt all data files in the directory in place (used when making a site private)."""
+        db_inner_path = self.site.storage.getDbFile()
+        for file_relative_path in self.site.storage.walk(dir_inner_path):
+            file_name = helper.getFilename(file_relative_path)
+            if str(file_relative_path) == "content.json" or file_name.startswith(".") or file_name.endswith("-old") or file_name.endswith("-new"):
+                continue
+            if db_inner_path and str(file_relative_path).startswith(db_inner_path):
+                continue  # Don't encrypt the sql cache
+            file_inner_path = str(Path(dir_inner_path) / file_relative_path)
+            data = self.site.storage.read(file_inner_path)
+            self.site.storage.write(file_inner_path, CryptAes.encrypt(data, key))
 
     def getFileChanges(self, old_files, new_files):
         deleted = {key: val for key, val in old_files.items() if key not in new_files}
@@ -99,6 +201,19 @@ class ContentManager:
         if os.path.isfile(content_path):
             try:
                 new_content = self.site.storage.loadJson(content_inner_path)
+                if content_inner_path == "content.json" and new_content.get("privatekey") is True:
+                    # Private site: decrypt the envelope before processing
+                    self.private = True
+                    try:
+                        new_content = self.unwrapContent(new_content)
+                    except PrivateKeyError:
+                        self.log.debug("Private content.json, access denied for %s" % content_inner_path)
+                        return [], []
+                    except Exception as err:
+                        self.log.warning(f'{content_path} decrypt error: {Debug.formatException(err)}')
+                        return [], []
+                elif content_inner_path == "content.json":
+                    self.private = False
                 # Check if file is newer than what we have
                 if not force and old_content and not self.site.settings.get("own"):
                     new_ts = int(float(new_content.get('modified', 0)))
@@ -653,7 +768,10 @@ class ContentManager:
     def hashFiles(self, dir_inner_path, ignore_pattern=None, optional_pattern=None):
         files_node = {}
         files_optional_node = {}
-        db_inner_path = self.site.storage.getDbFile()
+        try:
+            db_inner_path = self.site.storage.getDbFile()
+        except Exception:
+            db_inner_path = None
         if dir_inner_path and not self.isValidRelativePath(dir_inner_path):
             ignored = True
             self.log.error("- [ERROR] Only ascii encoded directories allowed: %s" % dir_inner_path)
@@ -691,6 +809,9 @@ class ContentManager:
 
     def sign(self, inner_path="content.json", privatekey=None, filewrite=True, update_changed_files=False, extend=None, remove_missing_optional=False):
         """Create and sign a content.json
+
+        If the site has approved private recipients, the files are encrypted and
+        the signed content.json is wrapped into an encrypted envelope.
 
         Return: The new content if filewrite = False"""
 
@@ -734,6 +855,14 @@ class ContentManager:
         directory = self.site.storage.getPath(inner_path).parent
         inner_directory = inner_path.parent
         self.log.info("Opening site data directory: %s..." % directory)
+
+        # Private site: only the root content.json becomes an encrypted envelope
+        is_root = inner_path == Path("content.json")
+        is_private = is_root and (self.isPrivate() or bool(self.site.settings.get("private_recipients")))
+        if is_private and not self.isPrivate():
+            # Transitioning to a private site: encrypt the files in place first
+            self.log.info("Encrypting site files...")
+            self.encryptFiles(inner_directory, self.getContentKey())
 
         changed_files = [inner_path]
         files_node, files_optional_node = self.hashFiles(
@@ -821,8 +950,15 @@ class ContentManager:
 
         if filewrite:
             self.log.info("Saving to %s..." % inner_path)
+            if is_private:
+                new_content = self.wrapContent(new_content, self.getContentKey(), privatekey)
+                self.site.private_key = self.getContentKey()
+                self.private = True
+            else:
+                self.private = False
             self.site.storage.writeJson(inner_path, new_content)
-            self.contents[str(inner_path)] = new_content
+            if not is_private:
+                self.contents[str(inner_path)] = new_content
 
         self.log.info("File %s signed!" % inner_path)
 
@@ -989,6 +1125,12 @@ class ContentManager:
                         new_content = json.load(file)
                     except Exception as err:
                         raise VerifyError(f"Invalid json file: {err}")
+                if new_content.get("privatekey") is True:
+                    # Private site: decrypt the envelope before verifying
+                    try:
+                        new_content = self.unwrapContent(new_content)
+                    except PrivateKeyError as err:
+                        raise VerifyError(str(err))
                 if inner_path in self.contents:
                     old_content = self.contents.get(inner_path, {"modified": 0})
                     # Checks if its newer the ours

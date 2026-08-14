@@ -179,7 +179,7 @@ class UiWebsocketPlugin(object):
 
         nonce = CryptHash.random()
         piece_size = 1024 * 1024
-        inner_path = self.site.content_manager.sanitizePath(inner_path)
+        inner_path = str(self.site.content_manager.sanitizePath(inner_path))
         file_info = self.site.content_manager.getFileInfo(inner_path, new_file=True)
 
         content_inner_path_dir = helper.getDirname(file_info["content_inner_path"])
@@ -251,6 +251,7 @@ class UiWebsocketPlugin(object):
 @PluginManager.registerTo("ContentManager")
 class ContentManagerPlugin(object):
     def getFileInfo(self, inner_path, *args, **kwargs):
+        inner_path = str(inner_path)
         if "|" not in inner_path:
             return super(ContentManagerPlugin, self).getFileInfo(inner_path, *args, **kwargs)
 
@@ -401,6 +402,7 @@ class ContentManagerPlugin(object):
         return True
 
     def verifyFile(self, inner_path, file, ignore_same=True):
+        inner_path = str(inner_path)
         if "|" not in inner_path:
             return super(ContentManagerPlugin, self).verifyFile(inner_path, file, ignore_same)
 
@@ -410,6 +412,9 @@ class ContentManagerPlugin(object):
         return self.verifyPiece(inner_path, pos_from, file)
 
     def optionalDownloaded(self, inner_path, hash_id, size=None, own=False):
+        inner_path = str(inner_path)
+        if size is None:
+            size = self.site.storage.getSize(inner_path)
         if "|" in inner_path:
             inner_path, file_range = inner_path.split("|")
             pos_from, pos_to = map(int, file_range.split("-"))
@@ -432,6 +437,7 @@ class ContentManagerPlugin(object):
         return super(ContentManagerPlugin, self).optionalDownloaded(inner_path, hash_id, size, own)
 
     def optionalRemoved(self, inner_path, hash_id, size=None):
+        inner_path = str(inner_path)
         if size and size > 1024 * 1024:
             file_info = self.getFileInfo(inner_path)
             sha512 = file_info["sha512"]
@@ -481,7 +487,7 @@ class SiteStoragePlugin(object):
             return super(SiteStoragePlugin, self).write(inner_path, content)
 
         # Write to specific position by passing |{pos} after the filename
-        inner_path, file_range = inner_path.split("|")
+        inner_path, file_range = str(inner_path).split("|")
         pos_from, pos_to = map(int, file_range.split("-"))
         file_path = self.getPath(inner_path)
 
@@ -767,6 +773,7 @@ class PeerPlugin(object):
             return super(PeerPlugin, self).updateHashfield(*args, **kwargs)
 
     def getFile(self, site, inner_path, *args, **kwargs):
+        inner_path = str(inner_path)
         if "|" in inner_path:
             inner_path, file_range = inner_path.split("|")
             pos_from, pos_to = map(int, file_range.split("-"))
@@ -798,6 +805,7 @@ class SitePlugin(object):
         return back
 
     def needFile(self, inner_path, *args, **kwargs):
+        inner_path = str(inner_path)
         if inner_path.endswith("|all"):
             @util.Pooled(20)
             def pooledNeedBigfile(inner_path, *args, **kwargs):

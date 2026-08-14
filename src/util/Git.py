@@ -57,17 +57,20 @@ def _load():
         _repo = None
 
 
-def commit() -> Optional[str]:
-    """Returns git revision, possibly suffixed with -dirty"""
+def commit(allow_dirty=True) -> Optional[str]:
+    """Returns git revision, optionally suffixed with -dirty.
+
+    Set ``allow_dirty=False`` for reproducible builds so the returned value
+    does not depend on the state of the working tree.
+    """
     _load()
     if git is None:
         return None
     try:
-        dirty = '-dirty' if _repo.is_dirty() else ''
+        dirty = '-dirty' if (allow_dirty and _repo.is_dirty()) else ''
         return f'{_repo.head.commit}{dirty}'
     except Exception:
         return None
-
 
 def branch() -> Optional[str]:
     """Returns current git branch if any"""
