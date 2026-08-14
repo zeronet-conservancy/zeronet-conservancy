@@ -19,8 +19,8 @@ requests
 ipython>=8
 fastbencode
 asyncio-gevent
-# pinned to commit f99d881e9b992da13519721e251912c32a566cd7
-aio-btdht @ https://github.com/bashkirtsevich-llc/aiobtdht/archive/f99d881e9b992da13519721e251912c32a566cd7.tar.gz
+# pinned to commit bbe748532b2b49bd47a194b9e448604664c973f7 (zeronet-conservancy fork: fix node removal KeyError)
+aio-btdht @ https://github.com/zeronet-conservancy/aiobtdht/archive/bbe748532b2b49bd47a194b9e448604664c973f7.tar.gz
 # pinned to commit fe0b18a98d4dc19034f8152afbae78fb600830e2
 aio-krpc-server @ https://github.com/bashkirtsevich-llc/aiokrpc/archive/fe0b18a98d4dc19034f8152afbae78fb600830e2.tar.gz
 GitPython>=3.1.41 # >=3.1.41 runs `git version` at import (CVE-2024-22190 mitigation)
