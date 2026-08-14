@@ -1,4 +1,5 @@
 import io
+import zlib
 
 import pytest
 import time
@@ -90,6 +91,60 @@ class TestFileRequest:
         buff = io.BytesIO()
         response = connection.request("streamFile", {"site": site.address, "inner_path": "../users.json", "location": 0}, buff)
         assert "File read exception" in response["error"]
+
+        connection.close()
+        client.stop()
+
+    def testGetFileCompressed(self, file_server, site):
+        file_server.ip_incoming = {}  # Reset flood protection
+        client = ConnectionServer(file_server.ip, 1545)
+        connection = client.getConnection(file_server.ip, 1544)
+        file_server.sites[site.address] = site
+
+        inner_path = "content.json"
+        with site.storage.open(inner_path, "rb") as f:
+            original = f.read()
+
+        response = connection.request("getFile", {"site": site.address, "inner_path": inner_path, "location": 0, "compression": "zlib"})
+        assert response.get("compression") == "zlib"
+        assert zlib.decompress(response["body"]) == original
+
+        connection.close()
+        client.stop()
+
+    def testGetFileCompressedIncompressible(self, file_server, site):
+        file_server.ip_incoming = {}  # Reset flood protection
+        client = ConnectionServer(file_server.ip, 1545)
+        connection = client.getConnection(file_server.ip, 1544)
+        file_server.sites[site.address] = site
+
+        inner_path = "data/img/zeroid.png"
+        with site.storage.open(inner_path, "rb") as f:
+            original = f.read()
+
+        response = connection.request("getFile", {"site": site.address, "inner_path": inner_path, "location": 0, "compression": "zlib"})
+        assert "compression" not in response
+        assert response["body"] == original
+
+        connection.close()
+        client.stop()
+
+    def testStreamFileCompressed(self, file_server, site):
+        file_server.ip_incoming = {}  # Reset flood protection
+        client = ConnectionServer(file_server.ip, 1545)
+        connection = client.getConnection(file_server.ip, 1544)
+        file_server.sites[site.address] = site
+
+        inner_path = "content.json"
+        with site.storage.open(inner_path, "rb") as f:
+            original = f.read()
+
+        buff = io.BytesIO()
+        response = connection.request(
+            "streamFile", {"site": site.address, "inner_path": inner_path, "location": 0, "compression": "zlib"}, buff
+        )
+        assert response.get("compression") == "zlib"
+        assert buff.getvalue() == original
 
         connection.close()
         client.stop()

@@ -1,7 +1,9 @@
 # Included modules
 import os
+import io
 import time
 import json
+import zlib
 import collections
 import itertools
 
@@ -17,6 +19,13 @@ from Plugin import PluginManager
 from contextlib import closing
 
 FILE_BUFF = 1024 * 512
+
+# Extensions that are already compressed or otherwise incompressible
+INCOMPRESSIBLE_EXTENSIONS = (
+    "7z", "aac", "avi", "bz2", "flac", "gif", "gz", "jpg", "jpeg", "lz4",
+    "lzma", "mkv", "mp3", "mp4", "ogg", "pdf", "png", "rar", "tgz", "txz",
+    "webm", "webp", "xz", "z", "zip", "zipx", "zst"
+)
 
 
 class RequestError(Exception):
@@ -206,6 +215,13 @@ class FileRequest(object):
     def isReadable(self, site, inner_path, file, pos):
         return True
 
+    def shouldCompress(self, params):
+        if params.get("compression") != "zlib":
+            return False
+        inner_path = params.get("inner_path", "")
+        extension = inner_path.rsplit(".", 1)[-1].lower() if "." in inner_path else ""
+        return extension not in INCOMPRESSIBLE_EXTENSIONS
+
     # Send file content request
     def handleGetFile(self, params, streaming=False):
         site = self.sites.get(params["site"])
@@ -240,23 +256,54 @@ class FileRequest(object):
                     self.connection.badAction(5)
                     raise RequestError("Bad file location")
 
-                if streaming:
-                    back = {
-                        "size": file_size,
-                        "location": min(file.tell() + read_bytes, file_size),
-                        "stream_bytes": min(read_bytes, file_size - params["location"])
-                    }
-                    self.response(back)
-                    self.sendRawfile(file, read_bytes=read_bytes)
-                else:
-                    back = {
-                        "body": file,
-                        "size": file_size,
-                        "location": min(file.tell() + file.read_bytes, file_size)
-                    }
-                    self.response(back, streaming=True)
+                send_size = min(read_bytes, file_size - params["location"])
+                next_location = min(params["location"] + send_size, file_size)
 
-                bytes_sent = min(read_bytes, file_size - params["location"])  # Number of bytes we going to send
+                compressed_body = None
+                if self.shouldCompress(params) and send_size > 0:
+                    body = file.read(send_size)
+                    compressed = zlib.compress(body)
+                    if len(compressed) < len(body):
+                        compressed_body = compressed
+                    else:
+                        file.seek(params["location"])
+
+                if streaming:
+                    if compressed_body is not None:
+                        back = {
+                            "size": file_size,
+                            "location": next_location,
+                            "stream_bytes": len(compressed_body),
+                            "compression": "zlib"
+                        }
+                        self.response(back)
+                        self.sendRawfile(io.BytesIO(compressed_body), read_bytes=len(compressed_body))
+                    else:
+                        back = {
+                            "size": file_size,
+                            "location": next_location,
+                            "stream_bytes": send_size
+                        }
+                        self.response(back)
+                        self.sendRawfile(file, read_bytes=read_bytes)
+                else:
+                    if compressed_body is not None:
+                        back = {
+                            "body": compressed_body,
+                            "size": file_size,
+                            "location": next_location,
+                            "compression": "zlib"
+                        }
+                        self.response(back)
+                    else:
+                        back = {
+                            "body": file,
+                            "size": file_size,
+                            "location": next_location
+                        }
+                        self.response(back, streaming=True)
+
+                bytes_sent = send_size  # Number of bytes we going to send
                 site.settings["bytes_sent"] = site.settings.get("bytes_sent", 0) + bytes_sent
             if config.debug_socket:
                 self.log.debug("File %s at position %s sent %s bytes" % (file_path, params["location"], bytes_sent))
