@@ -47,8 +47,6 @@ class UiWebsocketPlugin(object):
         self.site.updateWebsocket(peernumber_updated=True)
 
     def addBigfileInfo(self, row):
-        global bigfile_sha512_cache
-
         content_db = self.site.content_manager.contents.db
         site = content_db.sites[row["address"]]
         if not site.settings.get("has_bigfile"):

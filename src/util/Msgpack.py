@@ -60,7 +60,6 @@ bin_value_keys = ("hashfield_raw", "peers", "peers_ipv6", "peers_onion", "body",
 
 
 def objectDecoderHook(obj):
-    global bin_value_keys
     back = {}
     for key, val in obj:
         if type(key) is bytes:

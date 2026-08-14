@@ -19,7 +19,6 @@ class TestThreadPool:
                 events.append("M")
                 time.sleep(0.001)
                 events.append("D")
-                return out
 
             threads = []
             for i in range(3):

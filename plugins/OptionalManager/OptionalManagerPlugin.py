@@ -177,7 +177,6 @@ class WorkerManagerPlugin(object):
 @PluginManager.registerTo("UiRequest")
 class UiRequestPlugin(object):
     def parsePath(self, path):
-        global access_log
         path_parts = super(UiRequestPlugin, self).parsePath(path)
         if path_parts:
             site_id = ContentDbPlugin.content_db.site_ids.get(path_parts["request_address"])

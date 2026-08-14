@@ -180,7 +180,7 @@ class Config:
                 elif no_migrate:
                     return StartupError("Migration refused, but new directory should be migrated (old_dir == new_dir)", old_dir)
                 else:
-                    return askMigrate(old_dir, new_dir, silent_migrate)
+                    return self.askMigrate(old_dir, new_dir, silent)
             else:
                 if self.checkDir(new_dir):
                     if not no_migrate:
@@ -195,7 +195,7 @@ class Config:
                 self.createNewConfig(new_dir)
                 return new_dir
             else:
-                return self.askMigrate(old_dir, new_dir, silent_migrate)
+                return self.askMigrate(old_dir, new_dir, silent)
         elif new_dir.exists():
             if self.checkDir(new_dir):
                 return new_dir

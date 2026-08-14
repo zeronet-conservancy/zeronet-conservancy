@@ -103,8 +103,6 @@ def loads(data):
 
 
     def parse():
-        nonlocal offset
-
         if data[offset] == ord("i"):
             return parseInteger()
         elif data[offset] == ord("l"):
