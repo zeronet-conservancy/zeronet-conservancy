@@ -422,8 +422,7 @@ class Db(object):
 
             # Insert data to json table for easier joins
             if dbmap.get("to_json_table"):
-                directory = relative_path.parent
-                file_name = relative_path.name
+                directory, file_name = re.match("^(.*?)/*([^/]*)$", str(relative_path)).groups()
                 data_json_row = dict(cur.getJsonRow(directory + "/" + dbmap.get("file_name", file_name)))
                 changed = False
                 for key in dbmap["to_json_table"]:
