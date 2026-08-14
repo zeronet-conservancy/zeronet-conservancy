@@ -180,7 +180,7 @@ class Config:
                 elif no_migrate:
                     return StartupError("Migration refused, but new directory should be migrated (old_dir == new_dir)", old_dir)
                 else:
-                    return askMigrate(old_dir, new_dir, silent_migrate)
+                    return self.askMigrate(old_dir, new_dir, silent)
             else:
                 if self.checkDir(new_dir):
                     if not no_migrate:
@@ -195,7 +195,7 @@ class Config:
                 self.createNewConfig(new_dir)
                 return new_dir
             else:
-                return self.askMigrate(old_dir, new_dir, silent_migrate)
+                return self.askMigrate(old_dir, new_dir, silent)
         elif new_dir.exists():
             if self.checkDir(new_dir):
                 return new_dir
@@ -417,6 +417,8 @@ class Config:
         self.parser.add_argument('--offline', help='Disable network communication', action='store_true')
         self.parser.add_argument('--disable-port-check', help='Disable checking port', action='store_true')
         self.parser.add_argument('--dht', help='Use DHT for peer discovery (experimental)', action=argparse.BooleanOptionalAction, default=True)
+        self.parser.add_argument('--dht-port', help='DHT bind port (0: randomize)', default=0, type=int, metavar='port')
+        self.parser.add_argument('--dht-port-range', help='DHT randomization range', default="40000-60000", metavar='port')
         self.parser.add_argument('--use-trackers', help="Use classic trackers for peer discovery", action=argparse.BooleanOptionalAction, default=True)
 
         self.parser.add_argument('--disable-udp', help='Disable UDP connections', action='store_true')

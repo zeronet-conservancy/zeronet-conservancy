@@ -12,7 +12,6 @@ import urllib.parse
 import gevent
 
 import util
-import main
 from Config import config
 from Plugin import PluginManager
 from Debug import Debug
@@ -115,6 +114,7 @@ class UiWebsocketPlugin(object):
         else:
             local_html = ""
 
+        import main  # Deferred: importing at module level would trigger a recursive app bootstrap
         peer_ips = [peer.key for peer in site.getConnectablePeers(20, allow_private=False)]
         self_onion = main.file_server.tor_manager.site_onions.get(site.address, None)
         if self_onion is not None:
@@ -618,17 +618,18 @@ class UiWebsocketPlugin(object):
             try:
                 # Download
                 response = requests.get(db_url, stream=True)
+                data = io.BytesIO()
                 data_size = response.headers.get('content-length')
                 if data_size is None:
                     data.write(response.content)
-                data_size = int(data_size)
-                data_recv = 0
-                data = io.BytesIO()
-                for buff in response.iter_content(chunk_size=1024 * 512):
-                    data.write(buff)
-                    data_recv += 1024 * 512
-                    progress = int(float(data_recv) / data_size * 100)
-                    self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], progress])
+                else:
+                    data_size = int(data_size)
+                    data_recv = 0
+                    for buff in response.iter_content(chunk_size=1024 * 512):
+                        data.write(buff)
+                        data_recv += 1024 * 512
+                        progress = int(float(data_recv) / data_size * 100)
+                        self.cmd("progress", ["geolite-info", _["Downloading GeoLite2 City database (one time only, ~20MB)..."], progress])
                 self.log.info("GeoLite2 City database downloaded (%s bytes), unpacking..." % data.tell())
                 data.seek(0)
 
@@ -651,8 +652,6 @@ class UiWebsocketPlugin(object):
         ])
 
     def getLoc(self, geodb, ip):
-        global loc_cache
-
         if ip in loc_cache:
             return loc_cache[ip]
         else:

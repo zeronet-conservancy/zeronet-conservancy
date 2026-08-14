@@ -41,7 +41,6 @@ class UiRequestPlugin(object):
 
     @helper.encodeResponse
     def actionBenchmarkResult(self):
-        global benchmark_key
         if self.get.get("benchmark_key", "") != benchmark_key:
             return self.error403("Invalid benchmark key")
 

@@ -113,14 +113,12 @@ class TestUpnpPunch(object):
             pytest.fail('Incorrect XML message: {}'.format(e))
 
     def test_create_open_message_contains_right_stuff(self):
-        settings = {'description': 'test desc',
-                    'protocol': 'test proto',
+        settings = {'protocol': 'UDP',
                     'upnp_schema': 'test schema'}
         msg, fn_name = upnp._create_open_message('127.0.0.1', 8888, **settings)
         assert fn_name == 'AddPortMapping'
         assert '127.0.0.1' in msg
         assert '8888' in msg
-        assert settings['description'] in msg
         assert settings['protocol'] in msg
         assert settings['upnp_schema'] in msg
 
@@ -200,15 +198,14 @@ class TestUpnpPunch(object):
     def test_orchestrate_soap_request(self, mock_send_requests,
                                       mock_collect_idg):
         soap_mock = mock.MagicMock()
-        args = ['127.0.0.1', 31337, soap_mock, 'upnp-test', {'upnp_schema':
-                                                             'schema-yo'}]
-        mock_collect_idg.return_value = args[-1]
+        args = ['127.0.0.1', 31337, soap_mock, ('TCP', 'UDP')]
+        mock_collect_idg.return_value = {'upnp_schema': 'schema-yo'}
 
-        upnp._orchestrate_soap_request(*args[:-1])
+        upnp._orchestrate_soap_request(*args)
 
         assert mock_collect_idg.called
-        soap_mock.assert_called_with(
-            *args[:2] + ['upnp-test', 'UDP', 'schema-yo'])
+        soap_mock.assert_any_call('127.0.0.1', 31337, 'TCP', 'schema-yo')
+        soap_mock.assert_any_call('127.0.0.1', 31337, 'UDP', 'schema-yo')
         assert mock_send_requests.called
 
     @mock.patch('util.UpnpPunch._collect_idg_data')
@@ -222,7 +219,8 @@ class TestUpnpPunch(object):
         upnp._orchestrate_soap_request(*args[:-1])
 
         assert mock_collect_idg.called
-        soap_mock.assert_called_with(*args[:2] + [None, 'UDP', 'schema-yo'])
+        soap_mock.assert_any_call('127.0.0.1', 31337, 'TCP', 'schema-yo')
+        soap_mock.assert_any_call('127.0.0.1', 31337, 'UDP', 'schema-yo')
         assert mock_send_requests.called
 
     def test_create_close_message_parsable(self):

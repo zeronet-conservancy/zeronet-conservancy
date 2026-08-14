@@ -5,6 +5,7 @@ import mock
 import gevent
 import gevent.event
 import os
+from pathlib import Path
 
 from Connection import ConnectionServer
 from Config import config
@@ -18,8 +19,8 @@ from . import Spy
 @pytest.mark.usefixtures("resetSettings")
 class TestSiteDownload:
     def testRename(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert site.storage.directory == config.data_dir / site.address
+        assert site_temp.storage.directory == Path(str(config.data_dir) + "-temp") / site.address
 
         # Init source server
         site.connection_server = file_server
@@ -69,8 +70,8 @@ class TestSiteDownload:
         [connection.close() for connection in file_server.connections]
 
     def testRenameOptional(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert site.storage.directory == config.data_dir / site.address
+        assert site_temp.storage.directory == Path(str(config.data_dir) + "-temp") / site.address
 
         # Init source server
         site.connection_server = file_server
@@ -337,8 +338,8 @@ class TestSiteDownload:
         site_full.content_manager.contents.db.close("FindOptional test end")
 
     def testUpdate(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert site.storage.directory == config.data_dir / site.address
+        assert site_temp.storage.directory == Path(str(config.data_dir) + "-temp") / site.address
 
         # Init source server
         site.connection_server = file_server
@@ -519,8 +520,8 @@ class TestSiteDownload:
         assert site_temp.storage.open("content.json").read() == site.storage.open("content.json").read()
 
     def testUnicodeFilename(self, file_server, site, site_temp):
-        assert site.storage.directory == config.data_dir + "/" + site.address
-        assert site_temp.storage.directory == config.data_dir + "-temp/" + site.address
+        assert site.storage.directory == config.data_dir / site.address
+        assert site_temp.storage.directory == Path(str(config.data_dir) + "-temp") / site.address
 
         # Init source server
         site.connection_server = file_server

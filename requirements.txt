@@ -1,5 +1,5 @@
 setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
-gevent>=23.9.0
+gevent>=23.9.0,<24 # <24 required by util/ThreadPool.py (uses gevent.threadpool internals removed in gevent 24+)
 msgpack>=0.6.0
 base58
 # for some reason nobody released fresh merkletools that don't require on outdated pysha3
@@ -20,4 +20,4 @@ fastbencode
 asyncio-gevent
 aio-btdht@git+https://github.com/bashkirtsevich-llc/aiobtdht@f99d881e9b992da13519721e251912c32a566cd7
 aio-krpc-server@git+https://github.com/bashkirtsevich-llc/aiokrpc@fe0b18a98d4dc19034f8152afbae78fb600830e2
-GitPython
+GitPython>=3.1.41 # >=3.1.41 runs `git version` at import (CVE-2024-22190 mitigation)

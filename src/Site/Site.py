@@ -61,15 +61,17 @@ class Site(object):
         self.content_manager.loadContents()  # Load content.json files
         if "main" in sys.modules:  # import main has side-effects, breaks tests
             import main
+            dht_server = getattr(main, "dht_server", None)
             if "file_server" in dir(main):  # Use global file server by default if possible
                 self.connection_server = main.file_server
             else:
                 main.file_server = FileServer()
                 self.connection_server = main.file_server
         else:
+            dht_server = None
             self.connection_server = FileServer()
 
-        self.announcer = SiteAnnouncer(self, main.dht_server)  # Announce and get peer list from other nodes
+        self.announcer = SiteAnnouncer(self, dht_server)  # Announce and get peer list from other nodes
 
         if not self.settings.get("wrapper_key"):  # To auth websocket permissions
             self.settings["wrapper_key"] = CryptHash.random()
@@ -716,8 +718,10 @@ class Site(object):
                 shutil.copy(file_path, file_path_dest)
 
                 # If -default in path, create a -default less copy of the file
-                if file_inner_path_dest.name.endswith('-default'):
-                    non_default_inner_path_dest = file_inner_path_dest.parent / file_inner_path_dest.name.replace('-default', '')
+                if any("-default" in part for part in file_inner_path_dest.parts):
+                    non_default_inner_path_dest = Path(*(
+                        part.replace("-default", "") for part in file_inner_path_dest.parts
+                    ))
                     file_path_dest = new_site.storage.getPath(non_default_inner_path_dest)
                     if new_site.storage.isFile(non_default_inner_path_dest) and not overwrite:
                         # Don't overwrite site files with default ones
@@ -729,7 +733,7 @@ class Site(object):
                         dest_dir.mkdir(parents=True)
                     shutil.copy(file_path, file_path_dest)
                     # Sign if content json
-                    if file_path_dest.name == 'content.json':
+                    if non_default_inner_path_dest.name == 'content.json':
                         new_site.storage.onUpdated(non_default_inner_path_dest)
                         new_site.content_manager.loadContent(
                             non_default_inner_path_dest, add_bad_files=False,
@@ -738,7 +742,7 @@ class Site(object):
                         if privatekey:
                             new_site.content_manager.sign(non_default_inner_path_dest, privatekey, remove_missing_optional=True)
                             new_site.content_manager.loadContent(
-                                file_inner_path_dest, add_bad_files=False, delete_removed_files=False, load_includes=False
+                                non_default_inner_path_dest, add_bad_files=False, delete_removed_files=False, load_includes=False
                             )
 
         if privatekey:

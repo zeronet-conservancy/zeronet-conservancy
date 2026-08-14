@@ -403,13 +403,15 @@ class SiteStorage(object):
 
     def getPath(self, inner_path: Path):
         """Security check and return path of site's file"""
-        if not isinstance(inner_path, Path):
-            inner_path = Path(inner_path)
-        if '..' in inner_path.parts:
+        inner_path = str(inner_path).replace("\\", "/")  # Windows separator fix
+        if not inner_path:
+            return self.directory
+        inner_path = Path(inner_path)
+        if ".." in inner_path.parts:
             raise AccessError(f"Paths with '..' are not allowed: {inner_path}")
         if inner_path.is_absolute():
             inner_path = inner_path.relative_to(inner_path.anchor)
-        if inner_path.is_absolute(): # ugh, just making sure there's nothing funky going on
+        if inner_path.is_absolute():  # ugh, just making sure there's nothing funky going on
             raise AccessError(f"Paths shouldn't be absolute: {inner_path}")
 
         return self.directory / inner_path
@@ -517,7 +519,7 @@ class SiteStorage(object):
             if config.verbose:
                 self.log.debug(
                     "%s verified: %s, quick: %s, optionals: +%s -%s" %
-                    (content_inner_path, len(content["files"]), quick_check, optional_added, optional_removed)
+                    (content_inner_path, len(content.get("files", {})), quick_check, optional_added, optional_removed)
                 )
 
         self.site.content_manager.contents.db.processDelayed()

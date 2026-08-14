@@ -35,7 +35,7 @@ root_dir = os.path.realpath(os.path.dirname(__file__) + "/../../")
 root_dir = root_dir.replace("\\", "/")
 
 
-def formatTraceback(items, fold_builtin=False):
+def formatTraceback(items, fold_builtin=True):
     back = []
     i = 0
     prev_file_title = ""
@@ -54,6 +54,10 @@ def formatTraceback(items, fold_builtin=False):
             file_title = "(importlib)"
             is_builtin = True
             is_skippable_builtin = True
+        elif path.startswith("<frozen "):
+            file_title = "<%s>" % path[len("<frozen "):].rstrip(">")
+            is_builtin = True
+            is_skippable_builtin = False
         else:
             is_skippable_builtin = False
             for base in python_lib_dirs:

@@ -54,7 +54,6 @@ class SiteAnnouncerPlugin(object):
             return super(SiteAnnouncerPlugin, self).getTrackerHandler(protocol)
 
     def announceTrackerZero(self, tracker_address, mode="start", num_want=10):
-        global time_full_announced
         s = time.time()
 
         need_types = ["ip4"]   # ip4 for backward compatibility reasons
