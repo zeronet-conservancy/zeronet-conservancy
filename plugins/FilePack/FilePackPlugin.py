@@ -158,6 +158,7 @@ class SiteStoragePlugin:
             return super(SiteStoragePlugin, self).walk(inner_path, *args, **kwags)
 
     def list(self, inner_path, *args, **kwags):
+        inner_path = str(inner_path)
         if ".zip" in inner_path or ".tar.gz" in inner_path:
             match = re.match(r"^(.*\.(?:tar.gz|zip))(.*)", inner_path)
             archive_inner_path, path_within = match.groups()
@@ -185,6 +186,7 @@ class SiteStoragePlugin:
             return super(SiteStoragePlugin, self).list(inner_path, *args, **kwags)
 
     def read(self, inner_path, mode="rb", **kwargs):
+        inner_path = str(inner_path)
         if ".zip/" in inner_path or ".tar.gz/" in inner_path:
             match = re.match(r"^(.*\.(?:tar.gz|zip))(.*)", inner_path)
             archive_inner_path, path_within = match.groups()
