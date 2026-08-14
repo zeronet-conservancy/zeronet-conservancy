@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="../">
+  <title>Site Builder</title>
+  <link rel="stylesheet" href="css/all.css">
+</head>
+<body class="editor">
+  <div class="editor-topbar">
+    <button class="btn" id="btn-preview" title="Open the published page in a new tab">&larr; View site</button>
+    <span class="title">Site Builder</span>
+    <span id="own-warning" style="display:none" class="empty"></span>
+    <span style="margin-left:auto"></span>
+    <button class="btn" id="btn-undo" title="Undo (Ctrl+Z)">Undo</button>
+    <button class="btn" id="btn-redo" title="Redo (Ctrl+Y)">Redo</button>
+    <button class="btn" id="btn-save">Save</button>
+    <button class="btn btn-primary" id="btn-publish">Sign &amp; Publish</button>
+    <button class="btn" id="btn-new-site" title="Create a new site from a starter template">New site</button>
+  </div>
+
+  <div class="editor-layout">
+    <aside class="editor-sidebar" id="sidebar">
+      <div class="field">
+        <label for="site-title">Site title</label>
+        <input type="text" id="site-title">
+      </div>
+      <div class="field">
+        <label for="site-description">Site description</label>
+        <input type="text" id="site-description">
+      </div>
+      <div class="field">
+        <label for="site-theme">Theme</label>
+        <select id="site-theme">
+          <option value="default">Light</option>
+          <option value="dark">Dark</option>
+        </select>
+      </div>
+      <button class="btn" id="btn-save-settings">Save settings</button>
+
+      <hr>
+      <strong>Pages</strong>
+      <div id="page-list"></div>
+      <button class="btn" id="btn-new-page">+ New page</button>
+      <button class="btn btn-danger" id="btn-delete-page">Delete page</button>
+
+      <hr>
+      <strong>History</strong>
+      <div id="history-list"></div>
+
+      <hr>
+      <strong>Media</strong>
+      <div class="field">
+        <input type="file" id="media-upload" accept="image/*" multiple>
+      </div>
+      <div class="media-list" id="media-list"></div>
+    </aside>
+
+    <section class="editor-main" id="main">
+      <div class="field">
+        <label for="page-title">Page title</label>
+        <input type="text" id="page-title">
+      </div>
+      <div class="field">
+        <label for="page-slug">Slug (URL path)</label>
+        <input type="text" id="page-slug">
+      </div>
+      <div class="editorjs-wrap">
+        <div id="editorjs"></div>
+      </div>
+    </section>
+  </div>
+
+  <div class="editor-statusbar">
+    <span id="status">Loading&hellip;</span>
+    <span id="dirty" style="display:none" class="empty">Unsaved changes</span>
+  </div>
+
+  <script src="js/ZeroFrame.js"></script>
+  <script src="js/lib/editorjs.umd.js"></script>
+  <script src="js/lib/header.umd.js"></script>
+  <script src="js/lib/list.umd.js"></script>
+  <script src="js/lib/quote.umd.js"></script>
+  <script src="js/lib/code.umd.js"></script>
+  <script src="js/lib/image.umd.js"></script>
+  <script src="js/lib/delimiter.umd.js"></script>
+  <script src="js/lib/undo.js"></script>
+  <script src="builder/editor.js"></script>
+</body>
+</html>

@@ -1,0 +1,25 @@
+{
+ "page": [
+  {
+   "page_id": 1,
+   "slug": "home",
+   "title": "Home",
+   "modified": 1690000000,
+   "blocks": [
+    {"type": "heading", "level": 1, "body": "Hi, I'm Jane"},
+    {"type": "text", "body": "I build things for the decentralized web. This site was made with the 0net Site Builder."},
+    {"type": "section", "columns": [
+      [
+        {"type": "heading", "level": 2, "body": "What I do"},
+        {"type": "list", "ordered": false, "items": ["Websites", "Writing", "Open source"]}
+      ],
+      [
+        {"type": "heading", "level": 2, "body": "Find me"},
+        {"type": "card", "title": "Email", "url": "mailto:you@example.com", "description": "Get in touch", "image": ""},
+        {"type": "card", "title": "Git", "url": "https://github.com/", "description": "My projects", "image": ""}
+      ]
+     ]}
+   ]
+  }
+ ]
+}

@@ -1,0 +1,16 @@
+{
+ "page": [
+  {
+   "page_id": 1,
+   "slug": "home",
+   "title": "Home",
+   "modified": 1690000000,
+   "blocks": [
+    {"type": "heading", "level": 1, "body": "My Blog"},
+    {"type": "text", "body": "Notes on decentralized tech and more."},
+    {"type": "card", "title": "My first post", "url": "?page=first-post", "description": "Read it here", "image": ""},
+    {"type": "markdown", "body": "---\n\nSubscribe via the RSS you don't have. (This is a template \u2014 add your posts!)"}
+   ]
+  }
+ ]
+}
