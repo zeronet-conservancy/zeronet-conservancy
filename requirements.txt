@@ -24,3 +24,6 @@ aio-btdht @ https://github.com/zeronet-conservancy/aiobtdht/archive/bbe748532b2b
 # pinned to commit fe0b18a98d4dc19034f8152afbae78fb600830e2
 aio-krpc-server @ https://github.com/bashkirtsevich-llc/aiokrpc/archive/fe0b18a98d4dc19034f8152afbae78fb600830e2.tar.gz
 GitPython>=3.1.41 # >=3.1.41 runs `git version` at import (CVE-2024-22190 mitigation)
+# libp2p P2P networking migration (src/P2P/) -- runs on trio, not asyncio
+# trio/anyio/multiaddr etc. pulled in transitively
+libp2p==0.7.0
