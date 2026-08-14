@@ -517,7 +517,7 @@ class SiteStorage(object):
             if config.verbose:
                 self.log.debug(
                     "%s verified: %s, quick: %s, optionals: +%s -%s" %
-                    (content_inner_path, len(content["files"]), quick_check, optional_added, optional_removed)
+                    (content_inner_path, len(content.get("files", {})), quick_check, optional_added, optional_removed)
                 )
 
         self.site.content_manager.contents.db.processDelayed()

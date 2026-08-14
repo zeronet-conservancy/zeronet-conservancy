@@ -10,6 +10,7 @@ import datetime
 import atexit
 import threading
 import socket
+from pathlib import Path
 
 import pytest
 import mock
@@ -62,7 +63,7 @@ config.action = "test"
 # Load plugins
 from Plugin import PluginManager
 
-config.data_dir = TEST_DATA_PATH  # Use test data for unittests
+config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
 config.debug = True
 
 os.chdir(os.path.abspath(os.path.dirname(__file__) + "/../.."))  # Set working dir
@@ -76,7 +77,7 @@ config.debug_socket = True  # Use test data for unittests
 config.verbose = True  # Use test data for unittests
 config.tor = "disable"  # Don't start Tor client
 config.trackers = []
-config.data_dir = TEST_DATA_PATH  # Use test data for unittests
+config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
 if "ZERONET_LOG_DIR" in os.environ:
     config.log_dir = os.environ["ZERONET_LOG_DIR"]
 config.initLogging(console_logging=False)
@@ -136,13 +137,13 @@ gevent.get_hub().NOT_ERROR += (Debug.Notify,)
 
 def cleanup():
     Db.dbCloseAll()
-    for dir_path in [config.data_dir, config.data_dir + "-temp"]:
+    for dir_path in [config.data_dir, Path(str(config.data_dir) + "-temp")]:
         if os.path.isdir(dir_path):
             for file_name in os.listdir(dir_path):
                 ext = file_name.rsplit(".", 1)[-1]
                 if ext not in ["csr", "pem", "srl", "db", "json", "tmp"]:
                     continue
-                file_path = dir_path + "/" + file_name
+                file_path = os.path.join(dir_path, file_name)
                 if os.path.isfile(file_path):
                     os.unlink(file_path)
 
@@ -165,7 +166,7 @@ def resetSettings(request):
 
 @pytest.fixture(scope="session")
 def resetTempSettings(request):
-    data_dir_temp = config.data_dir + "-temp"
+    data_dir_temp = Path(str(config.data_dir) + "-temp")
     if not os.path.isdir(data_dir_temp):
         os.mkdir(data_dir_temp)
     open("%s/sites.json" % data_dir_temp, "w").write("{}")
@@ -197,9 +198,9 @@ def site(request):
     site = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
 
     # Always use original data
-    assert "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT" in site.storage.getPath("")  # Make sure we dont delete everything
+    assert "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT" in str(site.storage.getPath(""))  # Make sure we dont delete everything
     shutil.rmtree(site.storage.getPath(""), True)
-    shutil.copytree(site.storage.getPath("") + "-original", site.storage.getPath(""))
+    shutil.copytree(Path(str(site.storage.getPath("")) + "-original"), site.storage.getPath(""))
 
     # Add to site manager
     SiteManager.site_manager.get("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
@@ -208,11 +209,7 @@ def site(request):
     def cleanup():
         site.delete()
         site.content_manager.contents.db.close("Test cleanup")
-        site.content_manager.contents.db.timer_check_optional.kill()
         SiteManager.site_manager.sites.clear()
-        db_path = "%s/content.db" % config.data_dir
-        os.unlink(db_path)
-        del ContentDb.content_dbs[db_path]
         gevent.killall([obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet) and obj not in threads_before])
     request.addfinalizer(cleanup)
 
@@ -228,7 +225,7 @@ def site(request):
 @pytest.fixture()
 def site_temp(request):
     threads_before = [obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet)]
-    with mock.patch("Config.config.data_dir", config.data_dir + "-temp"):
+    with mock.patch("Config.config.data_dir", Path(str(config.data_dir) + "-temp")):
         site_temp = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
         site_temp.settings["serving"] = True
         site_temp.announce = mock.MagicMock(return_value=True)  # Don't try to find peers from the net
@@ -236,10 +233,6 @@ def site_temp(request):
     def cleanup():
         site_temp.delete()
         site_temp.content_manager.contents.db.close("Test cleanup")
-        site_temp.content_manager.contents.db.timer_check_optional.kill()
-        db_path = "%s-temp/content.db" % config.data_dir
-        os.unlink(db_path)
-        del ContentDb.content_dbs[db_path]
         gevent.killall([obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet) and obj not in threads_before])
     request.addfinalizer(cleanup)
     site_temp.log = logging.getLogger("Temp:%s" % site_temp.address_short)

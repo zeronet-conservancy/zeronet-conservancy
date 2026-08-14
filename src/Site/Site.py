@@ -61,15 +61,17 @@ class Site(object):
         self.content_manager.loadContents()  # Load content.json files
         if "main" in sys.modules:  # import main has side-effects, breaks tests
             import main
+            dht_server = getattr(main, "dht_server", None)
             if "file_server" in dir(main):  # Use global file server by default if possible
                 self.connection_server = main.file_server
             else:
                 main.file_server = FileServer()
                 self.connection_server = main.file_server
         else:
+            dht_server = None
             self.connection_server = FileServer()
 
-        self.announcer = SiteAnnouncer(self, main.dht_server)  # Announce and get peer list from other nodes
+        self.announcer = SiteAnnouncer(self, dht_server)  # Announce and get peer list from other nodes
 
         if not self.settings.get("wrapper_key"):  # To auth websocket permissions
             self.settings["wrapper_key"] = CryptHash.random()
