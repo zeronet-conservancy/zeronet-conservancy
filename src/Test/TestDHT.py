@@ -59,13 +59,19 @@ class TestDHT:
         config.saveValue.assert_called_once_with("dht_port", 40001)
 
     def testAnnounce(self, dht_server):
-        dht_server.loop = mock.MagicMock()
+        class FakeLoop:
+            def __init__(self):
+                self.tasks = []
+            def create_task(self, coro):
+                coro.close()  # Avoid "coroutine was never awaited" warning
+                self.tasks.append(coro)
+        dht_server.loop = FakeLoop()
         site_hash = b"x" * 20
         dht_server.peers[site_hash] = {("1.2.3.4", 1234)}
         res = dht_server.announce(site_hash)
         assert res == [("1.2.3.4", 1234)]
         assert site_hash in dht_server.site_hashes
-        dht_server.loop.create_task.assert_called_once()
+        assert len(dht_server.loop.tasks) == 1
 
     def testSetPeers(self, dht_server):
         site_hash = b"y" * 20

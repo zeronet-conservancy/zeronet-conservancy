@@ -21,7 +21,7 @@ if "libev" not in str(gevent.config.loop):
 
 import gevent.event
 from gevent import monkey
-monkey.patch_all(thread=False, subprocess=False)
+monkey.patch_all(thread=False)
 
 atexit_register = atexit.register
 atexit.register = lambda func: ""  # Don't register shutdown functions to avoid IO error on exit
