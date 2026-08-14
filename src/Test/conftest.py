@@ -64,6 +64,7 @@ config.action = "test"
 from Plugin import PluginManager
 
 config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
+config.private_dir = Path(TEST_DATA_PATH)  # Use test data for private files (users.json, sites.json)
 config.debug = True
 
 os.chdir(os.path.abspath(os.path.dirname(__file__) + "/../.."))  # Set working dir
@@ -78,6 +79,7 @@ config.verbose = True  # Use test data for unittests
 config.tor = "disable"  # Don't start Tor client
 config.trackers = []
 config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
+config.private_dir = Path(TEST_DATA_PATH)  # Use test data for private files (users.json, sites.json)
 if "ZERONET_LOG_DIR" in os.environ:
     config.log_dir = os.environ["ZERONET_LOG_DIR"]
 config.initLogging(console_logging=False)

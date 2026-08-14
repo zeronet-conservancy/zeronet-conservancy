@@ -90,7 +90,7 @@ class ContentManager:
     # Load content.json to self.content
     # Return: Changed files ["index.html", "data/messages.json"], Deleted files ["old.jpg"]
     def loadContent(self, content_inner_path="content.json", add_bad_files=True, delete_removed_files=True, load_includes=True, force=False):
-        content_inner_path = content_inner_path.strip("/")  # Remove / from beginning
+        content_inner_path = str(content_inner_path).strip("/")  # Remove / from beginning
         old_content = self.contents.get(content_inner_path)
         content_path = self.site.storage.getPath(content_inner_path)
         content_dir = os.path.dirname(content_path)
@@ -475,29 +475,27 @@ class ContentManager:
 
         Return: The rules for the file or False if not allowed"""
 
-        if not isinstance(inner_path, Path):
-            inner_path = Path(inner_path)
-        if not inner_path.name.endswith('content.json'):  # Find the files content.json first
+        inner_path = str(inner_path)
+        if not inner_path.endswith("content.json"):  # Find the files content.json first
             file_info = self.getFileInfo(inner_path)
             if not file_info:
                 return False  # File not found
             inner_path = file_info["content_inner_path"]
 
-        if inner_path == Path('content.json'):  # Root content.json
+        if inner_path == "content.json":  # Root content.json
             rules = {}
             rules["signers"] = self.getValidSigners(inner_path, content)
             return rules
 
-        dirs = inner_path.parts  # Parent dirs of content.json
+        dirs = inner_path.split("/")  # Parent dirs of content.json
         inner_path_parts = [dirs.pop()]  # Filename relative to content.json
         # Dont check in self dir
         while dirs:
             inner_path_parts.insert(0, dirs.pop())
-            now_dir = reduce((lambda a, b: Path(a) / b), dirs)
-            content_inner_path = now_dir / 'content.json'
+            content_inner_path = f'{"/".join(dirs)}/content.json'.strip('/')
             parent_content = self.contents.get(content_inner_path)
             if parent_content and "includes" in parent_content:
-                return parent_content["includes"].get(now_dir)
+                return parent_content["includes"].get("/".join(inner_path_parts))
             elif parent_content and "user_contents" in parent_content:
                 return self.getUserContentRules(parent_content, inner_path, content)
         return False
@@ -539,7 +537,7 @@ class ContentManager:
         if "signers" in rules:
             rules["signers"] = rules["signers"][:]  # Make copy of the signers
 
-        if content is not None:
+        if content is not None and content.get("cert_user_id") and content["cert_user_id"].count("@") == 1:
             name, domain = content['cert_user_id'].rsplit('@', 1)
             cert_addresses = parent_content['user_contents']['cert_signers'].get(domain)
         else:
@@ -632,20 +630,19 @@ class ContentManager:
         return back
 
     def isValidRelativePath(self, relative_path):
-        if not isinstance(relative_path, Path):
-            relative_path = Path(relative_path)
-        if '..' in relative_path.parts:
+        relative_path = str(relative_path)
+        if ".." in relative_path.replace("\\", "/").split("/"):
             return False
-        elif relative_path.is_absolute():
+        elif len(relative_path) > 255:
             return False
-        elif relative_path.name and relative_path.name[-1] in ('.', ' '):  # would bug out on Windows OS
+        elif relative_path[0] in ("/", "\\"):  # Starts with
             return False
-        # ugh, can we please have better exps here? also check if this actually respects
-        # common file systems
-        elif re.match(r'.*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)', str(relative_path)):  # Protected on Windows
+        elif relative_path[-1] in (".", " "):  # Ends with
+            return False
+        elif re.match(r".*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)", relative_path, re.IGNORECASE):  # Protected on Windows
             return False
         else:
-            return re.match(r'^[^\x00-\x1F\"*:<>?\\|]+$', str(relative_path))
+            return re.match(r"^[^\x00-\x1F\"*:<>?\\|]+$", relative_path)
 
     def sanitizePath(self, inner_path):
         return Path(re.sub("[\x00-\x1F\"*:<>?\\|]", "", str(inner_path)))
@@ -700,8 +697,8 @@ class ContentManager:
         if inner_path.name != 'content.json':
             raise SignError("Invalid file name, you can only sign content.json files")
 
-        if inner_path in self.contents:
-            content = self.contents.get(inner_path)
+        if str(inner_path) in self.contents:
+            content = self.contents.get(str(inner_path))
             if content and content.get("cert_sign", False) is None and self.site.storage.isFile(inner_path):
                 # Recover cert_sign from file
                 content["cert_sign"] = self.site.storage.loadJson(inner_path).get("cert_sign")
@@ -719,7 +716,7 @@ class ContentManager:
             else:
                 content = {"files": {}, "signs": {}}  # Default content.json
 
-            if inner_path == "content.json":  # It's the root content.json, add some more fields
+            if inner_path == Path('content.json'):  # It's the root content.json, add some more fields
                 content["title"] = "%s - ZeroNet_" % self.site.address
                 content["description"] = ""
                 content["signs_required"] = 1
@@ -886,6 +883,7 @@ class ContentManager:
     # Checks if the content.json content is valid
     # Return: True or False
     def verifyContent(self, inner_path, content):
+        inner_path = str(inner_path)
         content_size = len(json.dumps(content, indent=1)) + sum([file["size"] for file in list(content["files"].values()) if file["size"] >= 0])  # Size of new content
         # Calculate old content size
         old_content = self.contents.get(inner_path)
@@ -911,11 +909,11 @@ class ContentManager:
             raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site.address))
 
         # Check file inner path
-        if content.get('inner_path') and Path(content['inner_path']) != inner_path:
+        if content.get('inner_path') and content['inner_path'] != inner_path:
             raise VerifyError(f"Wrong inner_path: {content['inner_path']}")
 
         # If our content.json file bigger than the size limit throw error
-        if inner_path == Path('content.json'):
+        if inner_path == "content.json":
             content_size_file = len(json.dumps(content, indent=1))
             if content_size_file > site_size_limit:
                 # Save site size to display warning
@@ -930,7 +928,7 @@ class ContentManager:
             if not self.isValidRelativePath(file_relative_path):
                 raise VerifyError("Invalid relative path: %s" % file_relative_path)
 
-        if inner_path == Path('content.json'):
+        if inner_path == "content.json":
             self.site.settings["size"] = site_size
             self.site.settings["size_optional"] = site_size_optional
             return True  # Root content.json is passed
