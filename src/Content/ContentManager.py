@@ -624,7 +624,7 @@ class ContentManager:
         file_size = os.path.getsize(file_path)
         sha512sum = CryptHash.sha512sum(file_path)  # Calculate sha512 sum of file
         if optional and not self.hashfield.hasHash(sha512sum):
-            self.optionalDownloaded(file_inner_path, self.hashfield.getHashId(sha512sum), file_size, own=True)
+            self.optionalDownloaded(str(file_inner_path), self.hashfield.getHashId(sha512sum), file_size, own=True)
 
         back[file_relative_path] = {"sha512": sha512sum, "size": os.path.getsize(file_path)}
         return back

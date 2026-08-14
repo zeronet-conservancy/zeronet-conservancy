@@ -69,6 +69,7 @@ config.debug = True
 
 os.chdir(os.path.abspath(os.path.dirname(__file__) + "/../.."))  # Set working dir
 
+PluginManager.plugin_manager.loadPlugins()
 config.loadPlugins()
 config.parse(parse_config=False)  # Parse again to add plugin configuration options
 

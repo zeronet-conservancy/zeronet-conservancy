@@ -338,7 +338,7 @@ class ContentManagerPlugin(object):
             return super(ContentManagerPlugin, self).hashFile(dir_inner_path, file_relative_path, optional)
 
         back = {}
-        content = self.contents.get(dir_inner_path + "content.json")
+        content = self.contents.get(str(dir_inner_path / "content.json"))
 
         hash = None
         piecemap_relative_path = None
@@ -365,7 +365,7 @@ class ContentManagerPlugin(object):
             if not piecemap_relative_path:
                 file_name = helper.getFilename(file_relative_path)
                 piecemap_relative_path = file_relative_path + ".piecemap.msgpack"
-                piecemap_inner_path = inner_path + ".piecemap.msgpack"
+                piecemap_inner_path = Path(str(inner_path) + ".piecemap.msgpack")
 
                 self.site.storage.open(piecemap_inner_path, "wb").write(Msgpack.pack({file_name: piecemap_info}))
 
@@ -375,7 +375,7 @@ class ContentManagerPlugin(object):
 
         # Add the merkle root to hashfield
         hash_id = self.site.content_manager.hashfield.getHashId(hash)
-        self.optionalDownloaded(inner_path, hash_id, file_size, own=True)
+        self.optionalDownloaded(str(inner_path), hash_id, file_size, own=True)
         self.site.storage.piecefields[hash].frombytes(b"\x01" * piece_num)
 
         back[file_relative_path] = {"sha512": hash, "size": file_size, "piecemap": piecemap_relative_path, "piece_size": piece_size}
