@@ -25,7 +25,7 @@ from gevent import monkey
 monkey.patch_all(thread=False)
 
 atexit_register = atexit.register
-atexit.register = lambda func: ""  # Don't register shutdown functions to avoid IO error on exit
+atexit.register = lambda func, *args, **kwargs: ""  # Don't register shutdown functions to avoid IO error on exit
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action='store_true', default=False, help="Also run slow tests")
