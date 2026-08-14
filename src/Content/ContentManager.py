@@ -836,8 +836,9 @@ class ContentManager:
             inner_path = Path(inner_path)
         valid_signers = []
         if inner_path == Path("content.json"):  # Root content.json
-            if "content.json" in self.contents and "signers" in self.contents["content.json"]:
-                valid_signers += self.contents["content.json"]["signers"][:]
+            root_content = self.contents.get("content.json")
+            if root_content and "signers" in root_content:
+                valid_signers += root_content["signers"][:]
         else:
             rules = self.getRules(inner_path, content)
             if rules and "signers" in rules:
