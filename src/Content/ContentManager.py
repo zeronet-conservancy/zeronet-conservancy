@@ -85,6 +85,9 @@ class ContentManager:
         """Return True if the site content.json is an encrypted private envelope."""
         if self.private is not None:
             return self.private
+        if not self.site.storage.isFile("content.json"):
+            self.private = False
+            return False
         try:
             raw = self.site.storage.loadJson("content.json")
             self.private = raw.get("privatekey") is True

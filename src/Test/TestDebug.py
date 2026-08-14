@@ -50,3 +50,37 @@ class TestDebug:
 
     def testFormatStack(self):
         assert re.match(r"TestDebug.py line [0-9]+ > <_pytest>/python.py line [0-9]+", Debug.formatStack())
+
+    def testIsThreadpoolError(self):
+        from Debug import DebugHook
+
+        class _WorkerGreenlet:
+            pass
+
+        class ThreadPool:
+            pass
+
+        class SomeOtherGreenlet:
+            pass
+
+        assert DebugHook._isThreadpoolError((_WorkerGreenlet(), None), None)
+        assert DebugHook._isThreadpoolError((ThreadPool(), None), None)
+        assert not DebugHook._isThreadpoolError((SomeOtherGreenlet(), None), None)
+        assert not DebugHook._isThreadpoolError(None, None)
+
+        class FakeCode:
+            def __init__(self, filename, name):
+                self.co_filename = filename
+                self.co_name = name
+
+        class FakeFrame:
+            def __init__(self, code):
+                self.f_code = code
+
+        class FakeTB:
+            def __init__(self, filename, name, next=None):
+                self.tb_frame = FakeFrame(FakeCode(filename, name))
+                self.tb_next = next
+
+        assert DebugHook._isThreadpoolError(None, FakeTB("/site-packages/gevent/threadpool.py", "__run_task"))
+        assert not DebugHook._isThreadpoolError(None, FakeTB("/src/Site/SiteStorage.py", "loadJson"))

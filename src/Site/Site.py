@@ -162,6 +162,8 @@ class Site(object):
             except Exception:
                 self.private_key = None
         # Viewer path: unwrap our own key from the envelope
+        if not self.storage.isFile("content.json"):
+            return False
         try:
             envelope = self.storage.loadJson("content.json")
         except Exception:
