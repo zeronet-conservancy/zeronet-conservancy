@@ -227,7 +227,8 @@ def site(request):
 @pytest.fixture()
 def site_temp(request):
     threads_before = [obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet)]
-    with mock.patch("Config.config.data_dir", Path(str(config.data_dir) + "-temp")):
+    with mock.patch("Config.config.data_dir", Path(str(config.data_dir) + "-temp")), \
+            mock.patch("Config.config.private_dir", Path(str(config.data_dir) + "-temp")):
         site_temp = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
         site_temp.settings["serving"] = True
         site_temp.announce = mock.MagicMock(return_value=True)  # Don't try to find peers from the net
