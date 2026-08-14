@@ -1,4 +1,4 @@
-setuptools>=70.0.0 # not directly required, pinned by Snyk to avoid a vulnerability
+setuptools>=70.0.0,<81 # not directly required, pinned by Snyk to avoid a vulnerability; <81 keeps pkg_resources (needed by cerberus/aiokrpc)
 gevent>=23.9.0,<24 # <24 required by util/ThreadPool.py (uses gevent.threadpool internals removed in gevent 24+)
 msgpack>=0.6.0
 base58
