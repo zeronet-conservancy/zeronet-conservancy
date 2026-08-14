@@ -3,6 +3,7 @@ import io
 
 import pytest
 
+from Config import config
 from File import FileServer
 from File import FileRequest
 from Crypt import CryptHash
@@ -46,6 +47,28 @@ class TestPeer:
         assert b"sign" in buff.getvalue()
 
         # Testing getFile
+        buff = peer_file_server.getFile(site_temp.address, "content.json")
+        assert b"sign" in buff.getvalue()
+
+        connection.close()
+        client.stop()
+
+    def testDownloadFileCompressed(self, file_server, site, site_temp, monkeypatch):
+        monkeypatch.setattr(config, "file_compression", True)
+        file_server.sites[site.address] = site
+        client = FileServer(file_server.ip, 1545)
+        client.sites = {site_temp.address: site_temp}
+        site_temp.connection_server = client
+        connection = client.getConnection(file_server.ip, 1544)
+
+        # Add file_server as peer to client
+        peer_file_server = site_temp.addPeer(file_server.ip, 1544)
+
+        # Testing streamFile with compression
+        buff = peer_file_server.getFile(site_temp.address, "content.json", streaming=True)
+        assert b"sign" in buff.getvalue()
+
+        # Testing getFile with compression
         buff = peer_file_server.getFile(site_temp.address, "content.json")
         assert b"sign" in buff.getvalue()
 

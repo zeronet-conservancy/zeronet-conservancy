@@ -1,5 +1,6 @@
 import socket
 import time
+import zlib
 
 import gevent
 try:
@@ -293,12 +294,24 @@ class Connection(object):
         stream_bytes_left = message["stream_bytes"]
         file = self.waiting_streams[message["to"]]
 
+        if message.get("compression") == "zlib":
+            decompressor = zlib.decompressobj()
+
+            def write(data):
+                if data:
+                    file.write(decompressor.decompress(data))
+        else:
+            decompressor = None
+
+            def write(data):
+                file.write(data)
+
         unprocessed_bytes_num = self.getUnpackerUnprocessedBytesNum()
 
         if unprocessed_bytes_num:  # Found stream bytes in unpacker
             unpacker_stream_bytes = min(unprocessed_bytes_num, stream_bytes_left)
             buff_stream_start = len(buff) - unprocessed_bytes_num
-            file.write(buff[buff_stream_start:buff_stream_start + unpacker_stream_bytes])
+            write(buff[buff_stream_start:buff_stream_start + unpacker_stream_bytes])
             stream_bytes_left -= unpacker_stream_bytes
         else:
             unpacker_stream_bytes = 0
@@ -318,7 +331,7 @@ class Connection(object):
                     break
                 buff_len = len(stream_buff)
                 stream_bytes_left -= buff_len
-                file.write(stream_buff)
+                write(stream_buff)
 
                 # Statistics
                 self.last_recv_time = time.time()
@@ -327,6 +340,9 @@ class Connection(object):
                 self.server.bytes_recv += buff_len
         except Exception as err:
             self.log("Stream read error: %s" % Debug.formatException(err))
+
+        if decompressor:
+            file.write(decompressor.flush())
 
         if config.debug_socket:
             self.log("End stream %s, file pos: %s" % (message["to"], file.tell()))

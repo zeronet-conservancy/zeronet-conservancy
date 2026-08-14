@@ -3,6 +3,7 @@ import time
 import sys
 import itertools
 import collections
+import zlib
 
 import gevent
 
@@ -206,19 +207,27 @@ class Peer(object):
         else:
             buff = io.BytesIO()
 
+        if config.file_compression:
+            compression = "zlib"
+        else:
+            compression = None
+
         s = time.time()
         while True:  # Read in smaller parts
             if config.stream_downloads or read_bytes > 256 * 1024 or streaming:
-                res = self.request("streamFile", {"site": site, "inner_path": inner_path, "location": location, "read_bytes": read_bytes, "file_size": file_size}, stream_to=buff)
+                res = self.request("streamFile", {"site": site, "inner_path": inner_path, "location": location, "read_bytes": read_bytes, "file_size": file_size, "compression": compression}, stream_to=buff)
                 if not res or "location" not in res:  # Error
                     return False
             else:
                 self.log("Send: %s" % inner_path)
-                res = self.request("getFile", {"site": site, "inner_path": inner_path, "location": location, "read_bytes": read_bytes, "file_size": file_size})
+                res = self.request("getFile", {"site": site, "inner_path": inner_path, "location": location, "read_bytes": read_bytes, "file_size": file_size, "compression": compression})
                 if not res or "location" not in res:  # Error
                     return False
                 self.log("Recv: %s" % inner_path)
-                buff.write(res["body"])
+                if res.get("compression") == "zlib":
+                    buff.write(zlib.decompress(res["body"]))
+                else:
+                    buff.write(res["body"])
                 res["body"] = None  # Save memory
 
             if res["location"] == res["size"] or res["location"] == pos_to:  # End of file
