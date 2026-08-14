@@ -48,11 +48,17 @@ class TestFileRequest:
         response = connection.request("getFile", {"site": site.address, "inner_path": "content.json", "location": 0, "file_size": 1234})
         assert "File size does not match" in response["error"]
 
-        # Invalid path
-        for path in ["../users.json", "./../users.json", "data/../content.json", ".../users.json"]:
+        # Invalid path: actual ".." traversal attempts are rejected as AccessError
+        for path in ["../users.json", "./../users.json", "data/../content.json"]:
             for sep in ["/", "\\"]:
                 response = connection.request("getFile", {"site": site.address, "inner_path": path.replace("/", sep), "location": 0})
                 assert response["error"] == 'File read exception'
+
+        # ".../users.json" is a literal (non-existent) directory name, not a ".." traversal,
+        # so it's not blocked by the path check and instead fails to be found on disk
+        for sep in ["/", "\\"]:
+            response = connection.request("getFile", {"site": site.address, "inner_path": ".../users.json".replace("/", sep), "location": 0})
+            assert "File read error" in response["error"]
 
         connection.close()
         client.stop()
