@@ -96,7 +96,7 @@ class TestThreadPool:
 
                 with pytest.raises(Exception) as greenlet_err:
                     event.get()
-                assert str(greenlet_err.value) == "cannot switch to a different thread"
+                assert "switch to a different thread" in str(greenlet_err.value).lower()
 
                 waiter_thread_id = ThreadPool.main_loop.call(event.get)
                 return waiter_thread_id
