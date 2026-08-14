@@ -302,6 +302,7 @@ class UiWebsocket(object):
             })
         if site.settings["own"]:
             ret["privatekey"] = bool(self.user.getSiteData(site.address, create=create_user).get("privatekey"))
+        ret["private"] = site.content_manager.isPrivate()
         if site.isServing() and content and "ADMIN" in self.site.settings['permissions']:
             ret["peers"] += 1  # Add myself if serving
         return ret
@@ -629,6 +630,12 @@ class UiWebsocket(object):
         try:
             import base64
             content = base64.b64decode(content_base64)
+            # Encrypt content for private sites (except the root content.json envelope)
+            if self.site.isPrivate() and not inner_path.endswith("content.json"):
+                key = self.site.getPrivatekey()
+                if key:
+                    from Crypt import CryptAes
+                    content = CryptAes.encrypt(content, key)
             # Save old file to generate patch later
             if (
                 inner_path.endswith(".json") and not inner_path.endswith("content.json") and
@@ -750,6 +757,12 @@ class UiWebsocket(object):
                 with gevent.Timeout(timeout):
                     self.site.needFile(inner_path, priority=priority)
             body = self.site.storage.read(inner_path, "rb")
+            # Decrypt content for private sites (except the root content.json envelope)
+            if body and self.site.isPrivate() and not inner_path.endswith("content.json"):
+                key = self.site.getPrivatekey()
+                if key:
+                    from Crypt import CryptAes
+                    body = CryptAes.decrypt(body, key)
         except (Exception, gevent.Timeout) as err:
             self.log.debug("%s fileGet error: %s" % (inner_path, Debug.formatException(err)))
             body = None
@@ -1120,6 +1133,34 @@ class UiWebsocket(object):
         self.response(to, "ok")
         self.site.updateWebsocket()
         self.site.download(blind_includes=True)
+
+    @flag.admin
+    def actionSiteAddRecipient(self, to, address, signature):
+        try:
+            self.site.content_manager.addRecipient(address, signature)
+        except Exception as err:
+            self.log.error("Add recipient error: %s" % err)
+            return self.response(to, {"error": "Add recipient failed: %s" % err})
+        self.response(to, "ok")
+        self.site.updateWebsocket()
+
+    @flag.admin
+    def actionSiteRemoveRecipient(self, to, address):
+        if self.site.content_manager.removeRecipient(address):
+            self.response(to, "ok")
+            self.site.updateWebsocket()
+        else:
+            self.response(to, {"error": "Recipient not found"})
+
+    def actionSiteRequestAccess(self, to):
+        from Crypt import CryptEcies
+        privatekey = self.user.getAuthPrivatekey(self.site.address)
+        message, signature = CryptEcies.signAccessRequest(self.site.address, privatekey)
+        return {
+            "auth_address": self.user.getAuthAddress(self.site.address),
+            "message": message,
+            "signature": signature
+        }
 
     @flag.admin
     def actionSiteAdd(self, to, address):

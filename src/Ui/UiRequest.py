@@ -1,6 +1,7 @@
 import time
 import re
 import os
+import io
 import mimetypes
 import json
 import html
@@ -15,6 +16,7 @@ from User import UserManager
 from Plugin import PluginManager
 from Ui.UiWebsocket import UiWebsocket
 from Crypt import CryptHash
+from Crypt import CryptAes
 from util import helper
 
 status_texts = {
@@ -333,6 +335,13 @@ class UiRequest:
         if not self.user:
             self.user = UserManager.user_manager.create()
         return self.user
+
+    def getAuthAddress(self, site):
+        try:
+            user = self.getCurrentUser()
+            return user.getAuthAddress(site.address)
+        except Exception:
+            return "unknown"
 
     def getRequestUrl(self):
         if self.isProxyRequest():
@@ -806,6 +815,10 @@ class UiRequest:
             else:
                 return self.error403("Invalid ajax_key")
 
+        site = self.server.sites.get(address)
+        if site and site.content_manager.isPrivate():
+            return self.actionPrivateSiteFile(site, path_parts, file_path, header_length, header_noscript, header_allow_ajax)
+
         file_size = helper.getFilesize(file_path)
 
         if file_size is not None:
@@ -833,6 +846,46 @@ class UiRequest:
             else:
                 self.log.debug("File not found: %s" % path_parts["inner_path"])
                 return self.error404(path)
+
+    # Serve a file from a private (encrypted) site, decrypting on read
+    def actionPrivateSiteFile(self, site, path_parts, file_path, header_length, header_noscript, header_allow_ajax):
+        if not site.getPrivatekey():
+            return self.actionPrivateSiteNoAccess(site)
+        inner_path = path_parts["inner_path"] or "index.html"
+        if not site.storage.isFile(inner_path):
+            if inner_path.endswith("favicon.ico"):
+                return self.actionFile("src/Ui/media/img/favicon.ico")
+            if not site.needFile(inner_path, priority=15):
+                return self.error404(inner_path)
+        data = site.storage.read(inner_path, "rb")
+        if not data:
+            return self.error404(inner_path)
+        try:
+            plain = CryptAes.decrypt(data, site.getPrivatekey())
+        except Exception as err:
+            self.log.error("Private file decrypt error: %s" % err)
+            return self.error500("Private file decrypt error")
+        return self.actionFile(
+            file_path, header_length=header_length, header_noscript=header_noscript,
+            header_allow_ajax=header_allow_ajax, file_size=len(plain),
+            file_obj=io.BytesIO(plain), path_parts=path_parts
+        )
+
+    # Inform the visitor that they are not approved for this private site
+    def actionPrivateSiteNoAccess(self, site):
+        self.sendHeader(403, "text/html", noscript=True)
+        return """
+            <!DOCTYPE html>
+            <html>
+            <head><meta charset="utf-8"><title>Private site</title></head>
+            <body style="font-family: sans-serif; text-align: center; padding-top: 4em">
+                <h1>This site is private</h1>
+                <p>You are not approved to view <b>{address}</b>.</p>
+                <p>Ask the site owner to add your auth address
+                   (<code>{auth_address}</code>) as an approved recipient.</p>
+            </body>
+            </html>
+        """.format(address=html.escape(site.address), auth_address=html.escape(self.getAuthAddress(site)))
 
     # Serve a media for ui
     def actionUiMedia(self, path):
