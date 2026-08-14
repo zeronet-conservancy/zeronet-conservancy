@@ -635,6 +635,8 @@ class ContentManager:
             return False
         elif len(relative_path) > 255:
             return False
+        elif not relative_path:
+            return False
         elif relative_path[0] in ("/", "\\"):  # Starts with
             return False
         elif relative_path[-1] in (".", " "):  # Ends with

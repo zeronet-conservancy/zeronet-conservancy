@@ -718,8 +718,8 @@ class Site(object):
                 shutil.copy(file_path, file_path_dest)
 
                 # If -default in path, create a -default less copy of the file
-                if "-default" in str(file_inner_path_dest):
-                    non_default_inner_path_dest = Path(str(file_inner_path_dest).replace("-default", ""))
+                if file_inner_path_dest.name.endswith("-default"):
+                    non_default_inner_path_dest = file_inner_path_dest.parent / file_inner_path_dest.name.replace("-default", "")
                     file_path_dest = new_site.storage.getPath(non_default_inner_path_dest)
                     if new_site.storage.isFile(non_default_inner_path_dest) and not overwrite:
                         # Don't overwrite site files with default ones

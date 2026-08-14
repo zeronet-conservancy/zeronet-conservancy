@@ -406,9 +406,9 @@ class SiteStorage(object):
         inner_path = str(inner_path).replace("\\", "/")  # Windows separator fix
         if not inner_path:
             return self.directory
-        if "../" in inner_path:
-            raise AccessError(f"Paths with '..' are not allowed: {inner_path}")
         inner_path = Path(inner_path)
+        if ".." in inner_path.parts:
+            raise AccessError(f"Paths with '..' are not allowed: {inner_path}")
         if inner_path.is_absolute():
             inner_path = inner_path.relative_to(inner_path.anchor)
         if inner_path.is_absolute():  # ugh, just making sure there's nothing funky going on
