@@ -125,6 +125,7 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - `python3 -m venv venv` (make python virtual environment, the last `venv` is just a name, if you use different you should replace it in later commands)
  - `source venv/bin/activate` (activate environment)
  - `python3 -m pip install -r requirements.txt` (install dependencies)
+ - for a reproducible install use the pinned lockfile instead: `python3 -m pip install --require-hashes -r requirements.lock` (regenerate it with `pip-compile --allow-unsafe --generate-hashes --output-file=requirements.lock requirements.txt`)
  - `python3 zeronet.py` (**run zeronet-conservancy!**)
  - open the landing page in your browser by navigating to: http://127.0.0.1:43110/
  - to start it again from fresh terminal, you need to navigate to repo directory and:

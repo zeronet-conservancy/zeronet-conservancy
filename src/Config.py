@@ -35,12 +35,14 @@ class Config:
             self.commit = Git.commit() or 'unknown'
             self.version = VERSION
             self.platform = 'source'
+            self.build_date = None
         else:
             self.build_type = Build.build_type
             self.branch = Build.branch
             self.commit = Build.commit
             self.version = Build.version or VERSION
             self.platform = Build.platform
+            self.build_date = getattr(Build, 'build_date', None)
         self.is_android = hasattr(sys, 'getandroidapilevel')
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
         self.user_agent = "conservancy"

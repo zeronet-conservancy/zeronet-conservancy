@@ -19,6 +19,10 @@
 """
 
 import argparse
+import os
+
+from src.Config import VERSION
+
 
 def write_to(args, target):
     branch = args.branch
@@ -26,19 +30,27 @@ def write_to(args, target):
     if branch is None or commit is None:
         from src.util import Git
         branch = branch or Git.branch() or 'unknown'
-        commit = commit or Git.commit() or 'unknown'
-    target.write('\n'.join([
+        commit = commit or Git.commit(allow_dirty=False) or 'unknown'
+    lines = [
         f"build_type = {args.type!r}",
         f"branch = {branch!r}",
         f"commit = {commit!r}",
-        f"version = {args.version!r}",
+        f"version = {(args.version or VERSION)!r}",
         f"platform = {args.platform!r}",
-    ]))
+    ]
+    source_date_epoch = os.environ.get("SOURCE_DATE_EPOCH")
+    if source_date_epoch:
+        import datetime
+        build_date = datetime.datetime.fromtimestamp(
+            int(source_date_epoch), datetime.timezone.utc
+        ).isoformat()
+        lines.append(f"build_date = {build_date!r}")
+    target.write('\n'.join(lines) + '\n')
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--type', default='source')
-    parser.add_argument('--version')
+    parser.add_argument('--version', help=f'Build version (default: {VERSION})')
     parser.add_argument('--branch')
     parser.add_argument('--commit')
     parser.add_argument('--platform', default='source')
