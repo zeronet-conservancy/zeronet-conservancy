@@ -198,13 +198,12 @@ To build .exe
 
 * File transactions are not compressed
 * No private sites
-* No DHT support
+* DHT support is experimental (new in 0.7.10+)
 * No I2P support
 * Centralized elements like zeroid (we're working on this!)
-* No reliable spam protection (and on this too)
+* Spam protection is incomplete (work in progress)
 * Doesn't work directly from browser (one of the top priorities for mid-future)
 * No data transparency
-* No reproducible builds
 * No on-disk encryption
 * No reproducible builds (hence no builds beyond certain GNU/Linux distributions)
 
