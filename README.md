@@ -1,6 +1,7 @@
 # zeronet-conservancy
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+[![tests](https://github.com/imattau/zeronet-conservancy/actions/workflows/tests.yml/badge.svg)](https://github.com/imattau/zeronet-conservancy/actions/workflows/tests.yml)
 
 (NOTE THAT TRANSLATIONS ARE USUALLY BEHIND THIS FILE)
 
