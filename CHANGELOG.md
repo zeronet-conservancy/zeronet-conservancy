@@ -11,6 +11,7 @@
 - better fix of local sites leak (@caryoscelus)
 - ipython-based repl via --repl for debug/interactive development (@caryoscelus)
 - experimental DHT support (@caryoscelus)
+- DHT improvements: persist node id across sessions, configurable port, periodic peer refresh
 - optional blocking of compromised id certificates for spam protection (@caryoscelus)
 - changes in directory structure (split data and config, use user directories by default)
 - use version information from git if available
