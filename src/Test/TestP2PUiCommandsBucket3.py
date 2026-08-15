@@ -266,6 +266,44 @@ class TestP2PUiCommandsSiteManagement:
         assert delete_reply["result"] == "Deleted"
         assert still_present is False
 
+    def testSitePauseAndResumeBroadcastSiteChanged(self):
+        """sitePause/siteResume should push setSiteInfo to any session
+        connected to the *target* site (not the admin session issuing the
+        command) that's joined the siteChanged channel, same wiring as
+        sitePublish."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                admin_address = "1TestAdminSite2AAAAAAAAAAAA1"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+
+                target_address = "1TestTargetSite2AAAAAAAAAAA2"
+                target_site = site_manager.add(target_address)
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as admin_ws, \
+                            trio_websocket.open_websocket_url(_wsUrl(server, target_site)) as target_ws:
+                        await _call(target_ws, "channelJoin", {"channels": ["siteChanged"]}, msg_id=1)
+
+                        pause_reply = await _call(admin_ws, "sitePause", {"address": target_address}, msg_id=2)
+                        pause_push = json.loads(await target_ws.get_message())
+
+                        resume_reply = await _call(admin_ws, "siteResume", {"address": target_address}, msg_id=3)
+                        resume_push = json.loads(await target_ws.get_message())
+
+                        return pause_reply, pause_push, resume_reply, resume_push
+
+        pause_reply, pause_push, resume_reply, resume_push = compat.run(scenario)
+        assert pause_reply["result"] == "Paused"
+        assert pause_push["cmd"] == "setSiteInfo"
+        assert pause_push["params"]["serving"] is False
+        assert resume_reply["result"] == "Resumed"
+        assert resume_push["cmd"] == "setSiteInfo"
+        assert resume_push["params"]["serving"] is True
+
     def testSiteAddWithoutAdminPermissionErrors(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:

@@ -384,6 +384,7 @@ async def _cmdSitePause(session, params):
     if not site:
         return {"error": "Unknown site: %s" % address}
     site.serving = False
+    session.app.broadcast("siteChanged", site, {"event": "paused"})
     return "Paused"
 
 
@@ -396,6 +397,7 @@ async def _cmdSiteResume(session, params):
     if not site:
         return {"error": "Unknown site: %s" % address}
     site.serving = True
+    session.app.broadcast("siteChanged", site, {"event": "resumed"})
     return "Resumed"
 
 
