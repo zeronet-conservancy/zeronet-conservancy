@@ -1,7 +1,6 @@
-"""Trio port of Content/ContentManager.py -- deliberately narrow scope.
+"""Trio port of Content/ContentManager.py.
 
-ContentManager doesn't split as cleanly as SiteStorage did. Its full
-verification logic covers two cases:
+ContentManager's full verification logic covers two cases:
 
   1. The ROOT content.json, signed directly by the site's own address.
      This is what every site has and what most sites only ever use.
@@ -10,14 +9,44 @@ verification logic covers two cases:
      chain (getUserContentRules/verifyCert/getRules) -- a genuinely
      different, more complex trust model layered on top of case 1.
 
-This file ports case 1 in full (signature verification, replay/rollback
-protection, structural checks) since it's the actual security boundary
-every site depends on. Case 2 is NOT ported -- getValidSigners()/
-_verifySignature() explicitly raise NotImplementedError for any inner_path
-other than "content.json" rather than silently skipping or approving it.
-That cert-signer system is a separate, large undertaking deserving its
-own dedicated pass; a rushed port of a trust-chain feature is worse than
-leaving it unimplemented, because a subtly wrong check looks safe.
+Both are ported now, but case 2 carries real, deliberate scope cuts rather
+than a blind translation of a security-critical trust chain:
+
+  - getUserContentRules() requires the caller to already have the parsed
+    content dict in hand (content=None raises ValueError) instead of the
+    original's fallback of reading it from storage itself. That fallback
+    read is synchronous in the original; SiteStorage here is async-only,
+    and every real caller (WorkerManager's downloadContentJson, wire
+    protocol handlers) already has the content parsed before verifying it
+    -- so the fallback was dead weight, not a feature this port drops.
+  - lax_cert_check defaults to False (strict: a compromised cert issuer's
+    users lose write access) where the original defaults to True
+    (permissive: compromised-cert users keep write access, on the theory
+    that losing legitimate contributors is worse than the spam risk).
+    Flip it per-ContentManager if a site needs the original's default --
+    but a security-relevant flag should start strict, not permissive.
+  - bad_certs (the addBadCert()/isGoodCert() compromised-issuer list) is
+    in-memory only, one set per ContentManager -- not the original's
+    single process-wide set persisted to data_dir/badcerts.json. No
+    config.data_dir equivalent exists in this stack to persist it to, and
+    sharing a set process-wide across sites doesn't fit this package's
+    per-Site-owns-its-ContentManager model anyway.
+  - The original's verifyContent()'s running site-size-limit tracking
+    (site.settings["size"]/["size_optional"] against getSizeLimit()) is
+    NOT ported -- there's no settings dict or size-limit config in this
+    Site model yet. What IS ported from verifyContentInclude() is the
+    self-contained, per-include checks that don't need that running
+    total: max_size/max_size_optional against this content's own size,
+    files_allowed/files_allowed_optional patterns, includes_allowed.
+  - One real bug fix, not just a scope cut: the original's compromised-
+    cert check indexes cert_addresses[0] (the issuer address's first
+    *character*, since cert_signers maps domain -> a single address
+    string everywhere else, including its own verifyCert()) instead of
+    the address itself -- silently making the spam-protection block a
+    no-op in practice, since bad_certs entries are full addresses that
+    will essentially never equal a single leading character. Ported as
+    the address directly here (getUserContentRules() below), matching
+    what verifyCert() already does with the same dict entry.
 
 self.contents is a plain dict here, not the original's ContentDbDict (a
 SQLite-backed structure wrapping Db.py, itself not fully ported -- see
@@ -31,17 +60,37 @@ import re
 import time
 
 from Crypt import CryptBitcoin, CryptHash
+from util import SafeRe
 
 
 class VerifyError(Exception):
     pass
 
 
+def _getDirname(path: str) -> str:
+    """Pure-string port of util/helper.py's getDirname() -- not imported
+    from there because that module pulls in gevent at import time, which
+    this trio-native package avoids entirely."""
+    if "/" in path:
+        return path[:path.rfind("/") + 1].lstrip("/")
+    return ""
+
+
 class ContentManager:
-    def __init__(self, storage, site_address: str):
+    def __init__(self, storage, site_address: str, lax_cert_check: bool = False):
         self.storage = storage
         self.site_address = site_address
         self.contents: dict = {}  # content_inner_path -> parsed content.json dict
+        self.bad_certs: set = set()  # compromised cert-issuer addresses -- see module docstring
+        self.lax_cert_check = lax_cert_check
+
+    def addBadCert(self, sign) -> None:
+        addr = CryptBitcoin.get_sign_address_64("compromised", sign)
+        if addr:
+            self.bad_certs.add(addr)
+
+    def isGoodCert(self, cert) -> bool:
+        return cert not in self.bad_certs
 
     async def loadContent(self, content_inner_path: str = "content.json") -> dict:
         """Parse and cache one content.json. Not the original's recursive
@@ -117,20 +166,128 @@ class ContentManager:
                     total += file_info["size"]
         return total
 
-    def getValidSigners(self, inner_path: str) -> list:
-        """Root content.json only. Non-root paths need the cert-signer
-        chain (getUserContentRules/getRules), not ported -- see module
-        docstring."""
-        if inner_path != "content.json":
-            raise NotImplementedError(
-                "Non-root content.json signer resolution (includes/user content, "
-                "the cert-signer chain) is not ported -- see P2P/ContentManager.py's "
-                "module docstring."
+    def getRules(self, inner_path: str, content: dict | None = None):
+        """Resolve the rules governing inner_path: the plain {"signers":
+        [...]} shape for root content.json, an "includes" entry for a
+        subdirectory content.json listed in its parent's "includes", or
+        the cert-signer-derived rules from getUserContentRules() for a
+        "user_contents" (multi-user) subdirectory. Returns False if
+        inner_path isn't covered by any loaded content.json."""
+        inner_path = str(inner_path)
+        if not inner_path.endswith("content.json"):
+            file_info = self.getFileInfo(inner_path)
+            if not file_info:
+                return False
+            inner_path = file_info["content_inner_path"]
+
+        if inner_path == "content.json":
+            return {"signers": self.getValidSigners(inner_path, content)}
+
+        dirs = inner_path.split("/")
+        inner_path_parts = [dirs.pop()]
+        while dirs:
+            inner_path_parts.insert(0, dirs.pop())
+            content_inner_path = ("/".join(dirs) + "/content.json").strip("/")
+            parent_content = self.contents.get(content_inner_path)
+            if parent_content and "includes" in parent_content:
+                return parent_content["includes"].get("/".join(inner_path_parts))
+            elif parent_content and "user_contents" in parent_content:
+                return self.getUserContentRules(parent_content, inner_path, content)
+        return False
+
+    def getUserContentRules(self, parent_content: dict, inner_path: str, content: dict | None):
+        """Resolve write rules for a file inside a "user_contents"
+        (multi-user/forum) subdirectory: which addresses may sign for this
+        user, size/file-pattern limits, and whether their cert issuer is
+        trusted. content must already be the parsed content.json covering
+        inner_path -- see module docstring for why this doesn't fall back
+        to reading it from storage itself."""
+        if content is None:
+            raise ValueError(
+                "getUserContentRules() needs the parsed content dict for %s -- "
+                "see P2P/ContentManager.py's module docstring." % inner_path
             )
-        valid_signers = []
-        root_content = self.contents.get("content.json")
-        if root_content and "signers" in root_content:
-            valid_signers += root_content["signers"][:]
+
+        user_contents = parent_content["user_contents"]
+
+        if "inner_path" in parent_content:
+            parent_content_dir = _getDirname(parent_content["inner_path"])
+            user_address = re.match(r"([A-Za-z0-9]*?)/", inner_path[len(parent_content_dir):]).group(1)
+        else:
+            user_address = re.match(r".*/([A-Za-z0-9]*?)/.*?$", inner_path).group(1)
+
+        user_urn = "%s/%s" % (content.get("cert_auth_type", "n-a"), content.get("cert_user_id", "n-a"))
+        cert_user_id = content.get("cert_user_id", "n-a")
+
+        if user_address in user_contents["permissions"]:
+            rules = dict(user_contents["permissions"].get(user_address, {}) or {})
+        else:
+            rules = dict(user_contents["permissions"].get(cert_user_id, {}) or {})
+
+        banned = user_contents["permissions"].get(user_address) is False or user_contents["permissions"].get(cert_user_id) is False
+        if "signers" in rules:
+            rules["signers"] = rules["signers"][:]
+
+        if content.get("cert_user_id") and content["cert_user_id"].count("@") == 1:
+            name, domain = content["cert_user_id"].rsplit("@", 1)
+            # NOTE: the original indexes this as cert_addresses[0] --
+            # cert_signers maps domain -> a single address string
+            # everywhere else (verifyCert() uses the same dict entry
+            # directly as one address, not a sequence), so [0] there reads
+            # as an off-by-one that silently checks isGoodCert() against
+            # the address's first *character* instead of the address
+            # itself, making the compromised-cert block effectively a
+            # no-op. Fixed here: the full address, matching verifyCert().
+            cert_address = parent_content["user_contents"].get("cert_signers", {}).get(domain)
+        else:
+            cert_address = None
+
+        # To limit spam from a compromised cert issuer, only that issuer's
+        # already-known signers keep write access unless lax_cert_check
+        # explicitly accepts new ones from it too.
+        if self.lax_cert_check or cert_address is None or self.isGoodCert(cert_address):
+            permission_rules = user_contents.get("permission_rules", {}).items()
+        else:
+            permission_rules = {}.items()
+
+        for permission_pattern, permission_rule in permission_rules:
+            if not SafeRe.match(permission_pattern, user_urn):
+                continue
+            if permission_rule is None:
+                permission_rule = {"max_size": 0, "max_size_optional": 0}
+            for key, val in permission_rule.items():
+                if key not in rules:
+                    rules[key] = val[:] if isinstance(val, list) else val
+                elif isinstance(val, int):
+                    if val > rules[key]:
+                        rules[key] = val
+                elif isinstance(val, str):
+                    if len(val) > len(rules[key]):
+                        rules[key] = val
+                elif isinstance(val, list):
+                    rules[key] += val
+
+        rules["cert_signers"] = user_contents.get("cert_signers", {})
+        rules["cert_signers_pattern"] = user_contents.get("cert_signers_pattern")
+
+        if "signers" not in rules:
+            rules["signers"] = []
+        if not banned:
+            rules["signers"].append(user_address)
+        rules["user_address"] = user_address
+        rules["includes_allowed"] = False
+
+        return rules
+
+    def getValidSigners(self, inner_path: str, content: dict | None = None) -> list:
+        if inner_path == "content.json":
+            valid_signers = []
+            root_content = self.contents.get("content.json")
+            if root_content and "signers" in root_content:
+                valid_signers += root_content["signers"][:]
+        else:
+            rules = self.getRules(inner_path, content)
+            valid_signers = list(rules["signers"]) if rules and "signers" in rules else []
         if self.site_address not in valid_signers:
             valid_signers.append(self.site_address)
         return valid_signers
@@ -138,15 +295,70 @@ class ContentManager:
     def getSignsRequired(self, inner_path: str) -> int:
         return 1  # No multisig support yet (matches the original's own "Todo: Multisig")
 
-    def verifyContentJson(self, content: dict, size_limit_bytes: int | None = None) -> bool:
-        """Verify a ROOT content.json: signature, replay/rollback
-        protection, and basic structural rules. Raises VerifyError (bad
-        content) or NotImplementedError (asked to verify something outside
-        this file's scope -- see module docstring) rather than ever
-        silently approving something unchecked.
-        """
-        inner_path = "content.json"
+    def verifyCertSign(self, user_address: str, user_auth_type: str, user_name: str, issuer_address: str, sign: str) -> bool:
+        cert_subject = "%s#%s/%s" % (user_address, user_auth_type, user_name)
+        return CryptBitcoin.verify(cert_subject, issuer_address, sign)
 
+    def verifyCert(self, inner_path: str, content: dict) -> bool:
+        rules = self.getRules(inner_path, content)
+        if not rules:
+            raise VerifyError("No rules for this file")
+
+        if not rules.get("cert_signers") and not rules.get("cert_signers_pattern"):
+            return True  # Does not need cert
+
+        if "cert_user_id" not in content:
+            raise VerifyError("Missing cert_user_id")
+        if content["cert_user_id"].count("@") != 1:
+            raise VerifyError("Invalid domain in cert_user_id")
+
+        name, domain = content["cert_user_id"].rsplit("@", 1)
+        cert_address = rules["cert_signers"].get(domain)
+        if not cert_address:
+            if rules.get("cert_signers_pattern") and SafeRe.match(rules["cert_signers_pattern"], domain):
+                cert_address = domain
+            else:
+                raise VerifyError("Invalid cert signer: %s" % domain)
+
+        return self.verifyCertSign(rules["user_address"], content["cert_auth_type"], name, cert_address, content["cert_sign"])
+
+    def _verifyContentInclude(self, inner_path: str, content: dict, content_size: int, content_size_optional: int) -> bool:
+        """Per-include structural checks that don't need a running site-size
+        total -- see module docstring for what's NOT ported here."""
+        rules = self.getRules(inner_path, content)
+        if not rules:
+            raise VerifyError("No rules")
+
+        max_size = rules.get("max_size")
+        if max_size is not None and content_size > max_size:
+            raise VerifyError("Include too large %sB > %sB" % (content_size, max_size))
+
+        if rules.get("max_size_optional") is not None and content_size_optional > rules["max_size_optional"]:
+            raise VerifyError("Include optional files too large %sB > %sB" % (content_size_optional, rules["max_size_optional"]))
+
+        if rules.get("files_allowed"):
+            for file_inner_path in content.get("files", {}):
+                if not SafeRe.match(r"^%s$" % rules["files_allowed"], file_inner_path):
+                    raise VerifyError("File not allowed: %s" % file_inner_path)
+
+        if rules.get("files_allowed_optional"):
+            for file_inner_path in content.get("files_optional", {}):
+                if not SafeRe.match(r"^%s$" % rules["files_allowed_optional"], file_inner_path):
+                    raise VerifyError("Optional file not allowed: %s" % file_inner_path)
+
+        if rules.get("includes_allowed") is False and content.get("includes"):
+            raise VerifyError("Includes not allowed")
+
+        return True
+
+    def verifyContentJson(self, content: dict, size_limit_bytes: int | None = None, inner_path: str = "content.json") -> bool:
+        """Verify a content.json: signature, replay/rollback protection,
+        and structural rules. Root and non-root both go through here --
+        non-root additionally runs the cert-signer chain (verifyCert(),
+        via _verifySignature()) and the include-specific size/pattern
+        checks (_verifyContentInclude()). Raises VerifyError on anything
+        invalid rather than ever silently approving something unchecked.
+        """
         if content.get("address") and content["address"] != self.site_address:
             raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site_address))
         if content.get("inner_path") and content["inner_path"] != inner_path:
@@ -172,15 +384,19 @@ class ContentManager:
             raise VerifyError("Content too large %s B > %s B" % (content_size_file, size_limit_bytes))
 
         self._verifySignature(inner_path, content)
+
+        if inner_path != "content.json":
+            content_size = content_size_file + sum(
+                f.get("size", 0) for f in content.get("files", {}).values() if f.get("size", 0) >= 0
+            )
+            content_size_optional = sum(
+                f.get("size", 0) for f in content.get("files_optional", {}).values() if f.get("size", 0) >= 0
+            )
+            self._verifyContentInclude(inner_path, content, content_size, content_size_optional)
+
         return True
 
     def _verifySignature(self, inner_path: str, content: dict) -> bool:
-        if inner_path != "content.json":
-            raise NotImplementedError(
-                "Non-root content.json verification (cert-signer chain) is not "
-                "ported -- see P2P/ContentManager.py's module docstring."
-            )
-
         new_content = dict(content)
         old_sign = new_content.pop("sign", None)
         signs = new_content.pop("signs", None)
@@ -191,19 +407,23 @@ class ContentManager:
                 raise VerifyError("Invalid old-style sign")
             raise VerifyError("Not signed")
 
-        valid_signers = self.getValidSigners(inner_path)
+        valid_signers = self.getValidSigners(inner_path, content)
         signs_required = self.getSignsRequired(inner_path)
 
-        # If the signer list itself was extended beyond the bare site
-        # address, the extended list has to be authorized by the site
-        # address too -- otherwise a malicious peer could just widen
-        # "signers" and add their own key to it.
-        if len(valid_signers) > 1:
-            if "signers_sign" not in content:
-                raise VerifyError("Missing signers_sign")
-            signers_data = "%s:%s" % (signs_required, ",".join(valid_signers))
-            if not CryptBitcoin.verify(signers_data, self.site_address, content["signers_sign"]):
-                raise VerifyError("Invalid signers_sign!")
+        if inner_path == "content.json":
+            # If the signer list itself was extended beyond the bare site
+            # address, the extended list has to be authorized by the site
+            # address too -- otherwise a malicious peer could just widen
+            # "signers" and add their own key to it.
+            if len(valid_signers) > 1:
+                if "signers_sign" not in content:
+                    raise VerifyError("Missing signers_sign")
+                signers_data = "%s:%s" % (signs_required, ",".join(valid_signers))
+                if not CryptBitcoin.verify(signers_data, self.site_address, content["signers_sign"]):
+                    raise VerifyError("Invalid signers_sign!")
+        else:
+            if not self.verifyCert(inner_path, content):
+                raise VerifyError("Invalid cert!")
 
         valid_signs = 0
         for address in valid_signers:

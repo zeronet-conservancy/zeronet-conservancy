@@ -261,7 +261,170 @@ class TestP2PContentManagerSignatures:
 
         assert cm.verifyContentJson(content) is True
 
-    def testNonRootPathRaisesNotImplemented(self):
+    def testNonRootPathWithNoLoadedParentFallsBackToSiteAddress(self):
+        # No "users/content.json" (or any other covering content.json) has
+        # been loaded, so getRules() can't find any rules for this path --
+        # matches the original's own behavior here (it doesn't raise; the
+        # site address is always a valid signer regardless).
         cm = ContentManager(storage=None, site_address="1Test")
-        with pytest.raises(NotImplementedError):
-            cm.getValidSigners("users/somebody/content.json")
+        assert cm.getValidSigners("users/somebody/content.json") == ["1Test"]
+
+
+class TestP2PContentManagerIncludes:
+    """The "includes" half of the non-root cert-signer chain -- a
+    subdirectory content.json whose valid signers are just an explicit
+    list in the parent's "includes" entry, no cert involved."""
+
+    def testIncludesRuleAllowsListedSigner(self):
+        privatekey = CryptBitcoin.newPrivatekey()
+        address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+        cm = ContentManager(storage=None, site_address="1Site")
+        cm.contents["content.json"] = {"includes": {"sub/content.json": {"signers": [address]}}}
+
+        content = {"modified": time.time(), "files": {}}
+        sign_content = json.dumps(content, sort_keys=True)
+        content["signs"] = {address: CryptBitcoin.sign(sign_content, privatekey)}
+
+        assert cm.verifyContentJson(content, inner_path="sub/content.json") is True
+
+    def testIncludesRuleRejectsUnlistedSigner(self):
+        allowed_privatekey = CryptBitcoin.newPrivatekey()
+        allowed_address = CryptBitcoin.privatekeyToAddress(allowed_privatekey)
+        outsider_privatekey = CryptBitcoin.newPrivatekey()
+        outsider_address = CryptBitcoin.privatekeyToAddress(outsider_privatekey)
+
+        cm = ContentManager(storage=None, site_address="1Site")
+        cm.contents["content.json"] = {"includes": {"sub/content.json": {"signers": [allowed_address]}}}
+
+        content = {"modified": time.time(), "files": {}}
+        sign_content = json.dumps(content, sort_keys=True)
+        content["signs"] = {outsider_address: CryptBitcoin.sign(sign_content, outsider_privatekey)}
+
+        with pytest.raises(VerifyError, match="Valid signs"):
+            cm.verifyContentJson(content, inner_path="sub/content.json")
+
+    def testIncludesMaxSizeEnforced(self):
+        privatekey = CryptBitcoin.newPrivatekey()
+        address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+        cm = ContentManager(storage=None, site_address="1Site")
+        cm.contents["content.json"] = {"includes": {"sub/content.json": {"signers": [address], "max_size": 10}}}
+
+        content = {"modified": time.time(), "files": {}, "title": "this pushes the dumped content past 10 bytes"}
+        sign_content = json.dumps(content, sort_keys=True)
+        content["signs"] = {address: CryptBitcoin.sign(sign_content, privatekey)}
+
+        with pytest.raises(VerifyError, match="Include too large"):
+            cm.verifyContentJson(content, inner_path="sub/content.json")
+
+
+class TestP2PContentManagerCertChain:
+    """The "user_contents" half -- write access to a per-user subdirectory
+    gated by a certificate the user got from a domain-specific issuer,
+    matching ZeroNet's ZeroID-style multi-user sites."""
+
+    def _cert(self, user_address, auth_type, name, issuer_privatekey):
+        cert_subject = "%s#%s/%s" % (user_address, auth_type, name)
+        return CryptBitcoin.sign(cert_subject, issuer_privatekey)
+
+    def _userContent(self, user_address, user_privatekey, cert_sign, auth_type="web", cert_user_id="alice@example.bit"):
+        content = {
+            "modified": time.time(),
+            "files": {},
+            "cert_auth_type": auth_type,
+            "cert_user_id": cert_user_id,
+            "cert_sign": cert_sign,
+        }
+        sign_content = json.dumps(content, sort_keys=True)
+        content["signs"] = {user_address: CryptBitcoin.sign(sign_content, user_privatekey)}
+        return content
+
+    def testUserContentAcceptedWithValidCert(self):
+        issuer_privatekey = CryptBitcoin.newPrivatekey()
+        issuer_address = CryptBitcoin.privatekeyToAddress(issuer_privatekey)
+        user_privatekey = CryptBitcoin.newPrivatekey()
+        user_address = CryptBitcoin.privatekeyToAddress(user_privatekey)
+
+        cm = ContentManager(storage=None, site_address="1Site")
+        cm.contents["data/users/content.json"] = {
+            "user_contents": {"permissions": {}, "cert_signers": {"example.bit": issuer_address}}
+        }
+
+        cert_sign = self._cert(user_address, "web", "alice", issuer_privatekey)
+        content = self._userContent(user_address, user_privatekey, cert_sign)
+        inner_path = "data/users/%s/content.json" % user_address
+
+        assert cm.verifyContentJson(content, inner_path=inner_path) is True
+
+    def testUserContentRejectedWithCertSignedByWrongIssuer(self):
+        issuer_privatekey = CryptBitcoin.newPrivatekey()
+        issuer_address = CryptBitcoin.privatekeyToAddress(issuer_privatekey)
+        impostor_privatekey = CryptBitcoin.newPrivatekey()  # Not the registered issuer
+        user_privatekey = CryptBitcoin.newPrivatekey()
+        user_address = CryptBitcoin.privatekeyToAddress(user_privatekey)
+
+        cm = ContentManager(storage=None, site_address="1Site")
+        cm.contents["data/users/content.json"] = {
+            "user_contents": {"permissions": {}, "cert_signers": {"example.bit": issuer_address}}
+        }
+
+        cert_sign = self._cert(user_address, "web", "alice", impostor_privatekey)
+        content = self._userContent(user_address, user_privatekey, cert_sign)
+        inner_path = "data/users/%s/content.json" % user_address
+
+        with pytest.raises(VerifyError, match="Invalid cert"):
+            cm.verifyContentJson(content, inner_path=inner_path)
+
+    def testUserContentRejectedForUnknownCertDomain(self):
+        issuer_privatekey = CryptBitcoin.newPrivatekey()
+        user_privatekey = CryptBitcoin.newPrivatekey()
+        user_address = CryptBitcoin.privatekeyToAddress(user_privatekey)
+
+        cm = ContentManager(storage=None, site_address="1Site")
+        cm.contents["data/users/content.json"] = {
+            "user_contents": {"permissions": {}, "cert_signers": {"other-domain.bit": "1SomeIssuer"}}
+        }
+
+        cert_sign = self._cert(user_address, "web", "alice", issuer_privatekey)
+        content = self._userContent(user_address, user_privatekey, cert_sign, cert_user_id="alice@example.bit")
+        inner_path = "data/users/%s/content.json" % user_address
+
+        with pytest.raises(VerifyError, match="Invalid cert"):
+            cm.verifyContentJson(content, inner_path=inner_path)
+
+    def testPermissionRulePatternSkippedForCompromisedCertUnlessLax(self):
+        issuer_privatekey = CryptBitcoin.newPrivatekey()
+        issuer_address = CryptBitcoin.privatekeyToAddress(issuer_privatekey)
+        user_address = "1SomeUserAddress"
+
+        parent_content = {
+            "user_contents": {
+                "permissions": {},
+                "cert_signers": {"example.bit": issuer_address},
+                "permission_rules": {".*": {"max_size": 999}},
+            }
+        }
+        # The mechanism for reporting a compromised issuer: proving you hold
+        # (or found leaked) the issuer's own privatekey by signing the
+        # literal string "compromised" with it -- get_sign_address_64()
+        # recovers the issuer's address back out of that signature.
+        bad_sign = CryptBitcoin.sign("compromised", issuer_privatekey)
+        cert_content = {"cert_auth_type": "web", "cert_user_id": "alice@example.bit"}
+        inner_path = "data/users/%s/content.json" % user_address
+
+        cm_strict = ContentManager(storage=None, site_address="1Site")  # lax_cert_check=False default
+        cm_strict.addBadCert(bad_sign)
+        rules_strict = cm_strict.getUserContentRules(parent_content, inner_path, cert_content)
+        assert "max_size" not in rules_strict
+
+        cm_lax = ContentManager(storage=None, site_address="1Site", lax_cert_check=True)
+        cm_lax.addBadCert(bad_sign)
+        rules_lax = cm_lax.getUserContentRules(parent_content, inner_path, cert_content)
+        assert rules_lax["max_size"] == 999
+
+    def testGetUserContentRulesRequiresContent(self):
+        cm = ContentManager(storage=None, site_address="1Site")
+        parent_content = {"user_contents": {"permissions": {}}}
+        with pytest.raises(ValueError):
+            cm.getUserContentRules(parent_content, "data/users/1Someone/content.json", None)
