@@ -22,7 +22,13 @@ Scope cuts from the original:
 """
 import logging
 
-from ...PluginManager import registerTo
+# Absolute, not relative: loadPlugins() imports this plugin the same way
+# the legacy loader imports plugins/* -- as a bare top-level module (e.g.
+# "Zeroname"), not as a proper submodule of the P2P.plugins package, since
+# it works by sys.path.append(path_plugins) + __import__(dir_name). A
+# relative import here would try to climb past that bare module's
+# (nonexistent) parent package.
+from P2P.PluginManager import registerTo
 
 log = logging.getLogger("P2P.plugins.Zeroname")
 

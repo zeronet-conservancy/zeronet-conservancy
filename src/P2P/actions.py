@@ -392,7 +392,11 @@ async def _dispatch(args) -> None:
 
 
 def main() -> None:
-    """`python -m P2P.actions <command> --data-dir ... [--kwargs '{"address": "..."}']`"""
+    """Prefer `python -m P2P actions <command> --data-dir ... [--kwargs
+    '{"address": "..."}']` (see P2P/__main__.py) -- that loads plugins
+    before this module's own top-level imports run, which calling this
+    function directly can't do. `python -m P2P.actions ...` still works,
+    just without any plugins active."""
     import argparse
 
     parser = argparse.ArgumentParser(description="zeronet-conservancy trio-native CLI actions")

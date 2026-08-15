@@ -6,14 +6,18 @@ Phase 7's UI work -- but scoped honestly, not a wholesale replacement of
 src/main.py.
 
 Deliberately NOT a replacement for src/main.py + Actions.py: those still
-own everything this stack hasn't absorbed yet -- Db.py-backed querying,
-the ~20 CLI actions (siteCreate/siteSign/siteVerify/dbRebuild/etc.), and
-Tor/plugin loading. Running this alongside the legacy entrypoint in the
-SAME process is not supported: this module never imports gevent, and per
-P2P/compat.py's own docstring, trio and a gevent-monkey-patched process
-can't coexist reliably for anything but brief, tightly-bracketed calls --
-so this runs as its OWN process (a separate `python -m P2P.app`
-invocation), not embedded inside src/main.py's.
+own Tor and the legacy plugin ecosystem under repo-root plugins/ (see
+P2P/plugins/__init__.py for why that's a separate, non-overlapping set
+from this stack's own P2P/plugins/). Db.py-backed querying and the CLI
+actions (siteCreate/siteSign/siteVerify/dbRebuild/etc.) ARE covered now,
+in P2P.Db/P2P.SiteStorage and P2P/actions.py respectively. Running this
+alongside the legacy entrypoint in the SAME process is not supported:
+this module never imports gevent, and per P2P/compat.py's own docstring,
+trio and a gevent-monkey-patched process can't coexist reliably for
+anything but brief, tightly-bracketed calls -- so this runs as its OWN
+process, launched via `python -m P2P app ...` (see P2P/__main__.py for
+why that's the real entrypoint, not `python -m P2P.app` directly), not
+embedded inside src/main.py's.
 
 Site loading/persistence is now real (P2P.SiteManager), not the flat
 address-list stub this module used before that existed -- see
@@ -175,8 +179,10 @@ async def _main(args) -> None:
 
 
 def main() -> None:
-    """`python -m P2P.app --data-dir ...` -- a standalone process, not
-    something src/main.py imports (see module docstring)."""
+    """Prefer `python -m P2P app --data-dir ...` (see P2P/__main__.py) --
+    that loads plugins before this module's own top-level imports run,
+    which calling this function directly can't do. `python -m P2P.app
+    --data-dir ...` still works, just without any plugins active."""
     import argparse
 
     parser = argparse.ArgumentParser(description="zeronet-conservancy trio-native P2P app")
