@@ -17,6 +17,19 @@ implicit one -- the caller (whatever eventually drives a rebuild: a
 FileWrite command handler, a "dbschema.json changed" hook, etc.) already
 has both objects at hand.
 
+createSparseFile()/writeRange() (added alongside the Bigfile scoping pass)
+are the storage-side half of "Layer A" for range-addressed downloads:
+plugins/Bigfile's original built this as plugin-only functionality, but
+there's no plugin-specific logic in a sparse-file-plus-positional-write
+primitive -- and the wire protocol's read side (protocols/getfile.py's
+location/read_bytes params, Peer.getFile()'s pos_from/pos_to) already
+supports arbitrary byte ranges from earlier phases, so this closes the
+one real gap (the write/storage side) as core capability rather than a
+plugin. Piece hashing, piecefields, peer-piecefield exchange, and
+WorkerManager scheduling integration (the plan's own Layers B-D) are
+still NOT done -- this is the one storage primitive they'd all build on,
+not the rest of big-file support.
+
 Also NOT wired up here, deliberately: write()/delete() don't auto-trigger
 updateDbFile() the way the original's onUpdated() does on every file
 write. Doing that would mean threading a content_manager reference into
@@ -136,6 +149,35 @@ class SiteStorage:
             else:
                 with file_path.open("wb") as f:
                     f.write(content)
+        await self._pool_write.apply(_write)
+
+    def createSparseFile(self, inner_path, size: int) -> None:
+        """Pre-allocates inner_path so writeRange() can seek+write into it
+        before the whole file exists -- the storage primitive a
+        piece-based downloader needs (pieces can arrive out of order,
+        from different peers, each landing directly in its final
+        position). Only pre-allocates up to 5MB, matching the original:
+        writing at a not-yet-materialized offset beyond that still works
+        because POSIX write() past EOF zero-fills the gap, so there's no
+        need to actually reserve the full size up front."""
+        file_path = self.getPath(inner_path)
+        file_path.parent.mkdir(parents=True, exist_ok=True)
+        with file_path.open("wb") as f:
+            f.truncate(min(1024 * 1024 * 5, size))
+
+    async def writeRange(self, inner_path, pos_from: int, content: bytes) -> None:
+        """Write `content` at byte offset pos_from without touching the
+        rest of the file. Creates the file first via createSparseFile()
+        if it doesn't exist yet (with size=pos_from+len(content) as a
+        fallback estimate) -- callers that know the real eventual size
+        should call createSparseFile() themselves first instead."""
+        def _write():
+            file_path = self.getPath(inner_path)
+            if not file_path.is_file():
+                self.createSparseFile(inner_path, pos_from + len(content))
+            with file_path.open("rb+") as f:
+                f.seek(pos_from)
+                f.write(content)
         await self._pool_write.apply(_write)
 
     async def delete(self, inner_path) -> None:

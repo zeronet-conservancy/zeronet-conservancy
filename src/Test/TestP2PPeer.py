@@ -127,3 +127,45 @@ class TestP2PPeer:
                     return len(policy.sessions)
 
         assert compat.run(scenario) == 1
+
+    def testGetFileRangeReconstructsPieceByPieceOutOfOrder(self):
+        """Bigfile scoping's "Layer A" end to end: the wire protocol's
+        existing pos_from/pos_to range support (Peer.getFile()) composed
+        with SiteStorage's new createSparseFile()/writeRange() -- a
+        downloader fetching three independent byte ranges out of order
+        and reconstructing the exact original file locally, with no
+        piece hashing/piecefields/scheduling involved yet (those are
+        still-open Layers B-D)."""
+        piece_a = b"A" * 100
+        piece_b = b"B" * 100
+        piece_c = b"C" * 100
+        content = piece_a + piece_b + piece_c
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as da, tempfile.TemporaryDirectory() as db, \
+                    tempfile.TemporaryDirectory() as seed_dir, tempfile.TemporaryDirectory() as dl_dir:
+                seed_storage = SiteStorage(pathlib.Path(seed_dir))
+                await seed_storage.write("big.bin", content)
+                download_storage = SiteStorage(pathlib.Path(dl_dir))
+
+                host_a = Host(pathlib.Path(da), ws_port=None)  # seeder
+                host_b = Host(pathlib.Path(db), ws_port=None)  # downloader
+                _make_router(host_a, site_storage_resolver=lambda addr: seed_storage if addr == "1Site" else None)
+
+                async with host_a.run(), host_b.run():
+                    await host_b.connect(PeerInfo(host_a.peer_id, host_a.get_addrs()))
+                    policy = ConnectionPolicy(host_b)
+                    peer = Peer(host_a.peer_id, host_b, policy)
+
+                    download_storage.createSparseFile("big.bin", len(content))
+
+                    # Fetch the middle piece first, then last, then first --
+                    # deliberately out of order, like real peer-piece
+                    # scheduling would produce.
+                    for pos_from, pos_to in [(100, 200), (200, 300), (0, 100)]:
+                        buff = await peer.getFile("1Site", "big.bin", pos_from=pos_from, pos_to=pos_to)
+                        await download_storage.writeRange("big.bin", pos_from, buff.read())
+
+                    return await download_storage.read("big.bin")
+
+        assert compat.run(scenario) == content

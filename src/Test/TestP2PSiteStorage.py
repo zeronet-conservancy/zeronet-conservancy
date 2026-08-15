@@ -144,3 +144,52 @@ class TestP2PSiteStorage:
             target = pathlib.Path(d) / "missing"
             with pytest.raises(Exception):
                 SiteStorage(target, allow_create=False)
+
+    def testCreateSparseFilePreallocatesUpToFiveMbCap(self):
+        with tempfile.TemporaryDirectory() as d:
+            storage = SiteStorage(pathlib.Path(d))
+            storage.createSparseFile("small.bin", 1024)
+            assert storage.getSize("small.bin") == 1024
+
+            storage.createSparseFile("big.bin", 20 * 1024 * 1024)
+            assert storage.getSize("big.bin") == 5 * 1024 * 1024  # Capped, not the full 20MB
+
+    def testWriteRangeWritesAtOffsetWithoutDisturbingRestOfFile(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                storage.createSparseFile("piece.bin", 30)
+                await storage.writeRange("piece.bin", 10, b"0123456789")
+                await storage.writeRange("piece.bin", 0, b"HELLO")
+                return await storage.read("piece.bin")
+
+        data = compat.run(scenario)
+        assert data[:5] == b"HELLO"
+        assert data[10:20] == b"0123456789"
+        assert len(data) == 30
+
+    def testWriteRangeOutOfOrderPiecesLandCorrectly(self):
+        """The actual piece-download shape: pieces arrive in arbitrary
+        order (different peers, different completion times) and each
+        must land in its own final position regardless of what's
+        arrived so far."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                storage.createSparseFile("multi.bin", 15)
+                await storage.writeRange("multi.bin", 10, b"CCCCC")
+                await storage.writeRange("multi.bin", 0, b"AAAAA")
+                await storage.writeRange("multi.bin", 5, b"BBBBB")
+                return await storage.read("multi.bin")
+
+        assert compat.run(scenario) == b"AAAAABBBBBCCCCC"
+
+    def testWriteRangeCreatesFileWhenNotPreallocated(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                await storage.writeRange("nopreallocate.bin", 4, b"tail")
+                return await storage.read("nopreallocate.bin")
+
+        data = compat.run(scenario)
+        assert data == b"\x00\x00\x00\x00tail"
