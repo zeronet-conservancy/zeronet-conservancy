@@ -75,7 +75,7 @@ class TestP2PUiServer:
             server = UiServer(sites={})
             async with server.run():
                 base_url = server.bound_addresses[0].replace("http://", "ws://")
-                async with trio_websocket.open_websocket_url("%s/Ui" % base_url) as ws:
+                async with trio_websocket.open_websocket_url("%s/ZeroNet-Internal/Websocket" % base_url) as ws:
                     await ws.send_message(json.dumps({"cmd": "ping", "id": 1}))
                     reply = json.loads(await ws.get_message())
                     return reply
@@ -88,7 +88,7 @@ class TestP2PUiServer:
             server = UiServer(sites={})
             async with server.run():
                 base_url = server.bound_addresses[0].replace("http://", "ws://")
-                async with trio_websocket.open_websocket_url("%s/Ui" % base_url) as ws:
+                async with trio_websocket.open_websocket_url("%s/ZeroNet-Internal/Websocket" % base_url) as ws:
                     await ws.send_message(json.dumps({"cmd": "totallyMadeUp", "id": 2}))
                     reply = json.loads(await ws.get_message())
                     return reply

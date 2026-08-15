@@ -22,6 +22,18 @@ migration's "narrow but real" pattern rather than faking values:
   system around it.
 - server_url/homepage are built from the request directly rather than
   through isProxyRequest()'s reverse-proxy detection (CORS §08's job).
+- No separate site_file_server_port: the original avoids ever re-wrapping
+  the inner iframe's own request by serving raw site content on a SECOND
+  port (ui_site_port, typically ui_port+1) so the iframe's absolute URL
+  never lands back on the wrapper-serving port at all. This stack only
+  binds one port, so file_url instead carries an explicit `?wrapper=0` --
+  UiApp._handleSite() already honors that query param (wants_wrapper),
+  it just wasn't being set here. A real bug, not a stylistic choice: found
+  live -- the iframe's src pointed at the exact same address+path as the
+  parent frame with no wrapper=0, so it got wrapped AGAIN, and the nested
+  wrapper's own "escape from iframe" script (window.self !== window.top)
+  forced a top-level reload every single time, reloading the outer
+  wrapper, which re-embedded the iframe, forever.
 """
 import html
 import json
@@ -64,7 +76,7 @@ def renderWrapper(
     if file_inner_path.endswith("/"):
         file_inner_path += "index.html"
 
-    file_url = "/%s/%s" % (address, inner_path)
+    file_url = "/%s/%s?wrapper=0" % (address, inner_path)
 
     wrapper_nonce = CryptHash.random()
 

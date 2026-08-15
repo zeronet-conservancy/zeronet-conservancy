@@ -35,6 +35,16 @@ site *selection* here, unlike the original's full nonce/cookie session
 model), UiMedia's dynamic pieces (this mounts the static assets directory,
 not the original's more elaborate content-negotiation for it).
 
+The websocket route lives at /ZeroNet-Internal/Websocket, not /Ui as an
+earlier version of this module had it -- a real bug, found live: the
+actual production wrapper.js (served byte-identical from src/Ui/media/,
+per this module's own docstring elsewhere) hardcodes that exact path
+(see its `ws_url = ... + "/ZeroNet-Internal/Websocket?wrapper_key=" +
+...` construction), so every websocket connection attempt from a real
+browser 404'd silently against the old path -- no site info, no
+notifications, nothing that depends on the websocket ever worked,
+with only a quiet reconnect-and-fail loop in the console to show for it.
+
 Homepage redirect + auto-add-and-download (added once real users started
 hitting this after the Phase 10 default flip): `/` redirects to
 `/{homepage}/` (homepage threaded from config.homepage, same default
@@ -176,7 +186,7 @@ class UiApp:
             Route("/", self._handleHomepage, methods=["GET"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
             Route("/{address}", self._handleSite, methods=["GET"]),
-            WebSocketRoute("/Ui", self._handleWebsocket),
+            WebSocketRoute("/ZeroNet-Internal/Websocket", self._handleWebsocket),
         ]
         if UI_MEDIA_DIR.is_dir():
             routes.insert(0, Mount("/uimedia", app=StaticFiles(directory=str(UI_MEDIA_DIR)), name="uimedia"))

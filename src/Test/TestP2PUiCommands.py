@@ -12,8 +12,8 @@ from P2P import compat
 def _wsUrl(server, site=None):
     base_url = server.bound_addresses[0].replace("http://", "ws://")
     if site is None:
-        return "%s/Ui" % base_url
-    return "%s/Ui?wrapper_key=%s" % (base_url, site.wrapper_key)
+        return "%s/ZeroNet-Internal/Websocket" % base_url
+    return "%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (base_url, site.wrapper_key)
 
 
 async def _call(ws, cmd, params=None, msg_id=1):
@@ -154,7 +154,7 @@ class TestP2PUiCommands:
                 server = UiServer(sites={"1TestCmdSite7": site})
                 async with server.run():
                     base_url = server.bound_addresses[0].replace("http://", "ws://")
-                    async with trio_websocket.open_websocket_url("%s/Ui?wrapper_key=wrong" % base_url) as ws:
+                    async with trio_websocket.open_websocket_url("%s/ZeroNet-Internal/Websocket?wrapper_key=wrong" % base_url) as ws:
                         return await _call(ws, "siteInfo")
 
         reply = compat.run(scenario)

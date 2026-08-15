@@ -16,7 +16,7 @@ from P2P import compat
 
 def _wsUrl(server, site):
     base_url = server.bound_addresses[0].replace("http://", "ws://")
-    return "%s/Ui?wrapper_key=%s" % (base_url, site.wrapper_key)
+    return "%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (base_url, site.wrapper_key)
 
 
 async def _call(ws, cmd, params=None, msg_id=1):

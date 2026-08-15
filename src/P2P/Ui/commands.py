@@ -121,12 +121,20 @@ def _requireSiteManager(session):
 
 
 async def _requireUser(session):
+    """Get-or-create, not get-or-fail: a fresh --p2p install has no user
+    until something explicitly creates one (only siteCreate did, until
+    this fix). Without this, every per-user websocket command --
+    including userGetGlobalSettings, which the real wrapper.js's own
+    ZeroSiteTheme.coffee calls unconditionally on every page load to
+    sync dark/light theme -- errored out from the very first page load
+    on a brand new install, matching original ZeroNet's own implicit
+    "a local single-user-mode client always has a user" behavior."""
     user_manager = getattr(session.app, "user_manager", None)
     if user_manager is None:
         raise CommandError("This server has no user manager configured")
     user = await user_manager.get()
     if user is None:
-        raise CommandError("No user available")
+        user = user_manager.create()
     return user
 
 
@@ -183,15 +191,47 @@ async def _cmdChannelJoin(session, params):
 
 
 def formatSiteInfo(site):
-    content = site.content_manager.contents.get("content.json")
+    """`settings`/`size_limit`/`next_size_limit`/`bad_files`/
+    `started_task_num`/`tasks` were added after a real crash found live:
+    the actual production wrapper.js (unmodified, from src/Ui/media/)
+    unconditionally reads site_info.settings.size and site_info.size_limit
+    on every single page load (Wrapper.reloadSiteInfo()) -- without them,
+    every page load threw a TypeError before the wrapper could finish
+    initializing. This stack has no site.settings dict (see
+    P2P.SiteManager's own docstring on why) or per-site size-limit
+    tracking, so `settings` here is a minimal, honest stand-in: `size` is
+    computed for real from content.json's own file listing (not cached/
+    stale), `size_limit`/`next_size_limit` fall back to content.json's own
+    declared limit or the original's own 10MB default -- there's no
+    admin-configurable override system behind them yet. `bad_files`/
+    `started_task_num`/`tasks` are always 0 -- this stack doesn't track
+    per-site bad-file lists or expose a per-site WorkerManager instance
+    the way the original's Site.worker_manager does.
+
+    Still NOT included: auth_address/cert_user_id/privatekey (need an
+    async User lookup; this function is synchronous and several existing
+    callers -- sitePublish's broadcast(), siteList -- have no session to
+    look one up from). Read by the wrapper's cert-selection UI, not the
+    initial page-load path this fix targets, so left as a separate,
+    documented follow-up rather than force-added here.
+    """
+    raw_content = site.content_manager.contents.get("content.json")
+    size = 0
+    if raw_content:
+        size += sum(f.get("size", 0) for f in raw_content.get("files", {}).values())
+        size += sum(f.get("size", 0) for f in raw_content.get("files_optional", {}).values())
+
+    content = dict(raw_content) if raw_content else None
     if content:
-        content = dict(content)
         content["files"] = len(content.get("files", {}))
         content["files_optional"] = len(content.get("files_optional", {}))
         content["includes"] = len(content.get("includes", {}))
         content.pop("sign", None)
         content.pop("signs", None)
         content.pop("signers_sign", None)
+
+    size_limit_mb = (raw_content or {}).get("size_limit", 10)
+
     return {
         "address": site.address,
         "address_hash": site.address_sha1.hex(),
@@ -199,6 +239,16 @@ def formatSiteInfo(site):
         "serving": site.isServing(),
         "peers": len(site.peers),
         "content": content,
+        "settings": {
+            "size": size,
+            "permissions": list(site.permissions),
+            "modified_files_notification": True,
+        },
+        "size_limit": size_limit_mb,
+        "next_size_limit": size_limit_mb,
+        "bad_files": 0,
+        "started_task_num": 0,
+        "tasks": 0,
     }
 
 

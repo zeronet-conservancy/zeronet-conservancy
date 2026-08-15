@@ -391,7 +391,7 @@ class Actions:
     ) -> dict:
         """Talks to an ALREADY-RUNNING App's UI websocket -- see module
         docstring for why wrapper_key has to be supplied explicitly."""
-        url = "ws://%s:%s/Ui?wrapper_key=%s" % (ui_host, ui_port, wrapper_key)
+        url = "ws://%s:%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (ui_host, ui_port, wrapper_key)
         async with trio_websocket.open_websocket_url(url) as ws:
             await ws.send_message(json.dumps({"cmd": cmd, "params": params or {}, "id": 1}))
             reply = json.loads(await ws.get_message())

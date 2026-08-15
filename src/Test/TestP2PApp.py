@@ -162,7 +162,7 @@ class TestP2PApp:
                             site = app.addSite(SITE_ADDRESS_1)
                             site.permissions = ["ADMIN"]
                             ui_base = app.ui_server.bound_addresses[0].replace("http://", "ws://")
-                            ws_url = "%s/Ui?wrapper_key=%s" % (ui_base, site.wrapper_key)
+                            ws_url = "%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (ui_base, site.wrapper_key)
                             async with trio_websocket.open_websocket_url(ws_url) as ws:
                                 await ws.send_message(json.dumps({"cmd": "serverInfo", "params": {}, "id": 1}))
                                 reply = json.loads(await ws.get_message())
