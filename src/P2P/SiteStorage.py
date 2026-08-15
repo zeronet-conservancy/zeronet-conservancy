@@ -1,20 +1,53 @@
-"""Trio port of Site/SiteStorage.py -- scoped to the pure file I/O layer
-(getPath and friends, open/read/write/delete/rename/walk/list/loadJson/
-writeJson). The DB-backed methods (getDb/rebuildDb/query, onUpdated's SQL
-sync, verifyFiles, deleteFiles) all need ContentManager (contents dict,
-hashfield, verifyFile) and Db, neither ported yet -- deferred, same
-reasoning as the rest of Site.py.
+"""Trio port of Site/SiteStorage.py -- the pure file I/O layer (getPath
+and friends, open/read/write/delete/rename/walk/list/loadJson/writeJson)
+plus the DB-backed methods (getDb/loadDb/rebuildDb/query/updateDbFile),
+now that P2P.Db exists. verifyFiles/deleteFiles still need ContentManager
+pieces (hashfield) not ported yet.
 
 Blocking disk I/O is offloaded to a P2P.ThreadPool (matching the
 original's thread_pool_fs_read/thread_pool_fs_write wrapping) so it
 doesn't stall the trio event loop.
+
+DB methods stay decoupled from ContentManager, unlike the original (which
+reaches through self.site.content_manager.contents): this SiteStorage
+has no back-reference to a Site or ContentManager at all (constructed
+before ContentManager, per Site.py's __init__), so getDbFiles()/
+rebuildDb() take content_manager as an explicit parameter instead of an
+implicit one -- the caller (whatever eventually drives a rebuild: a
+FileWrite command handler, a "dbschema.json changed" hook, etc.) already
+has both objects at hand.
+
+Also NOT wired up here, deliberately: write()/delete() don't auto-trigger
+updateDbFile() the way the original's onUpdated() does on every file
+write. Doing that would mean threading a content_manager reference into
+every write() call (or storing one on SiteStorage itself, which would
+break the "constructed before ContentManager exists" ordering in
+Site.py) for a sync path nothing in this stack exercises yet -- no
+FileWrite-equivalent command drives writes through here today. The
+building blocks (updateDbFile(), rebuildDb()) are real and tested; wiring
+them into the write path is separate follow-up work once there's an
+actual caller. query()'s auto-rebuild-on-corrupt-db fallback (the
+original's query() catches sqlite3.DatabaseError and retries after a
+rebuildDb()) is dropped for the same content_manager-availability reason
+-- query() here just raises, and it's the caller's job to rebuildDb()
+explicitly if it wants to recover.
 """
 import json
 import os
 import shutil
+import sqlite3
 from pathlib import Path
 
+import trio
+
+from .Db import Db
 from .ThreadPool import ThreadPool
+
+
+def _getDirname(path: str) -> str:
+    if "/" in path:
+        return path[:path.rfind("/") + 1].lstrip("/")
+    return ""
 
 
 class AccessError(Exception):
@@ -27,6 +60,8 @@ class SiteStorage:
         self.directory = directory
         self._pool_read = ThreadPool(threads_read)
         self._pool_write = ThreadPool(threads_write)
+        self.db: Db | None = None
+        self._db_lock = trio.Lock()
 
         if not self.directory.is_dir():
             if allow_create:
@@ -170,3 +205,116 @@ class SiteStorage:
 
     async def writeJson(self, inner_path, data) -> None:
         await self.write(inner_path, json.dumps(data, indent=1, sort_keys=True).encode("utf8"))
+
+    # -- DB (P2P.Db) --
+
+    def hasDbSchema(self) -> bool:
+        return self.isFile("dbschema.json")
+
+    async def getDbSchema(self) -> dict:
+        try:
+            return await self.loadJson("dbschema.json")
+        except Exception as err:
+            raise Exception("dbschema.json is not a valid JSON: %s" % err)
+
+    async def openDb(self) -> Db:
+        schema = await self.getDbSchema()
+        db_path = self.getPath(schema["db_file"])
+        return Db(schema, db_path)
+
+    async def closeDb(self, reason: str = "Unknown (SiteStorage)") -> None:
+        if self.db:
+            await self.db.close(reason)
+        self.db = None
+
+    async def loadDb(self) -> None:
+        """Opens (creating if needed) a connectable DB with tables ready.
+        Does NOT populate it from content_manager's data -- unlike the
+        original's loadDb(), which calls rebuildDb() itself when the DB
+        file is missing/empty, this has no content_manager reference to
+        rebuild against (see module docstring). A caller that needs a
+        freshly-populated DB should call rebuildDb(content_manager)
+        explicitly; this just guarantees getDb() always returns something
+        connectable with the schema's tables in place."""
+        if not self.hasDbSchema():
+            return
+
+        if self.db:
+            await self.db.close("Getting new db for SiteStorage")
+        self.db = await self.openDb()
+        try:
+            await self.db.checkTables()
+        except sqlite3.OperationalError:
+            pass
+
+    async def getDb(self) -> Db | None:
+        async with self._db_lock:
+            if not self.hasDbSchema():
+                return None
+            if not self.db:
+                await self.loadDb()
+            return self.db
+
+    async def updateDbFile(self, inner_path, content: bytes | None = None) -> bool:
+        db = await self.getDb()
+        if db is None:
+            return False
+        return await db.updateJson(self.getPath(inner_path), content)
+
+    def getDbFiles(self, content_manager) -> list:
+        """Every file content_manager currently knows about that's a JSON
+        (or JSON-ish, .json/.json.gz) file eligible for DB indexing --
+        the content.json files themselves plus every JSON file they list.
+        Takes content_manager explicitly -- see module docstring."""
+        found = []
+        for content_inner_path, content in content_manager.contents.items():
+            if self.isFile(content_inner_path):
+                found.append((content_inner_path, self.getPath(content_inner_path)))
+
+            content_dir = _getDirname(content_inner_path)
+            file_names = list(content.get("files", {}).keys()) + list(content.get("files_optional", {}).keys())
+            for file_relative_path in file_names:
+                if not (file_relative_path.endswith(".json") or file_relative_path.endswith(".json.gz")):
+                    continue
+                file_inner_path = (content_dir + file_relative_path).strip("/")
+                if self.isFile(file_inner_path):
+                    found.append((file_inner_path, self.getPath(file_inner_path)))
+        return found
+
+    async def rebuildDb(self, content_manager, delete_db: bool = True, reason: str = "Unknown") -> bool:
+        if not self.hasDbSchema():
+            return False
+
+        schema = await self.getDbSchema()
+        db_path = self.getPath(schema["db_file"])
+        if delete_db and db_path.is_file():
+            if self.db:
+                await self.closeDb("rebuilding")
+            try:
+                db_path.unlink()
+            except Exception:
+                pass
+
+        if not self.db:
+            self.db = await self.openDb()
+        await self.db.checkTables()
+
+        num_imported = 0
+        for file_inner_path, _file_path in self.getDbFiles(content_manager):
+            try:
+                content_bytes = await self.read(file_inner_path)
+                if await self.updateDbFile(file_inner_path, content_bytes):
+                    num_imported += 1
+            except Exception:
+                pass
+
+        await self.db.commit("Rebuilt (reason: %s, imported: %s)" % (reason, num_imported))
+        return True
+
+    async def query(self, query: str, params=None) -> "sqlite3.Cursor":
+        if not query.strip().upper().startswith("SELECT"):
+            raise ValueError("Only SELECT query supported")
+        db = await self.getDb()
+        if db is None:
+            raise Exception("Site has no database (no dbschema.json)")
+        return await db.execute(query, params)
