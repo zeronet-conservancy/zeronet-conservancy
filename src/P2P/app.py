@@ -84,7 +84,10 @@ class App:
         # anything added/removed via site_manager (load(), add(), delete())
         # is immediately visible to the UI/websocket layer with no separate
         # sync step needed.
-        self.ui_server = UiServer(self.site_manager.sites, host=ui_host, port=ui_port, allowed_hosts=ui_allowed_hosts)
+        self.ui_server = UiServer(
+            self.site_manager.sites, host=ui_host, port=ui_port, allowed_hosts=ui_allowed_hosts,
+            site_manager=self.site_manager, user_manager=self.user_manager,
+        )
         self.dht_discovery = None
         if enable_dht:
             kwargs = {} if dht_protocol_prefix is None else {"protocol_prefix": dht_protocol_prefix}
