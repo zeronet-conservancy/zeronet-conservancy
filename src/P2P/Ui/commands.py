@@ -20,16 +20,22 @@ needs @flag.admin in the original is gated here on "ADMIN" being in the
 CONNECTED site's own permissions (_requireAdmin()) -- same check
 fileWrite/fileDelete already used, not a new pattern.
 
+sitePublish now pushes for real: UiApp takes an optional file_server
+reference (P2P/app.py already owns both file_server and ui_server side by
+side, so this is just threading an existing object through, not new
+protocol work) and reuses the same _sitePeers()/publishUpdate() pattern
+P2P/actions.py's CLI sitePublish already established. Unlike the CLI
+version, though, this does NOT announce() first or raise if no peers are
+reachable -- a websocket command handler shouldn't block on a fresh DHT/
+tracker announce round trip just to answer "did the sign work", and the
+original's own sitePublish doesn't either (it pushes to whatever peers
+are already known and reports success either way). If UiApp has no
+file_server configured (file_server=None, e.g. a UiServer built without
+one), sitePublish still signs and marks serving, just doesn't push --
+same graceful degradation as before this file_server wiring landed.
+
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
-  - sitePublish's actual peer push. protocols/update.py now exists (and
-    P2P/actions.py's CLI sitePublish uses it), but UiApp/UiSession here
-    have no FileServer/announcer/peer-list reference the way Actions does
-    via its own _networkSession() -- this sitePublish signs and marks the
-    site serving, matching what CAN be done with only what's threaded
-    into UiApp today, but doesn't push. Threading a FileServer reference
-    into UiApp (P2P/app.py already owns both file_server and ui_server
-    side by side) is the remaining piece, not new protocol work.
   - certSelect -- the original builds an HTML "select account" dialog and
     round-trips it through the client via cmd("notification")/cmd(
     "injectScript"); that's UI-rendering logic entangled with a specific
@@ -108,6 +114,34 @@ def _param(params, key, index, default=None):
     if isinstance(params, list):
         return params[index] if len(params) > index else default
     return default
+
+
+def _sitePeers(session, site, need_num: int = 5) -> list:
+    """Same pattern as P2P/actions.py's Actions._sitePeers(): builds real,
+    dialable Peer objects from site.getConnectablePeers(), registering
+    each record's ip/port (when known) into the host's peerstore first --
+    see that method's own docstring for why that registration step is
+    necessary at all. Returns [] if this UiApp has no file_server
+    configured (sitePublish degrades to sign-only in that case)."""
+    file_server = getattr(session.app, "file_server", None)
+    if file_server is None:
+        return []
+
+    from multiaddr import Multiaddr
+
+    from ..Peer import Peer
+
+    records = site.getConnectablePeers(need_num=need_num)
+    peerstore = file_server.host.get_peerstore()
+    peers = []
+    for record in records:
+        if record.ip and record.port:
+            try:
+                peerstore.add_addrs(record.peer_id, [Multiaddr("/ip4/%s/tcp/%s" % (record.ip, record.port))], 3600)
+            except Exception:
+                pass
+        peers.append(Peer(record.peer_id, file_server.host, file_server.connection_policy))
+    return peers
 
 
 @command("ping")
@@ -226,12 +260,24 @@ async def _cmdSiteSign(session, params):
 
 @command("sitePublish")
 async def _cmdSitePublish(session, params):
-    """Signs (unless sign=False) and marks the site serving -- does NOT
-    push anything to peers. See module docstring."""
+    """Signs (unless sign=False), marks the site serving, and pushes to
+    whatever peers are already known (no fresh announce -- see module
+    docstring). Still returns "ok" even if nothing was reachable to push
+    to: the sign+serve part always succeeded, and the original's own
+    sitePublish doesn't fail the command over an unreachable swarm
+    either."""
     site = _requireAdmin(session)
     if _param(params, "sign", 1, True):
         await _cmdSiteSign(session, params)
     site.serving = True
+
+    inner_path = _param(params, "inner_path", 2, "content.json")
+    if inner_path in site.content_manager.contents:
+        peers = _sitePeers(session, site)
+        if peers:
+            from ..WorkerManager import publishUpdate
+            await publishUpdate(site, peers, inner_path=inner_path)
+
     return "ok"
 
 

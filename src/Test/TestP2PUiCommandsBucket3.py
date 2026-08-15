@@ -96,6 +96,60 @@ class TestP2PUiCommandsSiteSignPublish:
         assert reply["result"] == "ok"
         assert serving is True
 
+    def testSitePublishPushesToRealSeededPeer(self):
+        """Real end-to-end proof that UiApp's file_server wiring works:
+        sitePublish over the websocket actually reaches a live peer, not
+        just signs locally -- same backdating trick as
+        TestP2PActions.py's sitePublish test, to avoid a same-second
+        "modified" tie between the peer's initial sign and this one."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as dc, tempfile.TemporaryDirectory() as dp, \
+                    tempfile.TemporaryDirectory() as client_site_dir, tempfile.TemporaryDirectory() as peer_site_dir:
+                from libp2p.peer.peerinfo import PeerInfo
+                from P2P.FileServer import FileServer
+
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+                peer_site = Site(address, pathlib.Path(peer_site_dir))
+                await peer_site.content_manager.sign(privatekey)
+                old_content = dict(peer_site.content_manager.contents["content.json"])
+                old_content["modified"] -= 100
+                old_content.pop("signs", None)
+                sign_content = json.dumps(old_content, sort_keys=True)
+                old_content["signs"] = {address: CryptBitcoin.sign(sign_content, privatekey)}
+                await peer_site.storage.writeJson("content.json", old_content)
+                peer_site.content_manager.contents["content.json"] = old_content
+                peer_server = FileServer(pathlib.Path(dp), ws_port=None)
+                peer_server.addSite(peer_site)
+
+                client_site = Site(address, pathlib.Path(client_site_dir))
+                client_site.permissions = ["ADMIN"]
+                client_p2p_dir = pathlib.Path(dc) / ".p2p"
+                client_p2p_dir.mkdir(parents=True, exist_ok=True)
+                client_file_server = FileServer(client_p2p_dir, ws_port=None)
+                client_file_server.addSite(client_site)
+
+                ui_server = UiServer(sites={address: client_site}, file_server=client_file_server)
+
+                async with peer_server.run(), client_file_server.run(), ui_server.run():
+                    await client_file_server.host.connect(
+                        PeerInfo(peer_server.host.peer_id, peer_server.host.get_addrs())
+                    )
+                    peer_tcp_port = peer_server.host.get_addrs()[0].value_for_protocol("tcp")
+                    client_site.addPeer(peer_server.host.peer_id, ip="127.0.0.1", port=int(peer_tcp_port), source="test")
+
+                    await client_site.storage.write("new.txt", b"pushed via ui sitePublish")
+                    async with trio_websocket.open_websocket_url(_wsUrl(ui_server, client_site)) as ws:
+                        reply = await _call(ws, "sitePublish", {"privatekey": privatekey})
+
+                    peer_content = await peer_site.storage.loadJson("content.json")
+                    return reply, peer_content
+
+        reply, peer_content = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert "new.txt" in peer_content["files"]
+
 
 class TestP2PUiCommandsCerts:
     def testCertAddThenCertListShowsSelected(self):

@@ -86,7 +86,7 @@ class App:
         # sync step needed.
         self.ui_server = UiServer(
             self.site_manager.sites, host=ui_host, port=ui_port, allowed_hosts=ui_allowed_hosts,
-            site_manager=self.site_manager, user_manager=self.user_manager,
+            site_manager=self.site_manager, user_manager=self.user_manager, file_server=self.file_server,
         )
         self.dht_discovery = None
         if enable_dht:
