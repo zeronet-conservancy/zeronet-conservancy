@@ -1,0 +1,137 @@
+"""Trio port of Site/SiteManager.py -- scoped to what this stack's Site
+model actually supports: loading/saving the flat address->settings map in
+private/sites.json, add()/get()/need()/delete(), and address validation.
+
+NOT ported:
+  - ContentDb-based orphan-row cleanup in load() -- ContentDb.py isn't
+    part of this stack (P2P.ContentManager keeps a plain in-memory dict,
+    see its own module docstring).
+  - Real domain resolution. isDomain()/resolveDomain() are ported as the
+    same no-op stubs the original core class itself uses (always False /
+    False) -- the original's real .bit resolution comes from a plugin,
+    not the core class, so there's nothing plugin-shaped to port here yet.
+  - site.settings as an attribute ON Site itself. P2P.Site.py already has
+    an established, tested attribute-based model (self.serving,
+    self.permissions, self.wrapper_key/ajax_key) that Wrapper.py and
+    P2P/Ui/commands.py already depend on -- bolting a parallel
+    self.settings dict onto Site.py for SiteManager's sake would create
+    two sources of truth for "serving" inside one object. Instead the
+    settings SiteManager actually needs to persist (serving/own/added/
+    size/size_optional) live here, in SiteManager, keyed by address
+    alongside each Site -- read at load(), written at save().
+  - site.download() on add() -- kicking off a real peer-fetch download
+    needs WorkerManager wired to a specific site's connectable peers, a
+    separate piece of work; add() here just creates the Site and lets the
+    caller (or a later download-orchestration pass) decide what happens
+    next.
+"""
+import json
+import logging
+import re
+import time
+
+import trio
+
+from .Site import Site
+
+ADDRESS_RE = re.compile(r"^[A-Za-z0-9]{26,35}$")
+
+
+class SiteManager:
+    def __init__(self, data_dir, private_dir=None):
+        self.data_dir = data_dir
+        self.private_dir = private_dir if private_dir is not None else data_dir
+        self.log = logging.getLogger("P2P.SiteManager")
+        self.sites: dict[str, Site] = {}
+        self._site_settings: dict[str, dict] = {}  # address -> {serving, own, added, size, size_optional}
+        self.loaded = False
+
+    def isAddress(self, address: str) -> bool:
+        return bool(ADDRESS_RE.match(address))
+
+    def isDomain(self, address: str) -> bool:
+        return False  # No built-in domain resolution -- see module docstring
+
+    def resolveDomain(self, domain: str):
+        return False
+
+    def _sitesJsonPath(self):
+        return self.private_dir / "sites.json"
+
+    async def load(self, cleanup: bool = True) -> None:
+        """(Re)reads private_dir/sites.json: creates a Site for every
+        address not already loaded, and (if cleanup) drops any currently
+        loaded site whose address is no longer listed."""
+        try:
+            raw = await trio.to_thread.run_sync(self._sitesJsonPath().read_text)
+            data = json.loads(raw)
+        except FileNotFoundError:
+            data = {}
+
+        address_found = set()
+        for address, settings in data.items():
+            address_found.add(address)
+            if address in self.sites:
+                continue
+            if not self.isAddress(address):
+                self.log.warning("Skipping invalid address in sites.json: %s", address)
+                continue
+            site_root = self.data_dir / address
+            site = Site(address, site_root, serving=bool(settings.get("serving", True)))
+            self.sites[address] = site
+            self._site_settings[address] = dict(settings)
+
+        if cleanup:
+            for address in list(self.sites):
+                if address not in address_found:
+                    del self.sites[address]
+                    self._site_settings.pop(address, None)
+                    self.log.debug("Removed site: %s", address)
+
+        self.loaded = True
+
+    async def save(self) -> None:
+        """Writes every currently loaded site's settings back to
+        sites.json, refreshing "serving" and "size"/"size_optional" from
+        the live Site/ContentManager first."""
+        data = {}
+        for address, site in self.sites.items():
+            settings = self._site_settings.setdefault(address, {"added": int(time.time()), "own": False})
+            settings["serving"] = site.isServing()
+            settings["size"] = site.content_manager.getTotalSize()
+            data[address] = settings
+
+        body = json.dumps(data, indent=1, sort_keys=True)
+        await trio.to_thread.run_sync(self._sitesJsonPath().write_text, body)
+
+    def get(self, address: str):
+        return self.sites.get(address)
+
+    def add(self, address: str, own: bool = False):
+        """Returns the new (or already-existing) Site, or False if address
+        isn't a valid site address."""
+        if address in self.sites:
+            return self.sites[address]
+        if not self.isAddress(address):
+            return False
+
+        site_root = self.data_dir / address
+        site = Site(address, site_root, serving=True)
+        self.sites[address] = site
+        self._site_settings[address] = {"added": int(time.time()), "own": own, "serving": True}
+        self.log.debug("Added new site: %s", address)
+        return site
+
+    def need(self, address: str, **kwargs):
+        site = self.get(address)
+        if not site:
+            site = self.add(address, **kwargs)
+        return site
+
+    def delete(self, address: str) -> None:
+        self.sites.pop(address, None)
+        self._site_settings.pop(address, None)
+        self.log.debug("Deleted site: %s", address)
+
+    def list(self) -> dict:
+        return self.sites
