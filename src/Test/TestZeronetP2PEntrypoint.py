@@ -54,6 +54,75 @@ def _waitForBoundUiPort(log_path: pathlib.Path, deadline: float) -> tuple[str, i
     raise TimeoutError("Server never logged its bound UI address: %s" % log_path.read_text(errors="replace"))
 
 
+def _spawnMain(data_dir: pathlib.Path, extra_main_args=(), extra_global_args=()):
+    """Launches `zeronet.py main` (plus whatever p2p flags the caller
+    wants) as a real subprocess, logging to data_dir/stdout.log. Caller
+    is responsible for terminating the returned Popen."""
+    log_path = data_dir / "stdout.log"
+    log_file = open(log_path, "wb")
+    proc = subprocess.Popen(
+        [
+            sys.executable, str(ZERONET_PY),
+            "--data-dir", str(data_dir),
+            "--ui-port", "0", "--fileserver-port", "0",
+            "--no-dht", "--tor", "disable", "--batch",
+            *extra_global_args,
+            "main", *extra_main_args,
+        ],
+        cwd=str(REPO_ROOT), stdout=log_file, stderr=subprocess.STDOUT,
+    )
+    return proc, log_path
+
+
+def _terminate(proc):
+    proc.terminate()
+    try:
+        proc.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        proc.wait(timeout=10)
+
+
+class TestZeronetP2PDefaultFlip:
+    """Phase 10 default flip: `zeronet.py main` with no flags at all now
+    runs the trio-native stack (Config.py's --p2p defaults to True as of
+    this change), and --no-p2p is the escape hatch back to the exact
+    previous default behavior. See Actions.mainP2P()'s own docstring for
+    what --no-p2p is still needed for (repo-root plugins/, Multiuser,
+    UiPassword, Tor SOCKS5 dial-out)."""
+
+    def testMainWithNoFlagsDefaultsToP2P(self):
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            proc, log_path = _spawnMain(data_dir)
+            try:
+                _waitForBoundUiPort(log_path, time.time() + 20)
+            finally:
+                _terminate(proc)
+            log_text = log_path.read_text(errors="replace")
+
+        assert "P2P app running" in log_text
+
+    def testMainWithNoP2PFlagRunsLegacyServer(self):
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            proc, log_path = _spawnMain(data_dir, extra_main_args=["--no-p2p"])
+            try:
+                deadline = time.time() + 20
+                while time.time() < deadline:
+                    if log_path.is_file() and "Starting servers" in log_path.read_text(errors="replace"):
+                        break
+                    time.sleep(0.1)
+                else:
+                    raise TimeoutError("Legacy server never logged its startup line")
+            finally:
+                _terminate(proc)
+            log_text = log_path.read_text(errors="replace")
+
+        assert "Starting servers" in log_text
+        assert "P2P app running" not in log_text
+
+
 class TestZeronetP2PEntrypoint:
     def testMainWithP2PFlagBootsAndServesRealHttp(self):
         with tempfile.TemporaryDirectory() as d:

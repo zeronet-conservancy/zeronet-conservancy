@@ -81,20 +81,20 @@ class Actions:
         logging.info("All server stopped")
 
     def mainP2P(self):
-        """Phase 10 cutover, first slice: run the trio-native P2P stack
-        (P2P/app.py's App) through the real, official entrypoint --
-        `zeronet.py main --p2p` -- instead of only via the standalone
-        `python -m P2P app` launcher. Opt-in via --p2p rather than
-        replacing `main`'s default behavior outright: the P2P stack
-        doesn't yet load the legacy plugins/ ecosystem (a genuinely
-        different, non-overlapping plugin system -- see
-        P2P/plugins/__init__.py), has no Multiuser/UiPassword equivalent,
-        and Tor is control-port-only (no SOCKS5 dial-out yet, see
-        P2P/Tor.py's own docstring) -- a silent default-behavior swap
-        would be a real regression for anyone relying on those. This
-        makes the new stack reachable from the actual shipped entrypoint
-        for the first time, without changing what existing invocations
-        of `zeronet.py main` do.
+        """Phase 10 cutover: run the trio-native P2P stack (P2P/app.py's
+        App) through the real, official entrypoint -- `zeronet.py main`
+        -- instead of only via the standalone `python -m P2P app`
+        launcher. This is now the DEFAULT (config.p2p defaults to True
+        as of the Config.py flip; pass --no-p2p for the legacy gevent
+        server). Known gaps callers relying on the legacy server should
+        know about before dropping --no-p2p: the P2P stack doesn't load
+        the legacy plugins/ ecosystem (a genuinely different,
+        non-overlapping plugin system -- see P2P/plugins/__init__.py),
+        has no Multiuser/UiPassword equivalent, and Tor is control-port-
+        only (no SOCKS5 dial-out yet, see P2P/Tor.py's own docstring).
+        --no-p2p remains a full, unchanged escape hatch to the exact
+        previous default behavior -- nothing about the legacy path
+        itself changed, only which one runs when no flag is given.
 
         Runs via P2P.compat.run(), the same bracketed-monkey-patch-
         restoration helper every P2P test uses -- main.py already

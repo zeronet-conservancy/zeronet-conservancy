@@ -263,26 +263,28 @@ class Config:
         action = self.subparsers.add_parser("main", help='Start UiServer and FileServer (default)')
         action.add_argument(
             '--p2p', help='Run the new trio/libp2p-native stack (P2P/app.py) instead of the legacy '
-            'gevent server -- experimental, does not yet load plugins/ or support Multiuser/UiPassword',
-            action='store_true'
+            'gevent server. Default since the Phase 10 cutover -- pass --no-p2p for the legacy '
+            'server (needed for the repo-root plugins/ ecosystem, Multiuser, UiPassword, or Tor '
+            'SOCKS5 dial-out, none of which the new stack covers yet)',
+            action=BooleanOptionalAction, default=True,
         )
 
         # SiteCreate
         action = self.subparsers.add_parser("siteCreate", help='Create a new site')
         action.register('type', 'bool', self.strToBool)
         action.add_argument('--use-master_seed', help="Allow created site's private key to be recovered using the master seed in users.json (default: True)", type="bool", choices=[True, False], default=True)
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteNeedFile
         action = self.subparsers.add_parser("siteNeedFile", help='Get a file from site')
         action.add_argument('address', help='Site address')
         action.add_argument('inner_path', help='File inner path')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteDownload
         action = self.subparsers.add_parser("siteDownload", help='Download a new site')
         action.add_argument('address', help='Site address')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteSign
         action = self.subparsers.add_parser("siteSign", help='Update and sign content.json: address [privatekey]')
@@ -292,7 +294,7 @@ class Config:
                             default="content.json", metavar="inner_path")
         action.add_argument('--remove-missing_optional', help='Remove optional files that is not present in the directory', action='store_true')
         action.add_argument('--publish', help='Publish site after the signing', action='store_true')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SitePublish
         action = self.subparsers.add_parser("sitePublish", help='Publish site to other peers: address')
@@ -305,12 +307,12 @@ class Config:
                             default="content.json", metavar="inner_path")
         action.add_argument('--recursive', help="Whether to publish all of site's content.json. "
                             "Overrides --inner-path. (default: false)", action='store_true', dest='recursive')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteVerify
         action = self.subparsers.add_parser("siteVerify", help='Verify site files using sha512: address')
         action.add_argument('address', help='Site to verify')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteCmd
         action = self.subparsers.add_parser("siteCmd", help='Execute a ZeroFrame API command on a site')
@@ -325,13 +327,13 @@ class Config:
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
         action.add_argument('address', help='Site to rebuild')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # dbQuery
         action = self.subparsers.add_parser("dbQuery", help='Query site sql cache')
         action.add_argument('address', help='Site to query')
         action.add_argument('query', help='Sql query')
-        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # PeerPing
         action = self.subparsers.add_parser("peerPing", help='Send Ping command to peer')
