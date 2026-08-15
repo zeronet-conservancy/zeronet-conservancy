@@ -300,6 +300,7 @@ async def _cmdSitePublish(session, params):
             from ..WorkerManager import publishUpdate
             await publishUpdate(site, peers, inner_path=inner_path)
 
+    session.app.broadcast("siteChanged", site, {"event": "file_done"})
     return "ok"
 
 
@@ -489,8 +490,7 @@ async def _cmdDbQuery(session, params):
 
 # -- Server / announcer info, listing modified files --
 
-@command("serverInfo")
-async def _cmdServerInfo(session, params):
+def formatServerInfo(session):
     """Deliberately narrower than the original's actionServerInfo(): only
     fields genuinely available from what's threaded into UiApp (no
     port_opened/tor/version/config fingerprinting -- none of that exists
@@ -504,13 +504,21 @@ async def _cmdServerInfo(session, params):
     return info
 
 
-@command("announcerInfo")
-async def _cmdAnnouncerInfo(session, params):
-    site = _requireSite(session)
+def formatAnnouncerInfo(session, site):
     announcers = getattr(session.app, "announcers", None)
     announcer = announcers.get(site.address) if announcers else None
     stats = announcer.stats.all() if announcer else {}
     return {"address": site.address, "stats": stats}
+
+
+@command("serverInfo")
+async def _cmdServerInfo(session, params):
+    return formatServerInfo(session)
+
+
+@command("announcerInfo")
+async def _cmdAnnouncerInfo(session, params):
+    return formatAnnouncerInfo(session, _requireSite(session))
 
 
 @command("siteListModifiedFiles")

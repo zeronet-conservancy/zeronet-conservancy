@@ -54,6 +54,17 @@ stream_id -> cancel scope, so a specific background push task can be
 torn down early without closing the whole connection) -- deliberately
 generic here rather than something like Sidebar's own log_streamers
 dict living in the core session class.
+
+UiApp.broadcast() is the second push consumer: a port of the original's
+UiWebsocket.event(), pushing setSiteInfo/setServerInfo/setAnnouncerInfo
+to every session joined to the relevant channel (channelJoin already
+existed in commands.py; nothing previously called the other half). Only
+sitePublish calls it so far, after a successful sign+push -- the
+original calls Site.py's updateWebsocket() (which drives this) from
+many more places (download progress, peer count changes, etc.) that
+don't have equivalents in this stack yet. Each additional trigger is its
+own small, separate addition as the corresponding Site.py machinery
+lands, not something to force in one pass.
 """
 import json
 import pathlib
@@ -231,6 +242,44 @@ class UiApp:
             if getattr(site, "wrapper_key", None) == wrapper_key:
                 return site
         return None
+
+    def broadcast(self, channel: str, *args) -> None:
+        """Port of UiWebsocket.event() -- push a "set*Info" update to
+        every currently-connected session that's joined `channel` (via
+        the channelJoin command), instead of just answering the one
+        session that triggered the change. siteChanged/announcerChanged
+        are site-scoped: only sessions connected to that same site get
+        the push, matching the original (there, one UiWebsocket instance
+        IS one site connection; here, self.sessions can span sites, so
+        that scoping has to be explicit). Late import to avoid a circular
+        import at module load time -- commands.py imports `command` from
+        this module already, at the bottom of this file."""
+        from . import commands
+
+        for session in list(self.sessions):
+            if channel not in session.channels:
+                continue
+            if channel == "siteChanged":
+                site = args[0]
+                if session.site is not site:
+                    continue
+                info = commands.formatSiteInfo(site)
+                if len(args) > 1 and args[1]:
+                    info.update(args[1])
+                session.push("setSiteInfo", info)
+            elif channel == "serverChanged":
+                info = commands.formatServerInfo(session)
+                if args and args[0]:
+                    info.update(args[0])
+                session.push("setServerInfo", info)
+            elif channel == "announcerChanged":
+                site = args[0]
+                if session.site is not site:
+                    continue
+                info = commands.formatAnnouncerInfo(session, site)
+                if len(args) > 1 and args[1]:
+                    info.update(args[1])
+                session.push("setAnnouncerInfo", info)
 
     async def _handleCommand(self, session: "UiSession", request: dict) -> dict:
         cmd = request.get("cmd")

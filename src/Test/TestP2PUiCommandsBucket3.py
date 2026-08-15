@@ -2,6 +2,7 @@ import json
 import pathlib
 import tempfile
 
+import trio
 import trio_websocket
 
 from Crypt import CryptBitcoin
@@ -149,6 +150,45 @@ class TestP2PUiCommandsSiteSignPublish:
         reply, peer_content = compat.run(scenario)
         assert reply["result"] == "ok"
         assert "new.txt" in peer_content["files"]
+
+    def testSitePublishBroadcastsSiteChangedToJoinedSessions(self):
+        """sitePublish's UiApp.broadcast("siteChanged", ...) call should
+        push setSiteInfo to every session connected to that site and
+        joined to the "siteChanged" channel -- including sessions other
+        than the one that issued the publish -- and skip sessions that
+        never joined the channel."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                site = Site(address, pathlib.Path(d))
+                site.permissions = ["ADMIN"]
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as joined_ws, \
+                            trio_websocket.open_websocket_url(_wsUrl(server, site)) as unjoined_ws:
+                        await _call(joined_ws, "channelJoin", {"channels": ["siteChanged"]}, msg_id=1)
+
+                        await joined_ws.send_message(json.dumps(
+                            {"cmd": "sitePublish", "params": {"privatekey": privatekey}, "id": 2}
+                        ))
+                        # The push and the response can arrive in either order --
+                        # sort the two messages this exchange produces by cmd.
+                        messages = [json.loads(await joined_ws.get_message()) for _ in range(2)]
+                        publish_reply = next(m for m in messages if m.get("cmd") == "response")
+                        push = next(m for m in messages if m.get("cmd") == "setSiteInfo")
+
+                        with trio.move_on_after(0.3) as cancel_scope:
+                            await unjoined_ws.get_message()
+
+                        return publish_reply, push, cancel_scope.cancelled_caught
+
+        publish_reply, push, unjoined_timed_out = compat.run(scenario)
+        assert publish_reply["result"] == "ok"
+        assert push["cmd"] == "setSiteInfo"
+        assert push["params"]["serving"] is True  # real formatSiteInfo() output, not a stub
+        assert unjoined_timed_out is True  # Never joined the channel -- no push
 
 
 class TestP2PUiCommandsCerts:
