@@ -16,6 +16,32 @@ SITE_ADDRESS_2 = "1TestAppSiteBBBBBBBBBBBBBB2"
 
 
 class TestP2PApp:
+    def testGetOrCreateUserCreatesThenReusesSameUser(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                app = App(pathlib.Path(d), ws_port=None, enable_dht=False)
+                first = await app.getOrCreateUser()
+                second = await app.getOrCreateUser()
+                return first, second
+
+        first, second = compat.run(scenario)
+        assert first is second
+
+    def testLoadUsersReadsPersistedUsers(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                app1 = App(data_dir, ws_port=None, enable_dht=False)
+                user = await app1.getOrCreateUser()
+                await user.save()
+
+                app2 = App(data_dir, ws_port=None, enable_dht=False)
+                await app2.loadUsers()
+                return user.master_address, app2.user_manager.users
+
+        master_address, users = compat.run(scenario)
+        assert master_address in users
+
     def testAddSiteWiresIntoBothFileServerAndUiServer(self):
         with tempfile.TemporaryDirectory() as d:
             app = App(pathlib.Path(d), ws_port=None, enable_dht=False)

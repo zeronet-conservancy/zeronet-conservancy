@@ -6,11 +6,10 @@ Phase 7's UI work -- but scoped honestly, not a wholesale replacement of
 src/main.py.
 
 Deliberately NOT a replacement for src/main.py + Actions.py: those still
-own everything this stack hasn't absorbed yet -- User/UserManager (auth,
-certificates, multi-user sessions), Db.py-backed querying, the ~20 CLI
-actions (siteCreate/siteSign/siteVerify/dbRebuild/etc.), and Tor/plugin
-loading. Running this alongside the legacy entrypoint in the SAME process
-is not supported: this module never imports gevent, and per
+own everything this stack hasn't absorbed yet -- Db.py-backed querying,
+the ~20 CLI actions (siteCreate/siteSign/siteVerify/dbRebuild/etc.), and
+Tor/plugin loading. Running this alongside the legacy entrypoint in the
+SAME process is not supported: this module never imports gevent, and per
 P2P/compat.py's own docstring, trio and a gevent-monkey-patched process
 can't coexist reliably for anything but brief, tightly-bracketed calls --
 so this runs as its OWN process (a separate `python -m P2P.app`
@@ -20,6 +19,12 @@ Site loading/persistence is now real (P2P.SiteManager), not the flat
 address-list stub this module used before that existed -- see
 SiteManager.py's own docstring for what it in turn still doesn't cover
 (size-limit enforcement, download-on-add, domain resolution).
+
+User/UserManager (P2P.User/P2P.UserManager) are also wired in now --
+loaded from the same private_dir as sites.json -- but nothing in the UI
+command surface (P2P/Ui/commands.py) uses them yet for real
+authentication/cert flows; that's still bucket 3 territory (see
+UiServer.py's own module docstring) and stays explicitly deferred.
 
 Per-site announce loops are simple fixed-interval polling (default 30
 minutes, matching the original's ANNOUNCE_INTERVAL default order of
@@ -37,6 +42,7 @@ from .FileServer import FileServer
 from .Site import Site
 from .SiteAnnouncer import SiteAnnouncer
 from .SiteManager import SiteManager
+from .UserManager import UserManager
 from .Ui.UiServer import UiServer
 from .discovery.kaddht import KadDHTDiscovery
 
@@ -69,6 +75,7 @@ class App:
         p2p_dir.mkdir(parents=True, exist_ok=True)
         self.file_server = FileServer(p2p_dir, tcp_port=tcp_port, ws_port=ws_port)
         self.site_manager = SiteManager(data_dir)
+        self.user_manager = UserManager(data_dir)
         # UiServer shares SiteManager's own sites dict by reference, so
         # anything added/removed via site_manager (load(), add(), delete())
         # is immediately visible to the UI/websocket layer with no separate
@@ -102,6 +109,17 @@ class App:
         if site:
             self._wireSite(site)
         return site
+
+    async def loadUsers(self) -> None:
+        await self.user_manager.load()
+
+    async def getOrCreateUser(self):
+        """Single-user-mode convenience matching Actions.siteCreate's own
+        UserManager.get()-or-create() pattern."""
+        user = await self.user_manager.get()
+        if user is None:
+            user = self.user_manager.create()
+        return user
 
     async def _announceLoop(self, address: str) -> None:
         announcer = self.announcers[address]
@@ -152,6 +170,7 @@ async def _main(args) -> None:
         enable_dht=not args.no_dht,
     )
     await app.loadSites()
+    await app.loadUsers()
     await app.run()
 
 
