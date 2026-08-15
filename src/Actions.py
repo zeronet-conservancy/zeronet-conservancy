@@ -103,7 +103,24 @@ class Actions:
         the same "restore real sockets around this one call" pattern
         applies directly. See P2P/compat.py's own docstring for why this
         is necessary and why it's safe here specifically.
+
+        Shuts down on SIGTERM/SIGINT via trio.open_signal_receiver()
+        rather than relying on Debug/DebugHook.py's own SIGTERM handler
+        (installed unconditionally at import time by main.py's own
+        init()): that handler's fallback path is `sys.exit(0)` whenever
+        `main.file_server` isn't set, which it never is here (that's a
+        legacy-Actions.main()-only global) -- raising SystemExit through
+        whatever trio-internal frame happens to be executing when the
+        signal arrives corrupts trio's run loop (surfaces as a "Trio
+        guest run got abandoned" RuntimeWarning at shutdown, a real bug
+        caught while testing this slice). trio.open_signal_receiver()
+        temporarily installs its own handler for the scope of this run
+        (restoring whatever was there before on exit) and delivers
+        signals as a normal async iterator instead, so cancellation goes
+        through trio's own structured-shutdown path.
         """
+        import signal
+
         from P2P import compat
         from P2P.PluginManager import plugin_manager as p2p_plugin_manager
         p2p_plugin_manager.loadPlugins()  # Must happen before P2P.app's own
@@ -112,6 +129,8 @@ class Actions:
         from P2P.app import App
 
         async def _run():
+            import trio
+
             app = App(
                 config.data_dir,
                 tcp_port=config.fileserver_port,
@@ -122,7 +141,14 @@ class Actions:
             )
             await app.loadSites()
             await app.loadUsers()
-            await app.run()  # Logs its own "P2P app running: peer_id=..." once bound
+
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(app.run)  # Logs "P2P app running: peer_id=..." once bound
+                with trio.open_signal_receiver(signal.SIGTERM, signal.SIGINT) as signal_aiter:
+                    async for signum in signal_aiter:
+                        logging.info("Shutting down (signal: %s)...", signal.Signals(signum).name)
+                        nursery.cancel_scope.cancel()
+                        break
 
         compat.run(_run)
 

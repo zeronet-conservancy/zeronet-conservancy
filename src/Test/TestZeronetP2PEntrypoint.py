@@ -66,6 +66,8 @@ class TestZeronetP2PEntrypoint:
 
         assert status in (200, 403, 404)  # Real HTTP response, whatever the route decides
         assert "P2P app running" in log_text
+        assert "Shutting down (signal: SIGTERM)" in log_text
+        assert "guest run" not in log_text  # The bug this signal handling fixed -- see mainP2P()'s own docstring
 
     def testMainWithP2PFlagLoadsP2PPlugins(self):
         """P2P/plugins/ (CryptMessage, Newsfeed, Sidebar, UiConfig,
