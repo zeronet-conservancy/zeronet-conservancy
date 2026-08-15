@@ -152,6 +152,28 @@ class Actions:
 
         compat.run(_run)
 
+    def _runP2PAction(self, method_name, **kwargs):
+        """Shared plumbing for every siteX(p2p=True)/dbX(p2p=True)
+        delegation below: constructs a throwaway P2P.actions.Actions and
+        runs one of its methods to completion via P2P.compat.run() (see
+        mainP2P()'s own docstring for why that bracketing is needed).
+        Each P2P.actions method already handles its own SiteManager/
+        UserManager loading and FileServer lifecycle per call, so a
+        fresh instance per CLI invocation is correct, not wasteful --
+        matches how the legacy methods below already re-derive
+        everything from config.data_dir/SiteManager.site_manager.load()
+        on each call too."""
+        from P2P import compat
+        from P2P.PluginManager import plugin_manager as p2p_plugin_manager
+        p2p_plugin_manager.loadPlugins()
+        from P2P.actions import Actions as P2PActions
+
+        async def _call():
+            p2p_actions = P2PActions(config.data_dir)
+            return await getattr(p2p_actions, method_name)(**kwargs)
+
+        return compat.run(_call)
+
     # Site commands
 
     def siteCreate(self, use_master_seed=True):
@@ -200,7 +222,11 @@ class Actions:
 
         logging.info("Site created!")
 
-    def siteSign(self, address, privatekey=None, inner_path="content.json", publish=False, remove_missing_optional=False):
+    def siteSign(self, address, privatekey=None, inner_path="content.json", publish=False,
+                 remove_missing_optional=False, p2p=False):
+        if p2p:
+            return self._runP2PAction("siteSign", address=address, privatekey=privatekey, publish=publish)
+
         from Site.Site import Site
         from Site import SiteManager
         from Debug import Debug
@@ -244,7 +270,10 @@ class Actions:
         if succ and publish:
             self.sitePublish(address, inner_path=inner_path)
 
-    def siteVerify(self, address):
+    def siteVerify(self, address, p2p=False):
+        if p2p:
+            return self._runP2PAction("siteVerify", address=address)
+
         import time
         from Site.Site import Site
         from Site import SiteManager
@@ -281,7 +310,10 @@ class Actions:
         else:
             logging.error("[ERROR] Error during verifying site files!")
 
-    def dbRebuild(self, address):
+    def dbRebuild(self, address, p2p=False):
+        if p2p:
+            return self._runP2PAction("dbRebuild", address=address)
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -295,7 +327,10 @@ class Actions:
         except Exception as err:
             logging.error(err)
 
-    def dbQuery(self, address, query):
+    def dbQuery(self, address, query, p2p=False):
+        if p2p:
+            return self._runP2PAction("dbQuery", address=address, query=query)
+
         from Site.Site import Site
         from Site import SiteManager
         SiteManager.site_manager.load()
@@ -307,7 +342,10 @@ class Actions:
             result.append(dict(row))
         print(json.dumps(result, indent=4))
 
-    def siteAnnounce(self, address):
+    def siteAnnounce(self, address, p2p=False):
+        if p2p:
+            return self._runP2PAction("siteAnnounce", address=address, enable_dht=config.dht)
+
         import main
         self.initDHT()
 
@@ -328,7 +366,10 @@ class Actions:
         print("Response time: %.3fs" % (time.time() - s))
         print(site.peers)
 
-    def siteDownload(self, address):
+    def siteDownload(self, address, p2p=False):
+        if p2p:
+            return self._runP2PAction("siteDownload", address=address, enable_dht=config.dht)
+
         import main
         self.initDHT()
 
@@ -363,7 +404,10 @@ class Actions:
 
         print("Downloaded in %.3fs" % (time.time()-s))
 
-    def siteNeedFile(self, address, inner_path):
+    def siteNeedFile(self, address, inner_path, p2p=False):
+        if p2p:
+            return self._runP2PAction("siteNeedFile", address=address, inner_path=inner_path, enable_dht=config.dht)
+
         import main
         self.initDHT()
 
@@ -424,7 +468,11 @@ class Actions:
         ws = websocket.create_connection(ws_address)
         return ws
 
-    def sitePublish(self, address, peer_ip=None, peer_port=15441, inner_path="content.json", recursive=False):
+    def sitePublish(self, address, peer_ip=None, peer_port=15441, inner_path="content.json", recursive=False,
+                     p2p=False):
+        if p2p:
+            return self._runP2PAction("sitePublish", address=address, inner_path=inner_path, enable_dht=config.dht)
+
         from Site import SiteManager
         logging.info("Loading site...")
         site = SiteManager.site_manager.get(address)

@@ -15,8 +15,33 @@ import urllib.request
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]  # .../zeronet-conservancy
 ZERONET_PY = REPO_ROOT / "zeronet.py"
+REPO_SRC = pathlib.Path(__file__).resolve().parents[1]  # .../src
 
 RUNNING_ON_RE = re.compile(r"Running on http://([\d.]+):(\d+)")
+
+
+def _createP2PSite(data_dir: pathlib.Path) -> dict:
+    """python -m P2P actions siteCreate -- a P2P-native site, listed in
+    the data_dir/sites.json P2P.SiteManager itself reads (the legacy
+    Actions.siteCreate() writes sites.json to a different location, so a
+    legacy-created site wouldn't be visible to a --p2p CLI action against
+    the same --data-dir; not a bug, just the two stacks' storage layouts
+    not lining up, same "clean break" already accepted for the wire
+    protocol)."""
+    res = subprocess.run(
+        [sys.executable, "-m", "P2P", "actions", "siteCreate", "--data-dir", str(data_dir), "--kwargs", "{}"],
+        cwd=str(REPO_SRC), capture_output=True, text=True, timeout=30,
+    )
+    assert res.returncode == 0, res.stderr
+    import json
+    return json.loads(res.stdout)
+
+
+def _runZeronetPy(args, timeout=30):
+    return subprocess.run(
+        [sys.executable, str(ZERONET_PY)] + args,
+        cwd=str(REPO_ROOT), capture_output=True, text=True, timeout=timeout,
+    )
 
 
 def _waitForBoundUiPort(log_path: pathlib.Path, deadline: float) -> tuple[str, int]:
@@ -108,3 +133,49 @@ class TestZeronetP2PEntrypoint:
 
         assert "[P2P.PluginManager] Loading plugin: ContentFilter" in log_text
         assert "[P2P.PluginManager] Loading plugin: Zeroname" in log_text
+
+
+class TestZeronetP2PCliActions:
+    """Beyond `main`, several one-shot CLI actions also gained a --p2p
+    flag (Actions._runP2PAction()) delegating to P2P.actions.Actions
+    instead of the legacy gevent implementation. Real subprocesses
+    against a real P2P-native site (see _createP2PSite()'s own
+    docstring for why it has to be P2P-created, not legacy-created)."""
+
+    def testSiteVerifyWithP2PFlag(self):
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            site = _createP2PSite(data_dir)
+
+            res = _runZeronetPy([
+                "--data-dir", str(data_dir), "--batch", "siteVerify", site["address"], "--p2p",
+            ])
+
+        assert res.returncode == 0, res.stderr
+        assert "bad_files" in res.stdout
+        assert "'bad_files': []" in res.stdout
+
+    def testSiteSignWithP2PFlag(self):
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            site = _createP2PSite(data_dir)
+
+            res = _runZeronetPy([
+                "--data-dir", str(data_dir), "--batch", "siteSign",
+                site["address"], site["privatekey"], "--p2p",
+            ])
+
+        assert res.returncode == 0, res.stderr
+        assert "Site signed!" in res.stdout
+
+    def testDbRebuildWithP2PFlag(self):
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            site = _createP2PSite(data_dir)
+
+            res = _runZeronetPy([
+                "--data-dir", str(data_dir), "--batch", "dbRebuild", site["address"], "--p2p",
+            ])
+
+        assert res.returncode == 0, res.stderr
+        assert "Done." in res.stdout

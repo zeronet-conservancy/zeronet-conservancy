@@ -276,10 +276,12 @@ class Config:
         action = self.subparsers.add_parser("siteNeedFile", help='Get a file from site')
         action.add_argument('address', help='Site address')
         action.add_argument('inner_path', help='File inner path')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # SiteDownload
         action = self.subparsers.add_parser("siteDownload", help='Download a new site')
         action.add_argument('address', help='Site address')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # SiteSign
         action = self.subparsers.add_parser("siteSign", help='Update and sign content.json: address [privatekey]')
@@ -289,6 +291,7 @@ class Config:
                             default="content.json", metavar="inner_path")
         action.add_argument('--remove-missing_optional', help='Remove optional files that is not present in the directory', action='store_true')
         action.add_argument('--publish', help='Publish site after the signing', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # SitePublish
         action = self.subparsers.add_parser("sitePublish", help='Publish site to other peers: address')
@@ -301,10 +304,12 @@ class Config:
                             default="content.json", metavar="inner_path")
         action.add_argument('--recursive', help="Whether to publish all of site's content.json. "
                             "Overrides --inner-path. (default: false)", action='store_true', dest='recursive')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # SiteVerify
         action = self.subparsers.add_parser("siteVerify", help='Verify site files using sha512: address')
         action.add_argument('address', help='Site to verify')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # SiteCmd
         action = self.subparsers.add_parser("siteCmd", help='Execute a ZeroFrame API command on a site')
@@ -319,11 +324,13 @@ class Config:
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
         action.add_argument('address', help='Site to rebuild')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # dbQuery
         action = self.subparsers.add_parser("dbQuery", help='Query site sql cache')
         action.add_argument('address', help='Site to query')
         action.add_argument('query', help='Sql query')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # PeerPing
         action = self.subparsers.add_parser("peerPing", help='Send Ping command to peer')
