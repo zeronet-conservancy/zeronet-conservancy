@@ -45,6 +45,10 @@ src/Test/testdata/key-rsa.pem
 src/Test/testdata/sites.json
 src/Test/testdata/filters.json
 src/Test/testdata/users.json
+src/Test/testdata/*.db-shm
+src/Test/testdata/*.db-wal
+src/Test/testdata/1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT/
+src/Test/testdata-temp/
 
 # Enabled plugins that disabled by default
 plugins/Bootstrapper

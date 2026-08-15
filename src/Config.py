@@ -261,6 +261,11 @@ class Config:
 
         # Main
         action = self.subparsers.add_parser("main", help='Start UiServer and FileServer (default)')
+        action.add_argument(
+            '--p2p', help='Run the new trio/libp2p-native stack (P2P/app.py) instead of the legacy '
+            'gevent server -- experimental, does not yet load plugins/ or support Multiuser/UiPassword',
+            action='store_true'
+        )
 
         # SiteCreate
         action = self.subparsers.add_parser("siteCreate", help='Create a new site')

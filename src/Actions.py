@@ -30,7 +30,10 @@ class Actions:
             main.dht_server = None
 
     # Default action: Start serving UiServer and FileServer
-    def main(self):
+    def main(self, p2p=False):
+        if p2p:
+            return self.mainP2P()
+
         import main
         from File import FileServer
         from Ui import UiServer
@@ -76,6 +79,52 @@ class Actions:
             gevent.killall(launched_greenlets, exception=KeyboardInterrupt)
 
         logging.info("All server stopped")
+
+    def mainP2P(self):
+        """Phase 10 cutover, first slice: run the trio-native P2P stack
+        (P2P/app.py's App) through the real, official entrypoint --
+        `zeronet.py main --p2p` -- instead of only via the standalone
+        `python -m P2P app` launcher. Opt-in via --p2p rather than
+        replacing `main`'s default behavior outright: the P2P stack
+        doesn't yet load the legacy plugins/ ecosystem (a genuinely
+        different, non-overlapping plugin system -- see
+        P2P/plugins/__init__.py), has no Multiuser/UiPassword equivalent,
+        and Tor is control-port-only (no SOCKS5 dial-out yet, see
+        P2P/Tor.py's own docstring) -- a silent default-behavior swap
+        would be a real regression for anyone relying on those. This
+        makes the new stack reachable from the actual shipped entrypoint
+        for the first time, without changing what existing invocations
+        of `zeronet.py main` do.
+
+        Runs via P2P.compat.run(), the same bracketed-monkey-patch-
+        restoration helper every P2P test uses -- main.py already
+        gevent.monkey.patch_all()'d before Actions.call() ever runs, and
+        this is one long trio.run() for the server's entire lifetime, so
+        the same "restore real sockets around this one call" pattern
+        applies directly. See P2P/compat.py's own docstring for why this
+        is necessary and why it's safe here specifically.
+        """
+        from P2P import compat
+        from P2P.PluginManager import plugin_manager as p2p_plugin_manager
+        p2p_plugin_manager.loadPlugins()  # Must happen before P2P.app's own
+        # `from .SiteManager import SiteManager` import below decorates it --
+        # see P2P.PluginManager's own docstring on this ordering requirement.
+        from P2P.app import App
+
+        async def _run():
+            app = App(
+                config.data_dir,
+                tcp_port=config.fileserver_port,
+                ui_host=config.ui_ip,
+                ui_port=config.ui_port,
+                enable_dht=config.dht,
+                enable_tor=(config.tor != "disable"),
+            )
+            await app.loadSites()
+            await app.loadUsers()
+            await app.run()  # Logs its own "P2P app running: peer_id=..." once bound
+
+        compat.run(_run)
 
     # Site commands
 
