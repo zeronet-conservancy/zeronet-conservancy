@@ -96,11 +96,12 @@ def _guessContentType(inner_path: str) -> str:
 
 class UiApp:
     def __init__(self, sites: dict, allowed_hosts: list | None = None, site_manager=None, user_manager=None,
-                 file_server=None):
+                 file_server=None, announcers: dict | None = None):
         self.sites = sites  # site address -> P2P.Site
         self.site_manager = site_manager  # P2P.SiteManager, for siteAdd/siteDelete/sitePause/siteResume/siteList
         self.user_manager = user_manager  # P2P.UserManager, for cert*/user* commands
         self.file_server = file_server  # P2P.FileServer, for sitePublish's peer push
+        self.announcers = announcers  # site address -> P2P.SiteAnnouncer, for announcerInfo
         self.wrapper_nonces: list = []
 
         routes = [
@@ -191,10 +192,10 @@ class UiApp:
 
 class UiServer:
     def __init__(self, sites: dict, host: str = "127.0.0.1", port: int = 0, allowed_hosts: list | None = None,
-                 site_manager=None, user_manager=None, file_server=None):
+                 site_manager=None, user_manager=None, file_server=None, announcers: dict | None = None):
         self.app = UiApp(
             sites, allowed_hosts=allowed_hosts, site_manager=site_manager, user_manager=user_manager,
-            file_server=file_server,
+            file_server=file_server, announcers=announcers,
         )
         self._host = host
         self._port = port

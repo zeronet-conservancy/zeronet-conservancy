@@ -43,6 +43,12 @@ class TrackerStats:
     def get(self, tracker: str) -> dict:
         return dict(self._entry(tracker))
 
+    def all(self) -> dict:
+        """Every tracker's stats dict, for reporting (e.g. an
+        announcerInfo/announcerStats-style command) rather than a single
+        reliability decision."""
+        return {tracker: dict(entry) for tracker, entry in self._stats.items()}
+
     def isReliable(self, tracker: str, force: bool = False) -> bool:
         """False if this tracker has errored enough recently that it should
         be skipped this round (unless force=True)."""

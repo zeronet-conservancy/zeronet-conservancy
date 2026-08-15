@@ -54,3 +54,16 @@ class TestP2PTracker:
             stats.recordError(tracker, Exception("no route"), has_internet=False)
         assert stats.get(tracker)["num_error"] == 0
         assert stats.isReliable(tracker) is True
+
+    def testAllReturnsEveryTrackerIndependently(self):
+        stats = TrackerStats()
+        stats.recordRequest("http://a.example.com")
+        stats.recordSuccess("http://a.example.com")
+        stats.recordRequest("http://b.example.com")
+
+        all_stats = stats.all()
+        assert set(all_stats.keys()) == {"http://a.example.com", "http://b.example.com"}
+        assert all_stats["http://a.example.com"]["num_success"] == 1
+        # Mutating the returned dict must not affect internal state
+        all_stats["http://a.example.com"]["num_success"] = 999
+        assert stats.get("http://a.example.com")["num_success"] == 1

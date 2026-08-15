@@ -34,6 +34,22 @@ file_server configured (file_server=None, e.g. a UiServer built without
 one), sitePublish still signs and marks serving, just doesn't push --
 same graceful degradation as before this file_server wiring landed.
 
+A third pass adds serverInfo, announcerInfo, and siteListModifiedFiles.
+serverInfo is deliberately narrower than the original -- only fields
+genuinely available from what's threaded into UiApp (peer_id, listen
+addrs, site count from file_server), no port_opened/tor/version/config
+fingerprinting, since none of that exists in this stack yet.
+announcerInfo needs UiApp's new `announcers` reference (site address ->
+P2P.SiteAnnouncer, same threading pattern as file_server/site_manager/
+user_manager -- P2P/app.py already owns this dict) and
+TrackerStats.all() (a small new accessor on discovery/tracker.py's
+TrackerStats, alongside its existing per-tracker get()).
+siteListModifiedFiles skips the original's site.settings["cache"]-backed
+"only recheck since last signed" shortcut (that settings dict doesn't
+exist in this stack -- see P2P.SiteManager's own docstring) and always
+walks every listed file; still capped at 100 files, same as the
+original, so this stays cheap for the sizes this stack deals with.
+
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
   - certSelect -- the original builds an HTML "select account" dialog and
@@ -43,14 +59,18 @@ Still NOT ported, because the thing they need doesn't exist in this stack
     command handler. certAdd/certSet/certList (the actual cert data
     operations certSelect wraps) are ported.
   - siteClone, siteFavourite/siteUnfavourite (needs a "dashboard" site
-    concept not modeled here), announcerStats, serverInfo (needs
-    FileServer/Host details -- ports, external IP, peer_id -- that aren't
-    passed into UiApp), serverUpdate/serverShutdown/configSet (need the
-    global `main` module server handles this package deliberately has no
-    equivalent of -- see P2P/app.py's own module docstring), siteCmd's
-    server-side counterpart siteListModifiedFiles, dbRebuild (CLI-only,
-    via P2P/actions.py -- a destructive full-rebuild isn't a great fit
-    for an unauthenticated-beyond-wrapper_key websocket command either).
+    concept not modeled here), announcerStats (the ALL-sites admin
+    aggregation, as opposed to announcerInfo's per-site report -- the
+    original filters by self.site.announcer.getTrackers(), which is
+    always [] in this stack's core with no tracker plugins registered
+    yet, so a faithful port would always return {}; not worth the extra
+    surface for something that can't do anything until a tracker plugin
+    exists), serverUpdate/serverShutdown/configSet (need the global
+    `main` module server handles this package deliberately has no
+    equivalent of -- see P2P/app.py's own module docstring), dbRebuild
+    (CLI-only, via P2P/actions.py -- a destructive full-rebuild isn't a
+    great fit for an unauthenticated-beyond-wrapper_key websocket
+    command either).
   - The original's channel *events* (site.websockets iteration pushing
     "setSiteInfo"/etc. to other joined connections on change) -- channelJoin
     here only tracks per-session membership, since nothing in this stack
@@ -70,7 +90,9 @@ in the original too.)
 import base64
 import os
 import stat
+import sys
 
+from ..ContentManager import _getDirname
 from .UiServer import command
 
 
@@ -463,3 +485,71 @@ async def _cmdDbQuery(session, params):
     except Exception as err:
         return {"error": str(err)}
     return [dict(row) for row in res.fetchall()]
+
+
+# -- Server / announcer info, listing modified files --
+
+@command("serverInfo")
+async def _cmdServerInfo(session, params):
+    """Deliberately narrower than the original's actionServerInfo(): only
+    fields genuinely available from what's threaded into UiApp (no
+    port_opened/tor/version/config fingerprinting -- none of that exists
+    in this stack yet)."""
+    info = {"platform": sys.platform}
+    file_server = getattr(session.app, "file_server", None)
+    if file_server is not None:
+        info["peer_id"] = file_server.host.peer_id.to_base58()
+        info["addrs"] = [str(addr) for addr in file_server.host.get_addrs()]
+        info["sites"] = len(file_server.sites)
+    return info
+
+
+@command("announcerInfo")
+async def _cmdAnnouncerInfo(session, params):
+    site = _requireSite(session)
+    announcers = getattr(session.app, "announcers", None)
+    announcer = announcers.get(site.address) if announcers else None
+    stats = announcer.stats.all() if announcer else {}
+    return {"address": site.address, "stats": stats}
+
+
+@command("siteListModifiedFiles")
+async def _cmdSiteListModifiedFiles(session, params):
+    """Narrower than the original: no site.settings["cache"]-backed
+    "only recheck since last signed" shortcut (that settings dict doesn't
+    exist here -- see P2P.SiteManager's own docstring on why), so this
+    always walks every file content.json lists. Fine for the sizes this
+    stack deals with (still capped at 100 files, same as the original)."""
+    site = _requireSite(session)
+    content_inner_path = _param(params, "content_inner_path", 0, "content.json")
+    content = site.content_manager.contents.get(content_inner_path)
+    if not content:
+        return {"error": "content file not available"}
+
+    min_mtime = content.get("modified", 0)
+    content_dir = _getDirname(content_inner_path)
+    inner_paths = [content_inner_path] + list(content.get("includes", {}).keys()) + list(content.get("files", {}).keys())
+    if len(inner_paths) > 100:
+        return {"error": "Too many files in content.json"}
+
+    modified_files = []
+    for relative_inner_path in inner_paths:
+        inner_path = content_dir + relative_inner_path
+        try:
+            mtime = os.path.getmtime(site.storage.getPath(inner_path))
+        except OSError:
+            modified_files.append(inner_path)  # Listed but missing on disk -- treat as needing attention
+            continue
+
+        if mtime <= min_mtime + 1:
+            continue  # Not touched since this content.json was signed
+
+        if inner_path.endswith("content.json"):
+            modified_files.append(inner_path)
+        else:
+            file_info = content.get("files", {}).get(relative_inner_path)
+            same_size = file_info and site.storage.getSize(inner_path) == file_info.get("size")
+            if not same_size:  # Cheap skip on size match -- same heuristic WorkerManager.syncSite() uses
+                modified_files.append(inner_path)
+
+    return {"modified_files": modified_files}

@@ -335,3 +335,121 @@ class TestP2PUiCommandsDbQuery:
 
         reply = compat.run(scenario)
         assert "error" in reply["result"]
+
+
+class TestP2PUiCommandsServerAndAnnouncerInfo:
+    def testServerInfoReportsRealFileServerDetails(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as dc, tempfile.TemporaryDirectory() as dp2p:
+                from P2P.FileServer import FileServer
+
+                address = "1TestServerInfoSiteAAAAAAAAA"
+                site = Site(address, pathlib.Path(dc))
+                file_server = FileServer(pathlib.Path(dp2p), ws_port=None)
+                file_server.addSite(site)
+
+                server = UiServer(sites={address: site}, file_server=file_server)
+                async with file_server.run(), server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        reply = await _call(ws, "serverInfo")
+                        return reply, file_server.host.peer_id.to_base58()
+
+        reply, expected_peer_id = compat.run(scenario)
+        result = reply["result"]
+        assert result["peer_id"] == expected_peer_id
+        assert len(result["addrs"]) > 0
+        assert result["sites"] == 1
+
+    def testServerInfoWithoutFileServerOmitsThoseFields(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestServerInfoNoFsSiteAAAAA"
+                site = Site(address, pathlib.Path(d))
+                server = UiServer(sites={address: site})  # No file_server
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "serverInfo")
+
+        reply = compat.run(scenario)
+        assert "peer_id" not in reply["result"]
+        assert "platform" in reply["result"]
+
+    def testAnnouncerInfoReportsRealTrackerStats(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.SiteAnnouncer import SiteAnnouncer
+
+                address = "1TestAnnouncerInfoSiteAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                announcer = SiteAnnouncer(site, file_server=None)
+                announcer.stats.recordRequest("http://tracker.example.com")
+                announcer.stats.recordSuccess("http://tracker.example.com")
+
+                server = UiServer(sites={address: site}, announcers={address: announcer})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "announcerInfo")
+
+        reply = compat.run(scenario)
+        result = reply["result"]
+        assert result["address"] == "1TestAnnouncerInfoSiteAAAAAA"
+        assert result["stats"]["http://tracker.example.com"]["num_success"] == 1
+
+    def testAnnouncerInfoWithoutAnnouncerReturnsEmptyStats(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestNoAnnouncerSiteAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                server = UiServer(sites={address: site})  # No announcers dict
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "announcerInfo")
+
+        reply = compat.run(scenario)
+        assert reply["result"]["stats"] == {}
+
+
+class TestP2PUiCommandsSiteListModifiedFiles:
+    def testDetectsSizeChangedFileAndSkipsUnchanged(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestModifiedFilesSiteAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                site.permissions = ["ADMIN"]
+
+                await site.storage.write("changed.txt", b"original")
+                await site.storage.write("unchanged.txt", b"same size")
+                content = {
+                    "modified": 1,  # Far in the past -- both files' mtimes are "newer"
+                    "files": {
+                        "changed.txt": {"size": len(b"original")},
+                        "unchanged.txt": {"size": len(b"same size")},
+                    },
+                }
+                site.content_manager.contents["content.json"] = content
+
+                # Now actually change changed.txt's size (unchanged.txt stays put)
+                await site.storage.write("changed.txt", b"a completely different, longer body")
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "siteListModifiedFiles")
+
+        reply = compat.run(scenario)
+        modified = reply["result"]["modified_files"]
+        assert "changed.txt" in modified
+        assert "unchanged.txt" not in modified
+
+    def testMissingContentJsonReturnsError(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestNoContentSiteAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "siteListModifiedFiles")
+
+        reply = compat.run(scenario)
+        assert "error" in reply["result"]
