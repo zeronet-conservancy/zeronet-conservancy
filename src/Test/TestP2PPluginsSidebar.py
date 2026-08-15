@@ -1,7 +1,10 @@
 import json
+import logging
 import pathlib
 import tempfile
+import uuid
 
+import trio
 import trio_websocket
 
 # Import side effect: registers this plugin's commands. No special
@@ -95,6 +98,95 @@ class TestP2PPluginsSidebar:
                             return await _call(ws, "consoleLogRead")
                 finally:
                     config.log_dir = original_log_dir
+
+        reply = compat.run(scenario)
+        assert "error" in reply
+
+    def testConsoleLogStreamPushesMatchingLines(self):
+        marker = uuid.uuid4().hex
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestSidebarSite4AAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                site.permissions.append("ADMIN")
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        stream_reply = await _call(ws, "consoleLogStream", {"filter": marker}, msg_id=1)
+                        stream_id = stream_reply["result"]["stream_id"]
+
+                        logging.getLogger("Test.Sidebar").info("hello %s", marker)
+
+                        push = json.loads(await ws.get_message())
+                        return stream_id, push
+
+        stream_id, push = compat.run(scenario)
+        assert push["cmd"] == "logLineAdd"
+        assert push["params"]["stream_id"] == stream_id
+        assert marker in push["params"]["lines"][0]
+
+    def testConsoleLogStreamDropsNonMatchingLines(self):
+        marker = uuid.uuid4().hex
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestSidebarSite5AAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                site.permissions.append("ADMIN")
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        await _call(ws, "consoleLogStream", {"filter": marker}, msg_id=1)
+
+                        logging.getLogger("Test.Sidebar").info("unrelated line, no marker here")
+
+                        with trio.move_on_after(0.3) as cancel_scope:
+                            await ws.get_message()
+                        return cancel_scope.cancelled_caught
+
+        timed_out = compat.run(scenario)
+        assert timed_out is True  # No push arrived -- the filter correctly dropped it
+
+    def testConsoleLogStreamRemoveStopsFurtherPushes(self):
+        marker = uuid.uuid4().hex
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestSidebarSite6AAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                site.permissions.append("ADMIN")
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        stream_reply = await _call(ws, "consoleLogStream", {"filter": marker}, msg_id=1)
+                        stream_id = stream_reply["result"]["stream_id"]
+
+                        remove_reply = await _call(ws, "consoleLogStreamRemove", {"stream_id": stream_id}, msg_id=2)
+
+                        logging.getLogger("Test.Sidebar").info("hello %s", marker)
+
+                        with trio.move_on_after(0.3) as cancel_scope:
+                            await ws.get_message()
+                        return remove_reply, cancel_scope.cancelled_caught
+
+        remove_reply, timed_out = compat.run(scenario)
+        assert remove_reply["result"] == "ok"
+        assert timed_out is True  # Removed before the log call -- no push should arrive
+
+    def testConsoleLogStreamRequiresAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestSidebarSite7AAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))  # No ADMIN permission
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "consoleLogStream")
 
         reply = compat.run(scenario)
         assert "error" in reply

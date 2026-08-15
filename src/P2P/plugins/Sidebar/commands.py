@@ -1,26 +1,39 @@
 """Trio port of a scoped slice of plugins/Sidebar/ConsolePlugin.py --
-just consoleLogRead, a one-shot tail of the debug log file. Same
+consoleLogRead, consoleLogStream, and consoleLogStreamRemove. Same
 "add new websocket commands" pattern P2P/plugins/CryptMessage and
 P2P/plugins/Newsfeed established -- see CryptMessage's own module
 docstring for why no special import-ordering is needed for this.
 
-Deliberately NOT ported: consoleLogStream/consoleLogStreamRemove --
-the original streams new log lines to the client unprompted, by
-registering a logging.Handler that calls ui_websocket.cmd(...) whenever
-a new record is emitted. That's a server-initiated push to an arbitrary,
-already-connected session outside of any request/response cycle --
-UiApp/UiSession here have no such mechanism (every other command is a
-plain request-in, response-out handler). Building that push path is a
-real, separate piece of infrastructure, not a small addition on top of
-what's here.
+consoleLogStream/consoleLogStreamRemove are the first commands in this
+stack to use UiSession.push()/UiSession.nursery -- see UiServer.py's own
+module docstring for that infrastructure. A logging.Handler registered
+process-wide calls session.push() synchronously from inside emit()
+(push() never awaits, so this is safe from a plain callback); the handler
+itself lives inside a background task spawned on session.nursery via
+nursery.start(), which blocks until the handler is actually registered
+before consoleLogStream returns its response -- matching the original's
+own synchronous addLogStreamer() call before responding, so no log lines
+between response and next log call are lost. The stream_id the original
+reused from the request's own message `to` isn't available to a plain
+(session, params) handler here, so a random one is minted instead and
+returned in the response; consoleLogStreamRemove takes it back to cancel
+just that one background task via a stashed trio.CancelScope in
+session.state, without touching the rest of the connection. Disconnecting
+without an explicit consoleLogStreamRemove still cleans up correctly --
+closing the connection cancels session.nursery, which cancels every
+background task it holds, including any live log streams.
 
-Also not ported: the rest of plugins/Sidebar/SidebarPlugin.py (HTML
+Still NOT ported: the rest of plugins/Sidebar/SidebarPlugin.py (HTML
 sidebar tag rendering, peer info panels, owned-site/privatekey
 management, DB reload/rebuild) -- a much larger surface, out of scope
 for this pass, which is specifically about proving simple new-command
 plugins keep landing cleanly.
 """
+import logging
 import re
+import uuid
+
+import trio
 
 from Config import config
 from util import SafeRe
@@ -72,3 +85,66 @@ async def _cmdConsoleLogRead(session, params):
         lines = lines[-limit:]
 
         return {"lines": lines, "pos_end": log_file.tell(), "pos_start": pos_start, "num_found": num_found}
+
+
+class _WsLogStreamer(logging.Handler):
+    def __init__(self, session, stream_id, filter_pattern):
+        super().__init__()
+        self.session = session
+        self.stream_id = stream_id
+        self.filter_re = None
+        if filter_pattern:
+            SafeRe.guard(filter_pattern)
+            self.filter_re = re.compile(".*" + filter_pattern)
+        self.setFormatter(logging.Formatter("[%(asctime)s] %(levelname)-8s %(name)s %(message)s"))
+
+    def emit(self, record):
+        try:
+            line = self.format(record)
+        except Exception:
+            return
+        if self.filter_re and not self.filter_re.match(line):
+            return
+        self.session.push("logLineAdd", {"stream_id": self.stream_id, "lines": [line]})
+
+
+async def _runLogStream(session, stream_id, filter_pattern, cancel_scope, streamers,
+                         *, task_status=trio.TASK_STATUS_IGNORED):
+    handler = _WsLogStreamer(session, stream_id, filter_pattern)
+    root_logger = logging.getLogger("")
+    with cancel_scope:
+        root_logger.addHandler(handler)
+        task_status.started()
+        try:
+            await trio.sleep_forever()
+        finally:
+            root_logger.removeHandler(handler)
+    streamers.pop(stream_id, None)
+
+
+@command("consoleLogStream")
+async def _cmdConsoleLogStream(session, params):
+    _requireAdmin(session)
+    if session.nursery is None:
+        raise CommandError("This session has no background task nursery")
+
+    filter_pattern = _param(params, "filter", 0)
+    stream_id = uuid.uuid4().hex
+    cancel_scope = trio.CancelScope()
+    streamers = session.state.setdefault("log_streamers", {})
+    streamers[stream_id] = cancel_scope
+
+    await session.nursery.start(_runLogStream, session, stream_id, filter_pattern, cancel_scope, streamers)
+    return {"stream_id": stream_id}
+
+
+@command("consoleLogStreamRemove")
+async def _cmdConsoleLogStreamRemove(session, params):
+    _requireAdmin(session)
+    stream_id = _param(params, "stream_id", 0)
+    streamers = session.state.get("log_streamers", {})
+    cancel_scope = streamers.pop(stream_id, None)
+    if cancel_scope is None:
+        return {"error": "Unknown stream_id"}
+    cancel_scope.cancel()
+    return "ok"

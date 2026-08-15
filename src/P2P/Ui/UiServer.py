@@ -34,6 +34,26 @@ still NOT ported: auth/cookies (wrapper_key alone gates nothing beyond
 site *selection* here, unlike the original's full nonce/cookie session
 model), UiMedia's dynamic pieces (this mounts the static assets directory,
 not the original's more elaborate content-negotiation for it).
+
+Server push (added alongside the Sidebar plugin's consoleLogStream):
+every command handler up to this point was plain request-in/response-out,
+so `UiSession.push()` fills the gap the original's `ui_websocket.cmd()`
+covered -- sending a message to an already-connected client outside any
+request/response cycle. All outbound traffic for a connection, both real
+responses and pushes, now funnels through one per-session trio memory
+channel drained by a single writer task, so concurrent senders (the
+reader loop answering a request, a background task pushing) never
+interleave writes on the same websocket. `UiSession.nursery` is the
+same nursery the connection's reader/writer loops run in, exposed so a
+command handler can spawn a background task (e.g. a logging.Handler
+that streams new log lines) that outlives its own single request/response
+turn -- it's cancelled automatically when the connection closes, since
+closing tears down that whole nursery. `UiSession.state`, a plain dict,
+is scratch space for a plugin's own per-connection bookkeeping (e.g.
+stream_id -> cancel scope, so a specific background push task can be
+torn down early without closing the whole connection) -- deliberately
+generic here rather than something like Sidebar's own log_streamers
+dict living in the core session class.
 """
 import json
 import pathlib
@@ -80,6 +100,23 @@ class UiSession:
         self.app = app
         self.site = site
         self.channels: list = []
+        self.state: dict = {}  # Scratch space for a plugin's own per-connection bookkeeping
+        self.nursery: trio.Nursery | None = None  # Set once the connection's loops start
+        self._send_channel, self._recv_channel = trio.open_memory_channel(256)
+
+    def push(self, cmd: str, params=None) -> None:
+        """Queue an unprompted message to this session's client, outside
+        any request/response cycle (e.g. a background log-streaming
+        task). Fire-and-forget and non-blocking, matching the original
+        stack's own best-effort ui_websocket.cmd() semantics: if the
+        session's outbound queue is full or the connection has already
+        closed, the push is silently dropped rather than blocking or
+        raising. Safe to call from a synchronous context too (e.g. a
+        logging.Handler.emit()), since it never awaits."""
+        try:
+            self._send_channel.send_nowait({"cmd": cmd, "params": params or {}})
+        except (trio.WouldBlock, trio.BrokenResourceError, trio.ClosedResourceError):
+            pass
 
 
 def _guessContentType(inner_path: str) -> str:
@@ -103,6 +140,7 @@ class UiApp:
         self.file_server = file_server  # P2P.FileServer, for sitePublish's peer push
         self.announcers = announcers  # site address -> P2P.SiteAnnouncer, for announcerInfo
         self.wrapper_nonces: list = []
+        self.sessions: set["UiSession"] = set()
 
         routes = [
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
@@ -160,17 +198,33 @@ class UiApp:
         wrapper_key = websocket.query_params.get("wrapper_key")
         site = self._resolveSiteByWrapperKey(wrapper_key) if wrapper_key else None
         session = UiSession(self, site=site)
+        self.sessions.add(session)
         try:
-            while True:
-                raw = await websocket.receive_text()
+            async with trio.open_nursery() as nursery:
+                session.nursery = nursery
+                nursery.start_soon(self._writeLoop, websocket, session)
                 try:
-                    request = json.loads(raw)
-                except (ValueError, TypeError):
-                    continue
-                response = await self._handleCommand(session, request)
-                await websocket.send_text(json.dumps(response))
-        except WebSocketDisconnect:
-            return
+                    while True:
+                        raw = await websocket.receive_text()
+                        try:
+                            request = json.loads(raw)
+                        except (ValueError, TypeError):
+                            continue
+                        response = await self._handleCommand(session, request)
+                        session._send_channel.send_nowait(response)
+                except WebSocketDisconnect:
+                    pass
+                finally:
+                    # Tear down the write loop and any background push tasks
+                    # a command spawned on session.nursery (e.g. Sidebar's
+                    # consoleLogStream) -- nobody's listening past this point.
+                    nursery.cancel_scope.cancel()
+        finally:
+            self.sessions.discard(session)
+
+    async def _writeLoop(self, websocket: WebSocket, session: "UiSession") -> None:
+        async for message in session._recv_channel:
+            await websocket.send_text(json.dumps(message))
 
     def _resolveSiteByWrapperKey(self, wrapper_key: str):
         for site in self.sites.values():
