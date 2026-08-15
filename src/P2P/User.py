@@ -26,6 +26,12 @@ util.Noparallel(queue=True) decorator -- same intent (concurrent save()
 calls don't race and clobber each other's read-modify-write of the
 shared users.json), simpler mechanism for a single serialized critical
 section.
+
+@acceptPlugins (Phase 8) marks this as pluggable, same treatment as
+P2P.SiteManager/P2P.SiteAnnouncer -- e.g. a CryptMessage-equivalent
+plugin's registerTo("User") extension (getEncryptPrivatekey/
+getEncryptPublickey) could attach here. Safe, no-op change on its own:
+see PluginManager.py's own docstring for the ordering requirement.
 """
 import json
 import logging
@@ -36,6 +42,8 @@ import trio
 
 from Crypt import CryptBitcoin
 
+from .PluginManager import acceptPlugins
+
 
 def _atomicWriteJson(path, data) -> None:
     tmp_path = path.with_suffix(path.suffix + ".tmp")
@@ -43,6 +51,7 @@ def _atomicWriteJson(path, data) -> None:
     os.replace(tmp_path, path)
 
 
+@acceptPlugins
 class User:
     def __init__(self, users_json_path, master_address: str | None = None, master_seed: str | None = None, data: dict | None = None):
         data = data or {}
