@@ -46,13 +46,13 @@ class FileServer:
         site = self.sites.get(site_address)
         if site is None:
             return []
-        peers = site.getConnectablePeers(need_num=limit, ignore=list(exclude))
-        return [{"ip": peer.ip, "port": peer.port} for peer in peers]
+        peers = site.getConnectablePeers(need_num=limit, exclude=exclude)
+        return [{"peer_id": peer.peer_id.to_base58(), "ip": peer.ip, "port": peer.port} for peer in peers]
 
-    def _onPeerReceived(self, site_address: str, ip: str, port: int) -> None:
+    def _onPeerReceived(self, site_address: str, peer_id, ip: str, port: int) -> None:
         site = self.sites.get(site_address)
         if site is not None:
-            site.addPeer(ip, port, source="pex")
+            site.addPeer(peer_id, ip, port, source="pex")
 
     def addSite(self, site) -> None:
         self.sites[site.address] = site

@@ -1,6 +1,8 @@
 import pathlib
 import tempfile
 
+from libp2p.crypto.ed25519 import create_new_key_pair
+from libp2p.peer.id import ID
 from libp2p.peer.peerinfo import PeerInfo
 
 from P2P.Host import Host
@@ -88,11 +90,15 @@ class TestP2PPeer:
         assert compat.run(scenario) == content
 
     def testPex(self):
+        candidate_id = ID.from_pubkey(create_new_key_pair().public_key).to_base58()
+
         async def scenario():
             with tempfile.TemporaryDirectory() as da, tempfile.TemporaryDirectory() as db:
                 host_a = Host(pathlib.Path(da), ws_port=None)
                 host_b = Host(pathlib.Path(db), ws_port=None)
-                _make_router(host_a, known_peers_provider=lambda *a: [{"ip": "1.1.1.1", "port": 80}])
+                _make_router(host_a, known_peers_provider=lambda *a: [
+                    {"peer_id": candidate_id, "ip": "1.1.1.1", "port": 80}
+                ])
 
                 async with host_a.run(), host_b.run():
                     await host_b.connect(PeerInfo(host_a.peer_id, host_a.get_addrs()))
@@ -100,7 +106,7 @@ class TestP2PPeer:
                     peer = Peer(host_a.peer_id, host_b, policy)
                     return await peer.pex("1Site", [])
 
-        assert compat.run(scenario) == [{"ip": "1.1.1.1", "port": 80}]
+        assert compat.run(scenario) == [{"peer_id": candidate_id, "ip": "1.1.1.1", "port": 80}]
 
     def testSessionReusedAcrossCalls(self):
         async def scenario():
