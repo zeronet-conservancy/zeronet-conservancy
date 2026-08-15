@@ -66,3 +66,43 @@ class TestZeronetP2PEntrypoint:
 
         assert status in (200, 403, 404)  # Real HTTP response, whatever the route decides
         assert "P2P app running" in log_text
+
+    def testMainWithP2PFlagLoadsP2PPlugins(self):
+        """P2P/plugins/ (CryptMessage, Newsfeed, Sidebar, UiConfig,
+        ContentFilter, OptionalManager, Zeroname -- everything ported
+        this migration) has its own separate loader (P2P.PluginManager)
+        from the legacy plugins/ ecosystem (Plugin.PluginManager, which
+        main.py's own init() always loads regardless of --p2p). This is
+        the one that matters for the new stack: mainP2P() has to call it
+        before importing P2P.app, or none of those commands would be
+        registered -- see Actions.mainP2P()'s own docstring for why."""
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            log_path = data_dir / "stdout.log"
+
+            with open(log_path, "wb") as log_file:
+                proc = subprocess.Popen(
+                    [
+                        sys.executable, str(ZERONET_PY),
+                        "--data-dir", str(data_dir),
+                        "--ui-port", "0", "--fileserver-port", "0",
+                        "--no-dht", "--tor", "disable", "--batch",
+                        "--console-log-level", "DEBUG",
+                        "main", "--p2p",
+                    ],
+                    cwd=str(REPO_ROOT), stdout=log_file, stderr=subprocess.STDOUT,
+                )
+            try:
+                _waitForBoundUiPort(log_path, time.time() + 20)
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+
+            log_text = log_path.read_text(errors="replace")
+
+        assert "[P2P.PluginManager] Loading plugin: ContentFilter" in log_text
+        assert "[P2P.PluginManager] Loading plugin: Zeroname" in log_text
