@@ -11,6 +11,17 @@ getAddressParts from Phase 5) but a no-op until something registers a
 handler -- exactly like upstream with no plugins loaded. The working,
 built-in discovery paths are DHT (discovery/kaddht.py) and peer exchange
 (protocols/pex.py) -- both real here, not stubs.
+
+@acceptPlugins (Phase 8) marks this as the real plugin extension point
+that docstring paragraph above describes -- AnnounceShare/
+AnnounceBitTorrent-equivalent plugins can now actually attach via
+P2P.PluginManager.registerTo("SiteAnnouncer") once ported. Safe, no-op
+change on its own: with no plugins registered (the default today, since
+no plugin has been ported against this package yet), @acceptPlugins
+returns this class completely unchanged -- see PluginManager.py's own
+docstring for the ordering requirement (registerTo() has to run before
+this class is imported/decorated) that porting individual plugins will
+need to satisfy.
 """
 import random
 import time
@@ -18,6 +29,7 @@ import time
 from libp2p.peer.id import ID
 
 from .Peer import Peer
+from .PluginManager import acceptPlugins
 from .discovery.tracker import TrackerStats, getAddressParts, global_tracker_stats
 
 
@@ -25,6 +37,7 @@ class AnnounceError(Exception):
     pass
 
 
+@acceptPlugins
 class SiteAnnouncer:
     def __init__(self, site, file_server, dht_discovery=None):
         self.site = site
