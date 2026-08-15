@@ -9,7 +9,7 @@ import pytest
 
 from Crypt import CryptBitcoin, CryptHash
 from P2P.SiteStorage import SiteStorage
-from P2P.ContentManager import ContentManager, VerifyError
+from P2P.ContentManager import ContentManager, VerifyError, SignError
 from P2P import compat
 
 
@@ -428,3 +428,108 @@ class TestP2PContentManagerCertChain:
         parent_content = {"user_contents": {"permissions": {}}}
         with pytest.raises(ValueError):
             cm.getUserContentRules(parent_content, "data/users/1Someone/content.json", None)
+
+
+class TestP2PContentManagerSign:
+    def testSignCreatesVerifiableContentJson(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                storage = SiteStorage(pathlib.Path(d))
+                await storage.write("index.html", b"<h1>hello</h1>")
+                cm = ContentManager(storage, address)
+
+                new_content = await cm.sign(privatekey)
+                on_disk = await storage.loadJson("content.json")
+                return new_content, on_disk, cm
+
+        new_content, on_disk, cm = compat.run(scenario)
+        assert on_disk == new_content
+        assert "index.html" in new_content["files"]
+        assert new_content["files"]["index.html"]["size"] == len(b"<h1>hello</h1>")
+        assert new_content["address"] == cm.site_address
+        # Fresh ContentManager, re-verifying what got written -- proves
+        # sign() and verifyContentJson() actually agree with each other.
+        cm2 = ContentManager(storage=None, site_address=cm.site_address)
+        assert cm2.verifyContentJson(new_content) is True
+
+    def testSignSkipsContentJsonDotfilesAndBackups(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                storage = SiteStorage(pathlib.Path(d))
+                await storage.write("real.txt", b"keep me")
+                await storage.write(".hidden", b"skip me")
+                await storage.write("data.txt-old", b"skip me too")
+                cm = ContentManager(storage, address)
+                return await cm.sign(privatekey)
+
+        new_content = compat.run(scenario)
+        assert set(new_content["files"].keys()) == {"real.txt"}
+
+    def testSignWithWrongPrivatekeyRaisesSignError(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                owner_privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(owner_privatekey)
+                wrong_privatekey = CryptBitcoin.newPrivatekey()
+                storage = SiteStorage(pathlib.Path(d))
+                cm = ContentManager(storage, address)
+                try:
+                    await cm.sign(wrong_privatekey)
+                    return "no-error"
+                except SignError:
+                    return "raised"
+
+        assert compat.run(scenario) == "raised"
+
+    def testSignExtendMergesNewFieldsWithoutOverwritingExisting(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                storage = SiteStorage(pathlib.Path(d))
+                cm = ContentManager(storage, address)
+                first = await cm.sign(privatekey, extend={"description": "original"})
+                second = await cm.sign(privatekey, extend={"description": "ignored", "postmessage_nonce_security": True})
+                return first, second
+
+        first, second = compat.run(scenario)
+        assert first["description"] == "original"
+        # extend() only fills in missing keys -- an existing value survives re-signing
+        assert second["description"] == "original"
+        assert second["postmessage_nonce_security"] is True
+
+    def testSignPrivateSiteRefused(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                storage = SiteStorage(pathlib.Path(d))
+                await storage.writeJson("content.json", {"files": {}, "signs": {}, "private_recipients": ["someone"]})
+                cm = ContentManager(storage, address)
+                await cm.loadContent()
+                try:
+                    await cm.sign(privatekey)
+                    return "no-error"
+                except SignError:
+                    return "raised"
+
+        assert compat.run(scenario) == "raised"
+
+    def testSignWithFilewriteFalseDoesNotTouchDisk(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                storage = SiteStorage(pathlib.Path(d))
+                cm = ContentManager(storage, address)
+                new_content = await cm.sign(privatekey, filewrite=False)
+                return new_content, storage.isFile("content.json"), "content.json" in cm.contents
+
+        new_content, file_exists, in_contents = compat.run(scenario)
+        assert new_content["signs"]
+        assert file_exists is False
+        assert in_contents is False

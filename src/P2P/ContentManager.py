@@ -54,7 +54,16 @@ Phase 3's DbBackground.py). Same .get()/[] interface getFileInfo() needs;
 DB-backed caching is a separate, later concern. Likewise getTotalSize()
 here recomputes from self.contents rather than tracking an incremental
 running total on a settings dict that doesn't exist in this scoped model.
+
+sign()/hashFile()/hashFiles() add write-side support for case 1 only --
+root content.json, matching the read side's own root-vs-non-root split.
+Non-root signing (writing to a "user_contents" subdirectory under a cert)
+isn't ported, and private-site encryption (isPrivate()/wrapContent()/
+encryptFiles()) isn't either -- sign() refuses outright rather than
+silently producing an unencrypted content.json for a site that expects
+one. See sign()'s own docstring for the detail.
 """
+import io
 import json
 import re
 import time
@@ -64,6 +73,10 @@ from util import SafeRe
 
 
 class VerifyError(Exception):
+    pass
+
+
+class SignError(Exception):
     pass
 
 
@@ -475,3 +488,98 @@ class ContentManager:
                 continue
             back[content_inner_path] = modified
         return back
+
+    async def hashFile(self, file_relative_path: str) -> dict:
+        content_bytes = await self.storage.read(file_relative_path)
+        return {"sha512": CryptHash.sha512sum(io.BytesIO(content_bytes)), "size": len(content_bytes)}
+
+    async def hashFiles(self, ignore_pattern=None) -> dict:
+        """Hashes every real file under storage into a files_node dict.
+        Root-content.json signing scope only, see sign()'s docstring:
+        no optional-files distinction (files_optional_node), no hashfield
+        bookkeeping (optionalDownloaded), no db-file exclusion beyond
+        the plain content.json/dotfile/-old/-new skips."""
+        files_node = {}
+        for file_relative_path in await self.storage.walk("", ignore=ignore_pattern):
+            file_name = file_relative_path.rsplit("/", 1)[-1]
+            if file_name == "content.json":
+                continue
+            if file_name.startswith(".") or file_name.endswith("-old") or file_name.endswith("-new"):
+                continue
+            if not self.isValidRelativePath(file_relative_path):
+                continue
+            files_node[file_relative_path] = await self.hashFile(file_relative_path)
+        return files_node
+
+    async def sign(self, privatekey: str, extend: dict | None = None, filewrite: bool = True):
+        """Create and sign the ROOT content.json. Return: the new content
+        dict (whether or not filewrite happened).
+
+        Deliberately narrower than the original's sign(), matching this
+        file's own established root-vs-non-root split (see module
+        docstring): only content.json itself, never a non-root "includes"/
+        "user_contents" file -- that needs a cert issued to the signer,
+        which requires the User/cert-issuance flow this file's read-side
+        (verifyCert/getUserContentRules) supports but nothing here writes
+        yet. No private-site encryption either (isPrivate()/wrapContent()/
+        encryptFiles() aren't ported) -- signing a private site's
+        content.json here would silently skip the envelope wrapping the
+        original applies, so it's refused outright rather than produced
+        wrong.
+        """
+        inner_path = "content.json"
+
+        if self.contents.get(inner_path):
+            content = dict(self.contents[inner_path])
+        elif self.storage.isFile(inner_path):
+            content = await self.storage.loadJson(inner_path)
+            content.setdefault("files", {})
+            content.setdefault("signs", {})
+        else:
+            content = {
+                "files": {}, "signs": {},
+                "title": "%s - ZeroNet_" % self.site_address,
+                "description": "", "signs_required": 1, "ignore": "",
+            }
+
+        if content.get("private_recipients") or content.get("privatekey"):
+            raise SignError("Private sites are not supported by this sign() -- see its own docstring")
+
+        if extend:
+            for key, val in extend.items():
+                if not content.get(key):
+                    content[key] = val
+
+        files_node = await self.hashFiles(content.get("ignore"))
+
+        new_content = dict(content)
+        new_content["files"] = files_node
+        new_content.pop("files_optional", None)
+        new_content["modified"] = int(time.time())
+        new_content["signs_required"] = content.get("signs_required", 1)
+        new_content["address"] = self.site_address
+        new_content["inner_path"] = inner_path
+
+        privatekey_address = CryptBitcoin.privatekeyToAddress(privatekey)
+        valid_signers = self.getValidSigners(inner_path, new_content)
+        if privatekey_address not in valid_signers:
+            raise SignError(
+                "Private key invalid! Valid signers: %s, Private key address: %s" %
+                (valid_signers, privatekey_address)
+            )
+
+        if privatekey_address == self.site_address:
+            signers_data = "%s:%s" % (new_content["signs_required"], ",".join(valid_signers))
+            new_content["signers_sign"] = CryptBitcoin.sign(signers_data, privatekey)
+
+        new_content.pop("signs", None)
+        new_content.pop("sign", None)
+        sign_content = json.dumps(new_content, sort_keys=True)
+        sign = CryptBitcoin.sign(sign_content, privatekey)
+        new_content["signs"] = {privatekey_address: sign} if sign else {}
+
+        if filewrite:
+            await self.storage.writeJson(inner_path, new_content)
+            self.contents[inner_path] = new_content
+
+        return new_content
