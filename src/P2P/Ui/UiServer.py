@@ -35,6 +35,20 @@ site *selection* here, unlike the original's full nonce/cookie session
 model), UiMedia's dynamic pieces (this mounts the static assets directory,
 not the original's more elaborate content-negotiation for it).
 
+Homepage redirect + auto-add-and-download (added once real users started
+hitting this after the Phase 10 default flip): `/` redirects to
+`/{homepage}/` (homepage threaded from config.homepage, same default
+address the original ships); visiting an address that isn't in
+self.sites yet -- the common case for a fresh --p2p install, since
+SiteManager.add() deliberately doesn't auto-fetch -- now auto-adds it
+(via the on_missing_site callback, App.addSite()) and attempts a real,
+bounded (default 15s) announce+download before responding, instead of
+an immediate 404. If no peers are found in time, or the address never
+existed to begin with, the response is 503 ("downloading, try reloading
+shortly") or 404 respectively, not a wrapper page with a progress bar --
+this stack has no client-side polling/loading-screen mechanism yet, so
+the request itself is what blocks.
+
 Server push (added alongside the Sidebar plugin's consoleLogStream):
 every command handler up to this point was plain request-in/response-out,
 so `UiSession.push()` fills the gap the original's `ui_websocket.cmd()`
@@ -78,7 +92,7 @@ from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
 from starlette.routing import Mount, Route, WebSocketRoute
 from starlette.staticfiles import StaticFiles
 from starlette.websockets import WebSocket, WebSocketDisconnect
@@ -144,17 +158,22 @@ def _guessContentType(inner_path: str) -> str:
 
 class UiApp:
     def __init__(self, sites: dict, allowed_hosts: list | None = None, site_manager=None, user_manager=None,
-                 file_server=None, announcers: dict | None = None, tor_manager=None):
+                 file_server=None, announcers: dict | None = None, tor_manager=None,
+                 homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0):
         self.sites = sites  # site address -> P2P.Site
         self.site_manager = site_manager  # P2P.SiteManager, for siteAdd/siteDelete/sitePause/siteResume/siteList
         self.user_manager = user_manager  # P2P.UserManager, for cert*/user* commands
         self.file_server = file_server  # P2P.FileServer, for sitePublish's peer push
         self.announcers = announcers  # site address -> P2P.SiteAnnouncer, for announcerInfo
         self.tor_manager = tor_manager  # P2P.Tor.TorManager, for serverInfo's tor_enabled/tor_status
+        self.homepage = homepage  # Site address `/` redirects to, e.g. config.homepage
+        self.on_missing_site = on_missing_site  # (address) -> Site | None, e.g. App.addSite; adds + wires a new site
+        self.auto_download_timeout = auto_download_timeout
         self.wrapper_nonces: list = []
         self.sessions: set["UiSession"] = set()
 
         routes = [
+            Route("/", self._handleHomepage, methods=["GET"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
             Route("/{address}", self._handleSite, methods=["GET"]),
             WebSocketRoute("/Ui", self._handleWebsocket),
@@ -172,12 +191,33 @@ class UiApp:
     async def __call__(self, scope, receive, send) -> None:
         await self._asgi(scope, receive, send)
 
+    async def _handleHomepage(self, request: Request) -> Response:
+        if not self.homepage:
+            return Response(b"No homepage configured", status_code=404)
+        return RedirectResponse(url="/%s/" % self.homepage)
+
     async def _handleSite(self, request: Request) -> Response:
         address = request.path_params["address"]
         inner_path = request.path_params.get("inner_path", "")
 
         site = self.sites.get(address)
-        if site is None or not site.isServing():
+        just_added = False
+        if site is None:
+            site = await self._tryAutoAddSite(address)
+            just_added = site is not None
+        if site is None:
+            return Response(b"Unknown site", status_code=404)
+
+        if just_added and not site.storage.isFile("content.json"):
+            await self._tryDownloadSite(site)
+            if not site.storage.isFile("content.json"):
+                return Response(
+                    b"Site not downloaded yet -- no peers found within %ss. Try reloading shortly."
+                    % str(self.auto_download_timeout).encode(),
+                    status_code=503,
+                )
+
+        if not site.isServing():
             return Response(b"Unknown site", status_code=404)
 
         is_html_page = inner_path in ("", "/") or inner_path.endswith("/") or inner_path.endswith(".html")
@@ -204,6 +244,60 @@ class UiApp:
             return Response(b"Invalid path", status_code=403)
 
         return Response(data, media_type=_guessContentType(target_path))
+
+    async def _tryAutoAddSite(self, address: str):
+        """Adds+wires a site the first time it's visited, matching the
+        original's own auto-add-on-visit UX -- SiteManager.add() itself
+        deliberately doesn't do this (see its own docstring), so without
+        this every fresh --p2p install 404s on every address until
+        something explicitly calls siteAdd/siteDownload first."""
+        if self.site_manager is None or self.on_missing_site is None:
+            return None
+        if not self.site_manager.isAddress(address):
+            return None
+        return self.on_missing_site(address)
+
+    async def _tryDownloadSite(self, site) -> None:
+        """Best-effort, bounded (auto_download_timeout) real announce +
+        download for a site with no content.json yet -- same
+        announce-then-syncSite shape as P2P.actions.Actions.siteDownload(),
+        just inlined here since there's no websocket/CLI caller driving
+        it for a plain HTTP page load. No client-side loading-screen
+        polling exists in this stack yet, so the request itself blocks
+        for up to auto_download_timeout rather than returning immediately
+        with a page that'd refresh itself."""
+        if self.file_server is None:
+            return
+        announcer = self.announcers.get(site.address) if self.announcers else None
+        with trio.move_on_after(self.auto_download_timeout):
+            if announcer is not None:
+                try:
+                    await announcer.announce(force=True)
+                except Exception:
+                    pass
+
+            from multiaddr import Multiaddr
+
+            from ..Peer import Peer
+            from ..WorkerManager import downloadContentJson
+
+            records = site.getConnectablePeers(need_num=5)
+            if not records:
+                return
+            peerstore = self.file_server.host.get_peerstore()
+            peers = []
+            for record in records:
+                if record.ip and record.port:
+                    try:
+                        peerstore.add_addrs(record.peer_id, [Multiaddr("/ip4/%s/tcp/%s" % (record.ip, record.port))], 3600)
+                    except Exception:
+                        pass
+                peers.append(Peer(record.peer_id, self.file_server.host, self.file_server.connection_policy))
+
+            try:
+                await downloadContentJson(site, peers)
+            except Exception:
+                pass
 
     async def _handleWebsocket(self, websocket: WebSocket) -> None:
         await websocket.accept()
@@ -297,10 +391,12 @@ class UiApp:
 class UiServer:
     def __init__(self, sites: dict, host: str = "127.0.0.1", port: int = 0, allowed_hosts: list | None = None,
                  site_manager=None, user_manager=None, file_server=None, announcers: dict | None = None,
-                 tor_manager=None):
+                 tor_manager=None, homepage: str | None = None, on_missing_site=None,
+                 auto_download_timeout: float = 15.0):
         self.app = UiApp(
             sites, allowed_hosts=allowed_hosts, site_manager=site_manager, user_manager=user_manager,
             file_server=file_server, announcers=announcers, tor_manager=tor_manager,
+            homepage=homepage, on_missing_site=on_missing_site, auto_download_timeout=auto_download_timeout,
         )
         self._host = host
         self._port = port

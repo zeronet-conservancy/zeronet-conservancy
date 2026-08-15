@@ -78,6 +78,8 @@ class App:
         tor_control_ip: str = "127.0.0.1",
         tor_control_port: int = 9051,
         tor_password: str | None = None,
+        homepage: str | None = None,
+        auto_download_timeout: float = 15.0,
     ):
         self.data_dir = data_dir
         self.announce_interval = announce_interval
@@ -101,7 +103,8 @@ class App:
         self.ui_server = UiServer(
             self.site_manager.sites, host=ui_host, port=ui_port, allowed_hosts=ui_allowed_hosts,
             site_manager=self.site_manager, user_manager=self.user_manager, file_server=self.file_server,
-            announcers=self.announcers,
+            announcers=self.announcers, homepage=homepage, on_missing_site=self.addSite,
+            auto_download_timeout=auto_download_timeout,
         )
         self.dht_discovery = None
         if enable_dht:

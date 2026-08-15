@@ -178,3 +178,75 @@ class TestP2PUiServer:
                     return response.status_code
 
         assert compat.run(scenario) == 400
+
+    def testHomepageRedirectsToConfiguredAddress(self):
+        async def scenario():
+            server = UiServer(sites={}, homepage="1TestHomepageSiteAAAAAAAAAAAA")
+            async with server.run():
+                base_url = server.bound_addresses[0]
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("%s/" % base_url, follow_redirects=False)
+                    return response.status_code, response.headers.get("location")
+
+        status, location = compat.run(scenario)
+        assert status in (302, 307)
+        assert location == "/1TestHomepageSiteAAAAAAAAAAAA/"
+
+    def testHomepageMissingReturns404(self):
+        async def scenario():
+            server = UiServer(sites={})  # No homepage configured
+            async with server.run():
+                base_url = server.bound_addresses[0]
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("%s/" % base_url)
+                    return response.status_code
+
+        assert compat.run(scenario) == 404
+
+    def testUnknownAddressAutoAddsThenReturns503WithoutPeers(self):
+        """A brand new, valid-looking address with no file_server
+        configured to actually try downloading from: auto-adds (via
+        on_missing_site) but can't fetch content.json, so the response
+        is a real 503 rather than the plain 404 an unrecognized address
+        gets -- proving the site really was added (SiteManager.sites
+        now has it) even though nothing could be downloaded."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.SiteManager import SiteManager
+                site_manager = SiteManager(pathlib.Path(d))
+
+                def on_missing_site(address):
+                    return site_manager.add(address)
+
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    on_missing_site=on_missing_site, auto_download_timeout=0.2,
+                )
+                address = "1TestAutoAddSiteAAAAAAAAAAAA"
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient(timeout=5) as client:
+                        response = await client.get("%s/%s/" % (base_url, address))
+                        return response.status_code, address in site_manager.sites
+
+        status, was_added = compat.run(scenario)
+        assert status == 503
+        assert was_added is True
+
+    def testInvalidAddressStillReturns404(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.SiteManager import SiteManager
+                site_manager = SiteManager(pathlib.Path(d))
+
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    on_missing_site=site_manager.add,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get("%s/not-a-real-address/" % base_url)
+                        return response.status_code
+
+        assert compat.run(scenario) == 404

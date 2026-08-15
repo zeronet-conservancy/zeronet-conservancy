@@ -138,6 +138,7 @@ class Actions:
                 ui_port=config.ui_port,
                 enable_dht=config.dht,
                 enable_tor=(config.tor != "disable"),
+                homepage=config.homepage,
             )
             await app.loadSites()
             await app.loadUsers()
