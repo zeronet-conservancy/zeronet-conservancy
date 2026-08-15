@@ -97,7 +97,7 @@ class Actions:
     async def _getSite(self, address: str):
         if not self.site_manager.loaded:
             await self.site_manager.load()
-        site = self.site_manager.get(address)
+        site = await self.site_manager.get(address)
         if site is None:
             raise ActionError("Site not found: %s" % address)
         return site

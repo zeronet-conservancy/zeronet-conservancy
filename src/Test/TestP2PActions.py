@@ -15,7 +15,7 @@ class TestP2PActionsSite:
             with tempfile.TemporaryDirectory() as d:
                 actions = Actions(pathlib.Path(d))
                 result = await actions.siteCreate()
-                site = actions.site_manager.get(result["address"])
+                site = await actions.site_manager.get(result["address"])
                 content = await site.storage.loadJson("content.json")
                 return result, site.storage.isFile("index.html"), content
 
@@ -58,7 +58,7 @@ class TestP2PActionsSite:
                 actions.site_manager.add(address)
 
                 succ = await actions.siteSign(address, privatekey=privatekey)
-                site = actions.site_manager.get(address)
+                site = await actions.site_manager.get(address)
                 return succ, site.storage.isFile("content.json")
 
         succ, has_content = compat.run(scenario)
@@ -119,7 +119,7 @@ class TestP2PActionsSite:
             with tempfile.TemporaryDirectory() as d:
                 actions = Actions(pathlib.Path(d))
                 created = await actions.siteCreate()
-                site = actions.site_manager.get(created["address"])
+                site = await actions.site_manager.get(created["address"])
                 # Tamper with the file's content on disk after signing --
                 # hash in content.json no longer matches.
                 await site.storage.write("index.html", b"tampered content")

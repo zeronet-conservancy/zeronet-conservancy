@@ -11,11 +11,20 @@ paths too).
 Still a module-level singleton, same as the original, because it has to
 be: acceptPlugins()/registerTo() are decorators, so they run at class-
 definition time, and there's no way to make plugin loading fully lazy or
-parameterized without losing the decorator syntax that every existing
-plugin (in plugins/*) is already written against. What's different: the
-singleton here is constructed by this module pointing at the `plugins`
-package directly, not by reading a config object that may or may not
-exist yet when this module first imports.
+parameterized without losing the decorator syntax.
+
+Points at P2P/plugins/ (a new, separate package), NOT the repo-root
+plugins/ directory the legacy PluginManager scans -- those are two
+different, incompatible plugin ecosystems now, not one shared set. A
+trio-native plugin under P2P/plugins/Foo registers against P2P.Site/
+P2P.SiteManager/etc via this module's registerTo(); the existing
+gevent-era plugins under repo-root plugins/ register against the legacy
+Site/SiteManager/etc via Plugin.PluginManager, and main.py/Actions.py
+(the still-live legacy entrypoint) still imports and runs those. Pointing
+this module's default at the same directory the legacy loader scans
+would mean any trio-native rewrite of a plugin file silently breaks the
+legacy app still using it -- see the module docstring in
+P2P/plugins/__init__.py for the rest of this split's reasoning.
 
 Ordering caveat (inherited from the original, not introduced by this
 port): registerTo("SomeClass") only affects a class decorated with
@@ -48,14 +57,14 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
-import plugins
+from . import plugins as p2p_plugins
 
 log = logging.getLogger("P2P.PluginManager")
 
 
 class PluginManager:
     def __init__(self, config_path: Path | None = None, path_plugins: str | None = None):
-        self.path_plugins = path_plugins or os.path.abspath(os.path.dirname(plugins.__file__))
+        self.path_plugins = path_plugins or os.path.abspath(os.path.dirname(p2p_plugins.__file__))
         self.plugins: dict[str, list] = defaultdict(list)  # class name -> list of plugin classes
         self.pluggable: dict[str, type] = {}  # class name -> original (undecorated) base class
         self.plugin_names: list[str] = []

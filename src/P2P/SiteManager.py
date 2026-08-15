@@ -6,10 +6,6 @@ NOT ported:
   - ContentDb-based orphan-row cleanup in load() -- ContentDb.py isn't
     part of this stack (P2P.ContentManager keeps a plain in-memory dict,
     see its own module docstring).
-  - Real domain resolution. isDomain()/resolveDomain() are ported as the
-    same no-op stubs the original core class itself uses (always False /
-    False) -- the original's real .bit resolution comes from a plugin,
-    not the core class, so there's nothing plugin-shaped to port here yet.
   - site.settings as an attribute ON Site itself. P2P.Site.py already has
     an established, tested attribute-based model (self.serving,
     self.permissions, self.wrapper_key/ajax_key) that Wrapper.py and
@@ -24,6 +20,16 @@ NOT ported:
     separate piece of work; add() here just creates the Site and lets the
     caller (or a later download-orchestration pass) decide what happens
     next.
+
+Phase 8: @acceptPlugins marks this class as pluggable, and isDomain()/
+resolveDomain() are async now (the core stubs are trivial, but a real
+resolver -- e.g. a P2P/plugins/Zeroname port reading a resolver site's
+data/names.json -- needs to do real file I/O, and every I/O-touching
+method in this stack is async by convention). get()/need() now actually
+call them before falling back to a plain address lookup, matching the
+original's own get()/need() -- previously these two stubs existed but
+nothing in this file consulted them, so even a plugin overriding them
+would have had no effect.
 """
 import json
 import logging
@@ -32,11 +38,13 @@ import time
 
 import trio
 
+from .PluginManager import acceptPlugins
 from .Site import Site
 
 ADDRESS_RE = re.compile(r"^[A-Za-z0-9]{26,35}$")
 
 
+@acceptPlugins
 class SiteManager:
     def __init__(self, data_dir, private_dir=None):
         self.data_dir = data_dir
@@ -49,10 +57,10 @@ class SiteManager:
     def isAddress(self, address: str) -> bool:
         return bool(ADDRESS_RE.match(address))
 
-    def isDomain(self, address: str) -> bool:
+    async def isDomain(self, address: str) -> bool:
         return False  # No built-in domain resolution -- see module docstring
 
-    def resolveDomain(self, domain: str):
+    async def resolveDomain(self, domain: str):
         return False
 
     def _sitesJsonPath(self):
@@ -104,7 +112,11 @@ class SiteManager:
         body = json.dumps(data, indent=1, sort_keys=True)
         await trio.to_thread.run_sync(self._sitesJsonPath().write_text, body)
 
-    def get(self, address: str):
+    async def get(self, address: str):
+        if await self.isDomain(address):
+            resolved = await self.resolveDomain(address)
+            if resolved:
+                address = resolved
         return self.sites.get(address)
 
     def add(self, address: str, own: bool = False):
@@ -122,8 +134,12 @@ class SiteManager:
         self.log.debug("Added new site: %s", address)
         return site
 
-    def need(self, address: str, **kwargs):
-        site = self.get(address)
+    async def need(self, address: str, **kwargs):
+        if await self.isDomain(address):
+            resolved = await self.resolveDomain(address)
+            if resolved:
+                address = resolved
+        site = self.sites.get(address)
         if not site:
             site = self.add(address, **kwargs)
         return site

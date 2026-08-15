@@ -89,19 +89,28 @@ class TestP2PSiteManager:
             assert sm.add("not-valid") is False
 
     def testNeedCreatesIfMissing(self):
-        with tempfile.TemporaryDirectory() as d:
-            sm = SiteManager(pathlib.Path(d))
-            assert sm.get(VALID_ADDRESS) is None
-            site = sm.need(VALID_ADDRESS)
-            assert site is not None
-            assert sm.get(VALID_ADDRESS) is site
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                sm = SiteManager(pathlib.Path(d))
+                before = await sm.get(VALID_ADDRESS)
+                site = await sm.need(VALID_ADDRESS)
+                after = await sm.get(VALID_ADDRESS)
+                return before, site, after
+
+        before, site, after = compat.run(scenario)
+        assert before is None
+        assert site is not None
+        assert after is site
 
     def testDeleteRemovesSite(self):
-        with tempfile.TemporaryDirectory() as d:
-            sm = SiteManager(pathlib.Path(d))
-            sm.add(VALID_ADDRESS)
-            sm.delete(VALID_ADDRESS)
-            assert sm.get(VALID_ADDRESS) is None
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                sm = SiteManager(pathlib.Path(d))
+                sm.add(VALID_ADDRESS)
+                sm.delete(VALID_ADDRESS)
+                return await sm.get(VALID_ADDRESS)
+
+        assert compat.run(scenario) is None
 
     def testSaveWritesBackServingAndSize(self):
         async def scenario():
