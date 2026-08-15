@@ -242,6 +242,7 @@ class UiApp:
                 address=address,
                 inner_path=inner_path or "index.html",
                 title=address,
+                homepage=("/" + self.homepage) if self.homepage else "/",
             )
             return Response(body, media_type="text/html")
 
