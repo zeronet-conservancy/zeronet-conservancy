@@ -495,14 +495,20 @@ async def _cmdDbQuery(session, params):
 def formatServerInfo(session):
     """Deliberately narrower than the original's actionServerInfo(): only
     fields genuinely available from what's threaded into UiApp (no
-    port_opened/tor/version/config fingerprinting -- none of that exists
-    in this stack yet)."""
+    port_opened/version/config fingerprinting -- none of that exists
+    in this stack yet). tor_enabled/tor_status match the original's own
+    field names now that P2P.Tor.TorManager exists (tor_has_meek_bridges/
+    tor_use_bridges are not ported concepts here)."""
     info = {"platform": sys.platform}
     file_server = getattr(session.app, "file_server", None)
     if file_server is not None:
         info["peer_id"] = file_server.host.peer_id.to_base58()
         info["addrs"] = [str(addr) for addr in file_server.host.get_addrs()]
         info["sites"] = len(file_server.sites)
+    tor_manager = getattr(session.app, "tor_manager", None)
+    if tor_manager is not None:
+        info["tor_enabled"] = tor_manager.enabled
+        info["tor_status"] = tor_manager.status
     return info
 
 

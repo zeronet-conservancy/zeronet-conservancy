@@ -6,9 +6,13 @@ Phase 7's UI work -- but scoped honestly, not a wholesale replacement of
 src/main.py.
 
 Deliberately NOT a replacement for src/main.py + Actions.py: those still
-own Tor and the legacy plugin ecosystem under repo-root plugins/ (see
+own the legacy plugin ecosystem under repo-root plugins/ (see
 P2P/plugins/__init__.py for why that's a separate, non-overlapping set
-from this stack's own P2P/plugins/). Db.py-backed querying and the CLI
+from this stack's own P2P/plugins/). Tor is now also covered here, via
+P2P.Tor.TorManager (enable_tor=True) -- control-port only (onion service
+create/remove); TorManager's own module docstring has what's still not
+ported (dialing out through Tor's SOCKS5 proxy). Db.py-backed querying
+and the CLI
 actions (siteCreate/siteSign/siteVerify/dbRebuild/etc.) ARE covered now,
 in P2P.Db/P2P.SiteStorage and P2P/actions.py respectively. Running this
 alongside the legacy entrypoint in the SAME process is not supported:
@@ -46,6 +50,7 @@ from .FileServer import FileServer
 from .Site import Site
 from .SiteAnnouncer import SiteAnnouncer
 from .SiteManager import SiteManager
+from .Tor import TorManager
 from .UserManager import UserManager
 from .Ui.UiServer import UiServer
 from .discovery.kaddht import KadDHTDiscovery
@@ -69,11 +74,20 @@ class App:
         dht_protocol_prefix: str | None = None,
         announce_interval: float = DEFAULT_ANNOUNCE_INTERVAL,
         save_interval: float = DEFAULT_SAVE_INTERVAL,
+        enable_tor: bool = False,
+        tor_control_ip: str = "127.0.0.1",
+        tor_control_port: int = 9051,
+        tor_password: str | None = None,
     ):
         self.data_dir = data_dir
         self.announce_interval = announce_interval
         self.save_interval = save_interval
         self.announcers: dict[str, SiteAnnouncer] = {}
+        self._enable_tor = enable_tor
+        self._tor_control_ip = tor_control_ip
+        self._tor_control_port = tor_control_port
+        self._tor_password = tor_password
+        self.tor_manager: TorManager | None = None
 
         p2p_dir = data_dir / ".p2p"
         p2p_dir.mkdir(parents=True, exist_ok=True)
@@ -146,15 +160,36 @@ class App:
             except Exception:
                 log.exception("Saving sites.json failed")
 
+    async def _connectTor(self) -> None:
+        """Connects the Tor control port after the real fileserver TCP
+        port is known (tcp_port=0 at construction means an OS-assigned
+        ephemeral port, only resolvable once the host has actually bound
+        -- see P2P.Host.get_addrs()). Best-effort: a failed connect
+        disables tor_manager.enabled and logs a warning, same graceful
+        degradation as the original TorManager.start()'s own fallback,
+        rather than crashing the whole app over an unreachable/absent
+        Tor daemon."""
+        tcp_addrs = [addr for addr in self.file_server.host.get_addrs() if "/ws" not in str(addr)]
+        fileserver_port = int(tcp_addrs[0].value_for_protocol("tcp")) if tcp_addrs else 0
+        self.tor_manager = TorManager(
+            control_ip=self._tor_control_ip, control_port=self._tor_control_port,
+            fileserver_port=fileserver_port, password=self._tor_password,
+        )
+        if not await self.tor_manager.connect():
+            log.warning("Tor control port connect failed (%s) -- continuing without Tor", self.tor_manager.status)
+        self.ui_server.app.tor_manager = self.tor_manager
+
     async def run(self) -> None:
         """Runs forever (until cancelled) -- boots the host, UI server, and
-        (if enabled) DHT discovery, then keeps one announce loop alive per
-        loaded site plus a periodic sites.json save loop."""
+        (if enabled) DHT discovery and Tor, then keeps one announce loop
+        alive per loaded site plus a periodic sites.json save loop."""
         async with AsyncExitStack() as stack:
             await stack.enter_async_context(self.file_server.run())
             await stack.enter_async_context(self.ui_server.run())
             if self.dht_discovery is not None:
                 await stack.enter_async_context(self.dht_discovery.run())
+            if self._enable_tor:
+                await self._connectTor()
 
             log.info(
                 "P2P app running: peer_id=%s sites=%d ui=%s",
@@ -176,6 +211,9 @@ async def _main(args) -> None:
         ui_host=args.ui_host,
         ui_port=args.ui_port,
         enable_dht=not args.no_dht,
+        enable_tor=args.tor,
+        tor_control_port=args.tor_control_port,
+        tor_password=args.tor_password,
     )
     await app.loadSites()
     await app.loadUsers()
@@ -196,6 +234,9 @@ def main() -> None:
     parser.add_argument("--ui-host", default="127.0.0.1")
     parser.add_argument("--ui-port", type=int, default=43110)
     parser.add_argument("--no-dht", action="store_true")
+    parser.add_argument("--tor", action="store_true", help="Connect to a local Tor control port and run an onion service")
+    parser.add_argument("--tor-control-port", type=int, default=9051)
+    parser.add_argument("--tor-password", default=None)
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 

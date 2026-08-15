@@ -4,11 +4,13 @@ import tempfile
 
 import httpx
 import trio
+import trio_websocket
 
 from libp2p.peer.peerinfo import PeerInfo
 
 from P2P.app import App
 from P2P import compat
+from Test.TestP2PTor import _startFakeServer
 
 
 SITE_ADDRESS_1 = "1TestAppSiteAAAAAAAAAAAAAA1"  # 28 chars, valid per SiteManager.isAddress
@@ -129,3 +131,50 @@ class TestP2PApp:
         assert results["ui_content"] == content
         assert SITE_ADDRESS_2 in results["saved"]
         assert results["saved"][SITE_ADDRESS_2]["serving"] is True
+
+    def testRunWithTorEnabledConnectsAndExposesStatusOverServerInfo(self):
+        """enable_tor=True against a real fake control-port server (same
+        one TestP2PTor.py uses -- no real `tor` binary in this
+        environment): app.run() should connect tor_manager, wire it into
+        the UI app, and serverInfo should report it over a real
+        websocket round trip."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+
+                async with trio.open_nursery() as tor_nursery:
+                    tor_port = await _startFakeServer(tor_nursery)
+
+                    app = App(
+                        data_dir, ws_port=None, ui_port=0, enable_dht=False,
+                        enable_tor=True, tor_control_port=tor_port,
+                    )
+                    results = {}
+                    with trio.move_on_after(5):
+                        async with trio.open_nursery() as nursery:
+                            nursery.start_soon(app.run)
+                            await trio.sleep(0.2)  # Let file_server/ui_server bind, and Tor connect
+
+                            results["enabled"] = app.tor_manager.enabled
+                            results["status"] = app.tor_manager.status
+                            results["same_instance"] = app.ui_server.app.tor_manager is app.tor_manager
+
+                            site = app.addSite(SITE_ADDRESS_1)
+                            site.permissions = ["ADMIN"]
+                            ui_base = app.ui_server.bound_addresses[0].replace("http://", "ws://")
+                            ws_url = "%s/Ui?wrapper_key=%s" % (ui_base, site.wrapper_key)
+                            async with trio_websocket.open_websocket_url(ws_url) as ws:
+                                await ws.send_message(json.dumps({"cmd": "serverInfo", "params": {}, "id": 1}))
+                                reply = json.loads(await ws.get_message())
+                                results["server_info"] = reply["result"]
+
+                            nursery.cancel_scope.cancel()
+                    tor_nursery.cancel_scope.cancel()
+                return results
+
+        results = compat.run(scenario)
+        assert results["enabled"] is True
+        assert results["status"].startswith("Connected")
+        assert results["same_instance"] is True
+        assert results["server_info"]["tor_enabled"] is True
+        assert results["server_info"]["tor_status"].startswith("Connected")
