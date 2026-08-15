@@ -9,10 +9,10 @@ real Site objects (site.isServing()/.announce()/.update()/.addPeer()) and
 land once Site.py itself does; porting them now against methods that don't
 exist yet would just be untestable stub code.
 
-Sites are held behind a small duck-typed interface (address, site_root,
+Sites are held behind a small duck-typed interface (address, storage,
 isServing(), getConnectablePeers(), addPeer()) matching Site.py's real
-method signatures, so the real Site class will slot in here unchanged
-once it exists -- addSite()/removeSite() don't care what "site" actually is.
+method signatures, so the real Site class slots in here unchanged --
+addSite()/removeSite() don't care what "site" actually is.
 """
 import pathlib
 
@@ -33,14 +33,14 @@ class FileServer:
 
     def _registerProtocols(self) -> None:
         self.router.register(ping.PROTOCOL_ID, ping.handle)
-        self.router.register(getfile.PROTOCOL_ID, getfile.make_handler(self._resolveSiteRoot))
+        self.router.register(getfile.PROTOCOL_ID, getfile.make_handler(self._resolveSiteStorage))
         self.router.register(pex.PROTOCOL_ID, pex.make_handler(self._knownPeersForSite, self._onPeerReceived))
 
-    def _resolveSiteRoot(self, site_address: str):
+    def _resolveSiteStorage(self, site_address: str):
         site = self.sites.get(site_address)
         if site is None or not site.isServing():
             return None
-        return site.site_root
+        return site.storage
 
     def _knownPeersForSite(self, site_address: str, exclude: set, limit: int) -> list:
         site = self.sites.get(site_address)

@@ -1,10 +1,9 @@
-"""Trio-native replacement for Site/Site.py -- started here with the peer
-table (addPeer/getConnectablePeers/isServing), the slice FileServer.py
-already depends on (Phase 6, previous step) and the only part of Site.py
-that doesn't first need ContentManager/SiteStorage/WorkerManager/the UI
-layer ported -- all still gevent-based, all larger undertakings of their
-own. Content loading, download orchestration, and plugin hooks extend
-this class in later sessions.
+"""Trio-native replacement for Site/Site.py -- started with the peer table
+(addPeer/getConnectablePeers/isServing) and now owns a real SiteStorage
+(file I/O layer, also ported). ContentManager/WorkerManager/the UI layer
+are still gevent-based and much larger undertakings of their own --
+content loading, download orchestration, and plugin hooks extend this
+class once those land.
 
 Peer identity is peer_id (libp2p), not ip:port like the old Site.peers
 table: host.connect() needs a peer_id up front to authenticate the Noise
@@ -16,6 +15,8 @@ required, leading argument, not absent like the original).
 import time
 
 from libp2p.peer.id import ID
+
+from .SiteStorage import SiteStorage
 
 
 class PeerRecord:
@@ -38,9 +39,10 @@ class PeerRecord:
 
 
 class Site:
-    def __init__(self, address: str, site_root, serving: bool = True):
+    def __init__(self, address: str, site_root, serving: bool = True, allow_create: bool = True):
         self.address = address
         self.site_root = site_root
+        self.storage = SiteStorage(site_root, allow_create=allow_create)
         self.serving = serving
         self.peers: dict[str, PeerRecord] = {}  # peer_id.to_base58() -> PeerRecord
         self.peer_blacklist: set = set()  # of peer_id.to_base58()

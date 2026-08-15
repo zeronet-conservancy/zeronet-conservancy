@@ -9,14 +9,15 @@ from P2P.Host import Host
 from P2P.ProtocolRouter import ProtocolRouter
 from P2P.ConnectionPolicy import ConnectionPolicy
 from P2P.Peer import Peer
+from P2P.SiteStorage import SiteStorage
 from P2P.protocols import getfile, pex, ping
 from P2P import compat
 
 
-def _make_router(host, site_root_resolver=None, known_peers_provider=None, peer_received_callback=None):
+def _make_router(host, site_storage_resolver=None, known_peers_provider=None, peer_received_callback=None):
     router = ProtocolRouter(host)
     router.register(ping.PROTOCOL_ID, ping.handle)
-    router.register(getfile.PROTOCOL_ID, getfile.make_handler(site_root_resolver or (lambda addr: None)))
+    router.register(getfile.PROTOCOL_ID, getfile.make_handler(site_storage_resolver or (lambda addr: None)))
     router.register(pex.PROTOCOL_ID, pex.make_handler(
         known_peers_provider or (lambda *a: []),
         peer_received_callback or (lambda *a: None),
@@ -48,10 +49,11 @@ class TestP2PPeer:
                     tempfile.TemporaryDirectory() as site_dir:
                 site_root = pathlib.Path(site_dir)
                 (site_root / "data.json").write_bytes(content)
+                storage = SiteStorage(site_root)
 
                 host_a = Host(pathlib.Path(da), ws_port=None)
                 host_b = Host(pathlib.Path(db), ws_port=None)
-                _make_router(host_a, site_root_resolver=lambda addr: site_root if addr == "1Site" else None)
+                _make_router(host_a, site_storage_resolver=lambda addr: storage if addr == "1Site" else None)
 
                 async with host_a.run(), host_b.run():
                     await host_b.connect(PeerInfo(host_a.peer_id, host_a.get_addrs()))
@@ -73,10 +75,11 @@ class TestP2PPeer:
                     tempfile.TemporaryDirectory() as site_dir:
                 site_root = pathlib.Path(site_dir)
                 (site_root / "big.bin").write_bytes(content)
+                storage = SiteStorage(site_root)
 
                 host_a = Host(pathlib.Path(da), ws_port=None)
                 host_b = Host(pathlib.Path(db), ws_port=None)
-                _make_router(host_a, site_root_resolver=lambda addr: site_root if addr == "1Site" else None)
+                _make_router(host_a, site_storage_resolver=lambda addr: storage if addr == "1Site" else None)
 
                 async with host_a.run(), host_b.run():
                     await host_b.connect(PeerInfo(host_a.peer_id, host_a.get_addrs()))

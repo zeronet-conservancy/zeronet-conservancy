@@ -3,16 +3,22 @@
 Business logic only -- reads real file bytes and applies the same
 size/location checks and optional zlib compression as today's handler.
 Site/peer bookkeeping (badAction, addPeer, cpu_time throttling) is dropped
-here since it lives on the gevent Connection/Site objects that don't exist
-in this trio-native package yet; that wiring lands in Phase 4 when Peer.py
-and FileServer.py are rewritten on top of this.
+here since it lives on the Peer/ConnectionPolicy objects Phase 6 is
+building elsewhere.
 
-streamFile (chunked, raw-stream transfer for large files) is deferred to
-Phase 4 for the same reason -- Phase 2's job is proving the protocol-handler
-pattern end-to-end, not the full transfer feature set.
+File access goes through SiteStorage (readChunk()) rather than opening the
+file directly: SiteStorage.getPath() applies the real traversal-safety
+check (Phase 6), and the actual disk read is offloaded to SiteStorage's
+thread pool instead of blocking the trio event loop -- this handler used
+to open()/read() the file inline, which was a real gap fixed here.
+
+streamFile (chunked, raw-stream transfer for large files) is still
+deferred -- Phase 2's job was proving the protocol-handler pattern
+end-to-end, not the full transfer feature set.
 """
-import os
 import zlib
+
+from ..SiteStorage import AccessError
 
 PROTOCOL_ID = "/zeronet/getfile/1.0.0"
 
@@ -33,45 +39,40 @@ def _should_compress(params):
     return extension not in INCOMPRESSIBLE_EXTENSIONS
 
 
-def make_handler(site_root_resolver):
-    """site_root_resolver(site_address) -> pathlib.Path | None: the on-disk
-    root directory for that site, or None if the site is unknown/not serving.
+def make_handler(site_storage_resolver):
+    """site_storage_resolver(site_address) -> SiteStorage | None: the
+    storage for that site, or None if the site is unknown/not serving.
     """
 
     async def handle(params: dict) -> dict:
         site_address = params["site"]
         inner_path = params["inner_path"]
 
-        site_root = site_root_resolver(site_address)
-        if site_root is None:
+        storage = site_storage_resolver(site_address)
+        if storage is None:
             return {"error": "Unknown site"}
-
-        file_path = (site_root / inner_path).resolve()
-        try:
-            file_path.relative_to(site_root.resolve())
-        except ValueError:
-            return {"error": "Invalid inner_path"}
-
-        if not file_path.is_file():
-            return {"error": "File read error"}
 
         location = params["location"]
         read_bytes = params.get("read_bytes", FILE_BUFF)
 
-        with open(file_path, "rb") as file:
-            file_size = os.fstat(file.fileno()).st_size
+        try:
+            if not storage.isFile(inner_path):
+                return {"error": "File read error"}
+            body, file_size = await storage.readChunk(inner_path, location, read_bytes)
+        except AccessError:
+            return {"error": "Invalid inner_path"}
+        except OSError:
+            return {"error": "File read error"}
 
-            if location > file_size:
-                return {"error": "Bad file location"}
-            if file_size <= read_bytes and params.get("file_size") and params["file_size"] != file_size:
-                return {
-                    "error": "File size does not match: %sB != %sB" % (params["file_size"], file_size)
-                }
+        if location > file_size:
+            return {"error": "Bad file location"}
+        if file_size <= read_bytes and params.get("file_size") and params["file_size"] != file_size:
+            return {
+                "error": "File size does not match: %sB != %sB" % (params["file_size"], file_size)
+            }
 
-            file.seek(location)
-            send_size = min(read_bytes, file_size - location)
-            next_location = min(location + send_size, file_size)
-            body = file.read(send_size)
+        send_size = len(body)
+        next_location = min(location + send_size, file_size)
 
         if _should_compress(params) and send_size > 0:
             compressed = zlib.compress(body)
