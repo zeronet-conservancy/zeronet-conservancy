@@ -12,7 +12,16 @@ handshake, so ip:port alone was never enough to actually dial anyone under
 libp2p -- see protocols/pex.py's docstring for the same point from the
 wire-protocol side. addPeer()'s signature reflects that (peer_id is now a
 required, leading argument, not absent like the original).
+
+ip/port are optional (unlike the original's required, non-empty pair):
+kad-dht's find_peers() (SiteAnnouncer.py) returns libp2p PeerInfo objects
+-- peer_id plus a multiaddr list, no plain ip:port -- so a DHT-discovered
+peer genuinely doesn't have one to give. The real dialing address always
+lives in the libp2p host's own peerstore once any connection or DHT
+lookup has touched that peer_id; ip/port here are best-effort display
+info (as pex's wire format still provides), not what dialing depends on.
 """
+import hashlib
 import time
 
 from libp2p.peer.id import ID
@@ -24,7 +33,7 @@ from .ContentManager import ContentManager
 class PeerRecord:
     __slots__ = ("peer_id", "ip", "port", "reputation", "time_found")
 
-    def __init__(self, peer_id: ID, ip: str, port: int):
+    def __init__(self, peer_id: ID, ip: str | None, port: int | None):
         self.peer_id = peer_id
         self.ip = ip
         self.port = port
@@ -43,6 +52,7 @@ class PeerRecord:
 class Site:
     def __init__(self, address: str, site_root, serving: bool = True, allow_create: bool = True):
         self.address = address
+        self.address_sha1 = hashlib.sha1(address.encode("ascii")).digest()  # DHT key
         self.site_root = site_root
         self.storage = SiteStorage(site_root, allow_create=allow_create)
         self.content_manager = ContentManager(self.storage, address)
@@ -53,10 +63,13 @@ class Site:
     def isServing(self) -> bool:
         return self.serving
 
-    def addPeer(self, peer_id: ID, ip: str, port: int, source: str = "other"):
+    def addPeer(self, peer_id: ID, ip: str | None = None, port: int | None = None, source: str = "other"):
         """Returns the PeerRecord (new or already-known), or False if
-        rejected (blacklisted, or a bare 0.0.0.0 that can't mean anything)."""
-        if not ip or ip == "0.0.0.0":
+        rejected (blacklisted). ip may be None (e.g. DHT-sourced peers,
+        which come as peer_id + multiaddrs, not a plain ip:port pair) --
+        that's different from an explicitly empty/"0.0.0.0" ip, which is
+        still rejected the same as the original."""
+        if ip is not None and (not ip or ip == "0.0.0.0"):
             return False
 
         key = peer_id.to_base58()
