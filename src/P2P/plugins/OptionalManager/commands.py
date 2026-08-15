@@ -148,8 +148,18 @@ async def _cmdOptionalFileDelete(session, params):
     return "ok"
 
 
+_DEFAULT_LIMIT = "10%"  # Matches the original's own --optional-limit default
+
+
 @command("optionalLimitStats")
 async def _cmdOptionalLimitStats(session, params):
+    """limit falls back to _DEFAULT_LIMIT, not storage.getLimit()'s raw
+    None -- found live: the real wrapper.js's PageFiles.updateOptionalStats()
+    calls res.limit.endsWith("%") unconditionally, and a site that never
+    called optionalLimitSet (i.e. every fresh site) crashed on page load
+    the moment this command started actually responding (it was itself
+    "Unknown command" until the plugin-loading collision fix, which had
+    been masking this)."""
     site = _requireAdmin(session)
     storage = _storageFor(site)
     used = sum(
@@ -158,7 +168,7 @@ async def _cmdOptionalLimitStats(session, params):
         if site.storage.isFile(inner_path)
     )
     free = shutil.disk_usage(site.storage.getPath("")).free
-    return {"limit": storage.getLimit(), "used": used, "free": free}
+    return {"limit": storage.getLimit() or _DEFAULT_LIMIT, "used": used, "free": free}
 
 
 @command("optionalLimitSet")

@@ -49,11 +49,13 @@ NOT ported:
   - migratePlugins() -- a one-off "delete the old Mute plugin directory"
     migration for a plugin renamed years ago. Nothing to migrate here.
 """
+import importlib.util
 import json
 import logging
 import os
 import sys
 import time
+import types
 from collections import defaultdict
 from pathlib import Path
 
@@ -73,9 +75,6 @@ class PluginManager:
         self.config: dict = {}
         self.loadConfig()
         self.config.setdefault("builtin", {})
-
-        if self.path_plugins not in sys.path:
-            sys.path.append(self.path_plugins)
 
     def loadConfig(self) -> None:
         if self.config_path and self.config_path.is_file():
@@ -120,13 +119,72 @@ class PluginManager:
         return found
 
     def loadPlugins(self) -> bool:
+        """Found live, running the real zeronet.py entrypoint end to end
+        for the first time (every prior check either used `python -m P2P`,
+        which never touches the legacy loader at all, or pytest's own
+        `import P2P.plugins.Foo` statements, which use the fully-qualified
+        name and so never collided either): this used to do exactly what
+        Plugin/PluginManager.py's loadPlugins() does -- bare
+        __import__(dir_name) plus sys.path.append(self.path_plugins) in
+        __init__ -- which works fine in isolation, but main.py always
+        loads the LEGACY plugin manager first (unconditionally, before
+        Actions.call() dispatches, regardless of --p2p), and 7 of this
+        stack's 8 plugin directories share a name with a legacy plugins/
+        directory (ContentFilter, CryptMessage, Newsfeed, OptionalManager,
+        Sidebar, UiConfig, Zeroname). By the time this ran, sys.modules
+        already had e.g. "OptionalManager" pointing at the LEGACY gevent
+        module; __import__ checks sys.modules by name first, so this
+        loader's own P2P/plugins/OptionalManager/__init__.py never
+        actually executed -- silently, no error, `all_loaded` stayed
+        True -- and none of that plugin's @command registrations ever
+        ran. Reproduced live: optionalLimitStats/feedQuery both came back
+        "Unknown command" over a real websocket against the real
+        zeronet.py main process, despite every relevant test passing
+        (tests sidestep this entirely via the qualified import name).
+
+        Fixed by loading each plugin's __init__.py directly via
+        importlib.util.spec_from_file_location, under a synthetic
+        "P2P_plugins.<name>" module name chosen by this loader itself --
+        guaranteed unique regardless of what the legacy loader already
+        cached under the bare name, and (unlike importing
+        "P2P.plugins.<name>" as a real package path) still works for an
+        arbitrary path_plugins override, real package tree or a bare
+        temp directory alike, which the constructor has always accepted
+        and tests rely on. submodule_search_locations makes this load as
+        a package, so a plugin's own relative imports (the established
+        "from . import commands" convention every P2P plugin uses) keep
+        working exactly as before.
+
+        The "P2P_plugins" GRANDparent also needs a real (if empty) entry
+        in sys.modules before any of this -- found by direct
+        reproduction, not by reasoning about it correctly up front: with
+        only "P2P_plugins.<name>" itself pre-registered, "from . import
+        commands" still failed with "No module named 'P2P_plugins'", even
+        though CPython's own import-resolution rules say the already-
+        cached immediate parent should be enough. A synthetic empty
+        namespace-package stand-in for "P2P_plugins" (no __init__.py of
+        its own -- it's never used as a real package, just needs to
+        exist as *something* importable) resolved it."""
+        if "P2P_plugins" not in sys.modules:
+            plugins_root = types.ModuleType("P2P_plugins")
+            plugins_root.__path__ = []
+            sys.modules["P2P_plugins"] = plugins_root
+
         all_loaded = True
         s = time.time()
         for plugin in self.listPlugins():
             log.debug("Loading plugin: %s", plugin["name"])
+            module_name = "P2P_plugins.%s" % plugin["name"]
             try:
-                sys.modules[plugin["name"]] = __import__(plugin["dir_name"])
+                spec = importlib.util.spec_from_file_location(
+                    module_name, os.path.join(plugin["dir_path"], "__init__.py"),
+                    submodule_search_locations=[plugin["dir_path"]],
+                )
+                module = importlib.util.module_from_spec(spec)
+                sys.modules[module_name] = module
+                spec.loader.exec_module(module)
             except Exception as err:
+                sys.modules.pop(module_name, None)
                 log.error("Plugin %s load error: %s", plugin["name"], err)
                 all_loaded = False
             if plugin["name"] not in self.plugin_names:

@@ -34,6 +34,24 @@ migration's "narrow but real" pattern rather than faking values:
   wrapper's own "escape from iframe" script (window.self !== window.top)
   forced a top-level reload every single time, reloading the outer
   wrapper, which re-embedded the iframe, forever.
+- file_url also carries `&wrapper_nonce=<value>` -- the SAME value this
+  render embeds as the wrapper page's own `window.wrapper_nonce` (see
+  templates/wrapper.html). Found live, once a real site whose content.json
+  actually requests postmessage_nonce_security got far enough to hit this
+  path (ZeroHello's does; ContentManager.loadContent() not being called
+  for already-on-disk sites at boot -- fixed in SiteManager.load() -- had
+  been silently masking it): the real, unmodified site JS's own
+  ZeroFrame.constructor reads `wrapper_nonce` out of *its own* URL
+  (`document.location.href`) and echoes it back on every outgoing
+  message; without it in file_url, every message the site sent carried an
+  empty nonce and got rejected ("Message nonce error"), so nothing the
+  site's own JS asked the wrapper to do (including just rendering) ever
+  went through. What's still NOT ported: the original's server-side
+  single-use tracking of issued nonces (self.server.wrapper_nonces,
+  checked and consumed on the site's own page request) -- this only
+  fixes the client-side nonce match the wrapper.html/ZeroFrame pair
+  actually enforces; a real CSRF-hardening gap, not faked, just not
+  needed to unblock the crash this was found chasing.
 """
 import html
 import json
@@ -76,9 +94,9 @@ def renderWrapper(
     if file_inner_path.endswith("/"):
         file_inner_path += "index.html"
 
-    file_url = "/%s/%s?wrapper=0" % (address, inner_path)
-
     wrapper_nonce = CryptHash.random()
+
+    file_url = "/%s/%s?wrapper=0&wrapper_nonce=%s" % (address, inner_path, wrapper_nonce)
 
     theme = "light"  # No multi-user theme system ported yet -- see module docstring
     themeclass = "theme-%-6s" % theme

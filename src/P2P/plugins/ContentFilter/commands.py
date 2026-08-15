@@ -52,3 +52,17 @@ async def _cmdSiteblockGet(session, params):
     if details is None:
         return {"error": "Site block not found"}
     return details
+
+
+@command("FilterIncludeList")
+async def _cmdFilterIncludeList(session, params):
+    """The "filter includes" feature itself (subscribing to another
+    site's own mute/siteblock list) is NOT ported -- see this plugin's
+    module docstring and storage.py's for why (filter-includes/mutes need
+    WorkerManager to be pluggable, which it isn't yet). But the real
+    wrapper.js's MuteList.updateFilterIncludes() calls this command
+    unconditionally on load, and an "Unknown command" reply crashed on
+    res.length. An empty list is the honest answer, not a stub standing
+    in for a lie -- this stack genuinely has zero filter-includes, since
+    there's no way to add one yet."""
+    return []

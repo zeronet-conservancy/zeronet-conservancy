@@ -92,7 +92,10 @@ import os
 import stat
 import sys
 
+from Config import config
+
 from ..ContentManager import _getDirname
+from ..PluginManager import plugin_manager
 from .UiServer import command
 
 
@@ -139,10 +142,27 @@ async def _requireUser(session):
 
 
 def _param(params, key, index, default=None):
+    """Found live: the real wrapper.js's own ws.cmd() (all.js) sends
+    single-argument commands with a bare scalar as "params" -- e.g.
+    ws.cmd("permissionAdd", permission, cb) puts the plain string
+    "ADMIN" straight in the "params" field, not ["ADMIN"] or
+    {"permission": "ADMIN"}. The original's own handleRequest() dispatch
+    explicitly supports this as a third calling convention ("Support
+    calling as named, unnamed parameters and raw first argument too"):
+    dict -> **kwargs, list -> *args, any other truthy value -> the sole
+    positional arg. Without this branch, a bare-scalar call silently
+    resolved to the default (usually None) for every command that uses
+    this convention -- reproduced live via the ADMIN grant flow: the
+    "Grant" button's permissionAdd(permission) call persisted `null"
+    instead of "ADMIN" (permission never actually took), and
+    permissionDetails(permission) returned "" (the grant dialog's
+    "undefined" description text)."""
     if isinstance(params, dict):
         return params.get(key, default)
     if isinstance(params, list):
         return params[index] if len(params) > index else default
+    if params is not None and index == 0:
+        return params
     return default
 
 
@@ -467,12 +487,32 @@ _PERMISSION_DETAILS = {
 }
 
 
+async def _saveSitePermissions(session):
+    """permissionAdd/Remove mutate site.permissions in place; without this,
+    a granted ADMIN permission only lived for the rest of the current
+    process and every restart re-prompted the "Grant" dialog -- see
+    SiteManager.save()'s own docstring. Best-effort: no site_manager (e.g.
+    a bare UiServer built without one, as most tests use) just skips
+    persisting, same graceful degradation sitePublish already uses for a
+    missing file_server."""
+    site_manager = getattr(session.app, "site_manager", None)
+    if site_manager is not None:
+        await site_manager.save()
+
+
 @command("permissionAdd")
 async def _cmdPermissionAdd(session, params):
-    site = _requireAdmin(session)
+    """Deliberately NOT _requireAdmin()-gated, matching the original's own
+    actionPermissionAdd (no @flag.admin there, unlike Remove/Details right
+    below it): this is the command the "Grant" button in the wrapper's own
+    permission-request dialog calls, for a site that by definition doesn't
+    have the permission yet -- gating it on already having ADMIN would
+    make granting ADMIN for the first time permanently impossible."""
+    site = _requireSite(session)
     permission = _param(params, "permission", 0)
     if permission not in site.permissions:
         site.permissions.append(permission)
+        await _saveSitePermissions(session)
     return "ok"
 
 
@@ -482,6 +522,7 @@ async def _cmdPermissionRemove(session, params):
     permission = _param(params, "permission", 0)
     if permission in site.permissions:
         site.permissions.remove(permission)
+        await _saveSitePermissions(session)
     return "ok"
 
 
@@ -543,13 +584,31 @@ async def _cmdDbQuery(session, params):
 # -- Server / announcer info, listing modified files --
 
 def formatServerInfo(session):
-    """Deliberately narrower than the original's actionServerInfo(): only
-    fields genuinely available from what's threaded into UiApp (no
-    port_opened/version/config fingerprinting -- none of that exists
-    in this stack yet). tor_enabled/tor_status match the original's own
-    field names now that P2P.Tor.TorManager exists (tor_has_meek_bridges/
-    tor_use_bridges are not ported concepts here)."""
-    info = {"platform": sys.platform}
+    """Deliberately narrower than the original's actionServerInfo(): still
+    missing port_opened/fileserver_ip/fileserver_port/config fingerprinting
+    (none of that exists in this stack yet). tor_enabled/tor_status match
+    the original's own field names now that P2P.Tor.TorManager exists
+    (tor_has_meek_bridges/tor_use_bridges are not ported concepts here).
+
+    version/rev ARE included now (they weren't in the first pass) --
+    the real wrapper.js's own all.js reads Page.server_info.version on
+    every single page load (ZeroHello.setServerInfo, Dashboard.render),
+    unconditionally, not just when the sidebar is opened, so their
+    absence crashed every page load rather than degrading a sidebar
+    feature. Same admin-gated fingerprinting-avoidance split as the
+    original: an unprivileged site gets config.user_agent instead of the
+    real version string. rev is always the same dummy integer either way
+    (config.user_agent_rev), matching the original's own "some legacy
+    code relies on this being an integer" comment -- not a simplification
+    here, that's genuinely what the original does too."""
+    site = getattr(session, "site", None)
+    is_admin = bool(site is not None and "ADMIN" in site.permissions)
+    info = {
+        "platform": sys.platform,
+        "version": config.version if is_admin else config.user_agent,
+        "rev": config.user_agent_rev,
+        "plugins": list(plugin_manager.plugin_names) if is_admin else [],
+    }
     file_server = getattr(session.app, "file_server", None)
     if file_server is not None:
         info["peer_id"] = file_server.host.peer_id.to_base58()
@@ -572,6 +631,19 @@ def formatAnnouncerInfo(session, site):
 @command("serverInfo")
 async def _cmdServerInfo(session, params):
     return formatServerInfo(session)
+
+
+@command("serverErrors")
+async def _cmdServerErrors(session, params):
+    """Was entirely missing -- ZeroHello.reloadServerErrors() calls this
+    unconditionally on every page load (right after serverInfo), and an
+    unrecognized command's undefined result crashed setServerErrors()
+    reading .length on it. config.error_logger is a real, always-attached
+    root logging.Handler (Config.py wires it up regardless of which stack
+    is running -- see its own class docstring), so this is genuine
+    recent-ERROR-lines data, not a stub; it just hadn't been wired to a
+    command yet."""
+    return config.error_logger.lines
 
 
 @command("announcerInfo")

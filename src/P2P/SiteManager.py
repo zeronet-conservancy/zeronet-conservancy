@@ -69,7 +69,23 @@ class SiteManager:
     async def load(self, cleanup: bool = True) -> None:
         """(Re)reads private_dir/sites.json: creates a Site for every
         address not already loaded, and (if cleanup) drops any currently
-        loaded site whose address is no longer listed."""
+        loaded site whose address is no longer listed.
+
+        Also loads each new Site's own on-disk content.json into its
+        ContentManager, if present -- found live, driving the real
+        ZeroHello dashboard against an already-downloaded site: nothing
+        anywhere calls ContentManager.loadContent() for a site that
+        already exists on disk at boot (only a fresh download, a
+        siteSign, or a CLI action ever did), so formatSiteInfo()'s
+        `content` stayed None and `size` stayed 0 forever for every site
+        the server already had -- not just briefly until some lazy
+        trigger, since nothing was ever going to trigger it. That crashed
+        the real wrapper.js in multiple places that assume a loaded
+        site's `content` is either a real object or genuinely still-
+        downloading, never "loaded but nobody told ContentManager".
+        Best-effort and silent on failure (corrupt/missing content.json
+        is exactly the "not downloaded yet" case _tryDownloadSite/
+        UiServer already handle via the same isFile() check)."""
         try:
             raw = await trio.to_thread.run_sync(self._sitesJsonPath().read_text)
             data = json.loads(raw)
@@ -85,7 +101,15 @@ class SiteManager:
                 self.log.warning("Skipping invalid address in sites.json: %s", address)
                 continue
             site_root = self.data_dir / address
-            site = Site(address, site_root, serving=bool(settings.get("serving", True)))
+            site = Site(
+                address, site_root, serving=bool(settings.get("serving", True)),
+                permissions=settings.get("permissions"),
+            )
+            if site.storage.isFile("content.json"):
+                try:
+                    await site.content_manager.loadContent()
+                except Exception:
+                    self.log.exception("Failed to load content.json for %s", address)
             self.sites[address] = site
             self._site_settings[address] = dict(settings)
 
@@ -100,13 +124,17 @@ class SiteManager:
 
     async def save(self) -> None:
         """Writes every currently loaded site's settings back to
-        sites.json, refreshing "serving" and "size"/"size_optional" from
-        the live Site/ContentManager first."""
+        sites.json, refreshing "serving", "size"/"size_optional", and
+        "permissions" from the live Site/ContentManager first -- a granted
+        ADMIN permission (or any other) needs to survive a process
+        restart the same way the original's Site.saveSettings() does, not
+        just live in the in-memory Site object for the rest of this run."""
         data = {}
         for address, site in self.sites.items():
             settings = self._site_settings.setdefault(address, {"added": int(time.time()), "own": False})
             settings["serving"] = site.isServing()
             settings["size"] = site.content_manager.getTotalSize()
+            settings["permissions"] = list(site.permissions)
             data[address] = settings
 
         body = json.dumps(data, indent=1, sort_keys=True)

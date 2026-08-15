@@ -52,7 +52,8 @@ class PeerRecord:
 
 
 class Site:
-    def __init__(self, address: str, site_root, serving: bool = True, allow_create: bool = True):
+    def __init__(self, address: str, site_root, serving: bool = True, allow_create: bool = True,
+                 permissions: list | None = None):
         self.address = address
         self.address_sha1 = hashlib.sha1(address.encode("ascii")).digest()  # DHT key
         self.site_root = site_root
@@ -65,9 +66,11 @@ class Site:
         # Minimal slice of the original's settings dict -- just what the
         # Phase 7 wrapper-HTML rendering needs (permissions list, the two
         # per-site auth keys for websocket access). The rest of settings
-        # (added/downloaded/size tracking, sites.json persistence) waits
-        # for whatever eventually needs it.
-        self.permissions: list = []
+        # (added/downloaded/size tracking) waits for whatever eventually
+        # needs it. permissions itself IS persisted -- SiteManager.load()
+        # passes in whatever sites.json had saved, and SiteManager.save()
+        # reads this list back out; see that module's own docstring.
+        self.permissions: list = list(permissions) if permissions else []
         self.wrapper_key = CryptHash.random()
         self.ajax_key = CryptHash.random()
 
