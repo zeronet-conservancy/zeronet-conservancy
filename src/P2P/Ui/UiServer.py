@@ -25,11 +25,15 @@ raw from SiteStorage. NOT the original's isWrapperNecessary() Accept-
 header sniffing -- extension-based here, which covers the common
 navigations but not every edge case that logic handled.
 
-NOT ported at all yet: the ~1400-line websocket command API
-(UiWebsocket.py -- siteInfo/sitePublish/fileGet/etc., one command at a
-time in later sessions, same pattern as protocols/*.py), auth/cookies,
-UiMedia's dynamic pieces (this mounts the static assets directory, not
-the original's more elaborate content-negotiation for it).
+The websocket command API (UiWebsocket.py's ~30 actionX methods) is
+ported command-by-command in commands.py, same pattern as protocols/*.py
+on the P2P side -- see that module's own docstring for which commands and
+why. A connection resolves to a specific Site via ?wrapper_key=, matching
+the original's "Find site by wrapper_key" in UiRequest.actionWebsocket;
+still NOT ported: auth/cookies (wrapper_key alone gates nothing beyond
+site *selection* here, unlike the original's full nonce/cookie session
+model), UiMedia's dynamic pieces (this mounts the static assets directory,
+not the original's more elaborate content-negotiation for it).
 """
 import json
 import pathlib
@@ -63,9 +67,18 @@ def command(name):
     return decorator
 
 
-@command("ping")
-async def _cmdPing(app, params):
-    return "pong"
+class UiSession:
+    """Per-websocket-connection state: which site this connection is
+    scoped to (resolved from ?wrapper_key=, matching the original's
+    "Find site by wrapper_key" in UiRequest.actionWebsocket) and which
+    event channels it has joined. Passed to every command handler in
+    place of the original's `self` (a whole UiWebsocket instance) --
+    handlers here are plain functions, not methods, so they need this
+    explicitly."""
+    def __init__(self, app: "UiApp", site=None):
+        self.app = app
+        self.site = site
+        self.channels: list = []
 
 
 def _guessContentType(inner_path: str) -> str:
@@ -138,6 +151,9 @@ class UiApp:
 
     async def _handleWebsocket(self, websocket: WebSocket) -> None:
         await websocket.accept()
+        wrapper_key = websocket.query_params.get("wrapper_key")
+        site = self._resolveSiteByWrapperKey(wrapper_key) if wrapper_key else None
+        session = UiSession(self, site=site)
         try:
             while True:
                 raw = await websocket.receive_text()
@@ -145,18 +161,24 @@ class UiApp:
                     request = json.loads(raw)
                 except (ValueError, TypeError):
                     continue
-                response = await self._handleCommand(request)
+                response = await self._handleCommand(session, request)
                 await websocket.send_text(json.dumps(response))
         except WebSocketDisconnect:
             return
 
-    async def _handleCommand(self, request: dict) -> dict:
+    def _resolveSiteByWrapperKey(self, wrapper_key: str):
+        for site in self.sites.values():
+            if getattr(site, "wrapper_key", None) == wrapper_key:
+                return site
+        return None
+
+    async def _handleCommand(self, session: "UiSession", request: dict) -> dict:
         cmd = request.get("cmd")
         handler = COMMAND_HANDLERS.get(cmd)
         if handler is None:
             return {"cmd": "response", "to": request.get("id"), "error": "Unknown command: %s" % cmd}
         try:
-            result = await handler(self, request.get("params", {}))
+            result = await handler(session, request.get("params", {}))
         except Exception as err:
             return {"cmd": "response", "to": request.get("id"), "error": str(err)}
         return {"cmd": "response", "to": request.get("id"), "result": result}
@@ -181,3 +203,9 @@ class UiServer:
                 yield self
             finally:
                 nursery.cancel_scope.cancel()
+
+
+# Imported for its @command registrations (populates COMMAND_HANDLERS) --
+# after UiSession/command/COMMAND_HANDLERS above, since commands.py imports
+# `command` back from this module.
+from . import commands  # noqa: E402,F401
