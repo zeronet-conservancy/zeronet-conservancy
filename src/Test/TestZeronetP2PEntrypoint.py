@@ -179,3 +179,30 @@ class TestZeronetP2PCliActions:
 
         assert res.returncode == 0, res.stderr
         assert "Done." in res.stdout
+
+    def testSiteCreateWithP2PFlagThenVerifyRoundTrip(self):
+        """Unlike the other tests here, this creates the site through
+        zeronet.py itself (`siteCreate --p2p`), not the _createP2PSite()
+        helper -- proving siteCreate's own --p2p delegation works, then
+        chaining straight into `siteVerify --p2p` against the address it
+        printed, a real create-then-verify round trip through the actual
+        entrypoint alone."""
+        create_re = re.compile(r"'address': '([^']+)'")
+
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+
+            create_res = _runZeronetPy([
+                "--data-dir", str(data_dir), "--batch", "siteCreate", "--p2p",
+            ])
+            assert create_res.returncode == 0, create_res.stderr
+            match = create_re.search(create_res.stdout)
+            assert match, create_res.stdout
+            address = match.group(1)
+
+            verify_res = _runZeronetPy([
+                "--data-dir", str(data_dir), "--batch", "siteVerify", address, "--p2p",
+            ])
+
+        assert verify_res.returncode == 0, verify_res.stderr
+        assert "'bad_files': []" in verify_res.stdout

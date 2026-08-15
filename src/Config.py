@@ -271,6 +271,7 @@ class Config:
         action = self.subparsers.add_parser("siteCreate", help='Create a new site')
         action.register('type', 'bool', self.strToBool)
         action.add_argument('--use-master_seed', help="Allow created site's private key to be recovered using the master seed in users.json (default: True)", type="bool", choices=[True, False], default=True)
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack instead of the legacy gevent one (experimental)', action='store_true')
 
         # SiteNeedFile
         action = self.subparsers.add_parser("siteNeedFile", help='Get a file from site')

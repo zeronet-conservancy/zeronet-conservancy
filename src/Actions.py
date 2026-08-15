@@ -176,7 +176,10 @@ class Actions:
 
     # Site commands
 
-    def siteCreate(self, use_master_seed=True):
+    def siteCreate(self, use_master_seed=True, p2p=False):
+        if p2p:
+            return self._runP2PAction("siteCreate", use_master_seed=use_master_seed)
+
         logging.info("Generating new privatekey (use_master_seed: %s)..." % config.use_master_seed)
         from Crypt import CryptBitcoin
         if use_master_seed:
