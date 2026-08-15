@@ -38,14 +38,15 @@ peer directly, not a whole site's swarm):
     sites.json (a security-relevant change to what that file exposes) or
     adding an out-of-band discovery channel, neither done here.
 
-Deliberately NOT ported: sitePublish. The original's real path proactively
-pushes an "update" notification to already-connected peers (its fallback
-path, when it can't reach a local running UI, calls site.publish() which
-does this over the wire) -- there is no "update" broadcast protocol in
-P2P/protocols/ yet (only getfile/pex/ping), so there's nothing to push
-through even with a live networking session. This needs that protocol
-built first, not just CLI wiring. Also not ported: importBundle,
-getConfig, test, ipythonThread/main (main is P2P.app.main() already).
+  - sitePublish: signs (unless sign=False), announces, and pushes the new
+    content.json to every discovered peer via WorkerManager.publishUpdate()
+    (protocols/update.py's push protocol) -- the piece that was missing
+    when this was first written is built now. Returns how many peers
+    acknowledged it; raises ActionError if none did (matching the
+    original's own "no peers found" outcome for a fresh/unvisited site).
+
+Also not ported: importBundle, getConfig, test, ipythonThread/main (main
+is P2P.app.main() already).
 
 siteVerify() re-derives its own equivalent of the original's
 site.storage.verifyFiles() inline (a hash-check pass over every file
@@ -78,7 +79,7 @@ from .Peer import Peer
 from .SiteAnnouncer import SiteAnnouncer
 from .SiteManager import SiteManager
 from .UserManager import UserManager
-from .WorkerManager import Scheduler, downloadContentJson, syncSite
+from .WorkerManager import Scheduler, downloadContentJson, publishUpdate, syncSite
 from .discovery.kaddht import KadDHTDiscovery
 
 log = logging.getLogger("P2P.actions")
@@ -200,7 +201,7 @@ class Actions:
         log.info("Site signed!")
 
         if publish:
-            log.info("publish=True requires a running networking session (P2P.app.App) -- not started here.")
+            await self.sitePublish(address, sign=False)  # Already signed just above
         return True
 
     async def siteVerify(self, address: str) -> dict:
@@ -315,6 +316,42 @@ class Actions:
         if no_peers:
             raise ActionError("No peers found for %s" % address)
         return {"inner_path": inner_path, "size": len(data)}
+
+    async def sitePublish(
+        self, address: str, privatekey: str | None = None, inner_path: str = "content.json",
+        sign: bool = True, enable_dht: bool = True,
+    ) -> dict:
+        site = await self._getSite(address)
+        if sign:
+            if not privatekey:
+                user = await self.user_manager.get()
+                if user:
+                    privatekey = user.getSiteData(address, create=False).get("privatekey")
+                if not privatekey:
+                    raise ActionError("No privatekey given and none stored in users.json for %s" % address)
+            await site.content_manager.sign(privatekey)
+        elif inner_path not in site.content_manager.contents:
+            raise ActionError("Nothing loaded to publish for %s -- sign it first or pass sign=True" % inner_path)
+
+        site.serving = True
+        log.info("Publishing site: %s...", address)
+
+        no_peers = False
+        published = 0
+        async with self._networkSession(site, enable_dht=enable_dht) as (file_server, announcer):
+            await announcer.announce(force=True)
+            peers = self._sitePeers(site, file_server)
+            if not peers:
+                no_peers = True
+            else:
+                published = await publishUpdate(site, peers, inner_path=inner_path)
+
+        if no_peers:
+            raise ActionError(
+                "No peers found for %s -- content is ready but nobody was reachable to receive it" % address
+            )
+        log.info("Content published to %s/%s peers.", published, len(peers))
+        return {"published": published, "peers": len(peers)}
 
     async def peerPing(self, peer_id: str, multiaddr: str, count: int = 5) -> dict:
         target_id = ID.from_base58(peer_id)

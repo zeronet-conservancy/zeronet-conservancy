@@ -109,6 +109,29 @@ async def syncSite(site, peers: list) -> list:
     return updated
 
 
+async def publishUpdate(site, peers: list, inner_path: str = "content.json") -> int:
+    """Pushes site's current, already-signed inner_path content to each
+    peer via protocols/update.py's push protocol (Peer.pushUpdate()).
+    Returns how many peers acknowledged it -- the counterpart to
+    syncSite()'s pull direction. Requires inner_path to already be loaded
+    into site.content_manager.contents (i.e. already signed via
+    ContentManager.sign()); this doesn't sign anything itself."""
+    content = site.content_manager.contents.get(inner_path)
+    if content is None:
+        raise ValueError("No loaded content to publish for %s" % inner_path)
+    body = json.dumps(content).encode("utf8")
+
+    published = 0
+    for peer in peers:
+        try:
+            res = await peer.pushUpdate(site.address, inner_path, body)
+        except Exception:
+            continue
+        if res and "error" not in res:
+            published += 1
+    return published
+
+
 class PriorityLimiter:
     """Like trio.CapacityLimiter, but waiters are released in priority
     order (highest first) rather than FIFO.

@@ -22,12 +22,14 @@ fileWrite/fileDelete already used, not a new pattern.
 
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
-  - sitePublish's actual peer push. The original's real sitePublish pushes
-    an "update" notification to already-connected peers; P2P/protocols/
-    has no "update" broadcast handler (see P2P/actions.py's own docstring
-    on this same gap for the CLI's sitePublish). This sitePublish signs
-    and marks the site serving, matching what CAN be done locally, but
-    does not (cannot yet) push anything over the wire.
+  - sitePublish's actual peer push. protocols/update.py now exists (and
+    P2P/actions.py's CLI sitePublish uses it), but UiApp/UiSession here
+    have no FileServer/announcer/peer-list reference the way Actions does
+    via its own _networkSession() -- this sitePublish signs and marks the
+    site serving, matching what CAN be done with only what's threaded
+    into UiApp today, but doesn't push. Threading a FileServer reference
+    into UiApp (P2P/app.py already owns both file_server and ui_server
+    side by side) is the remaining piece, not new protocol work.
   - certSelect -- the original builds an HTML "select account" dialog and
     round-trips it through the client via cmd("notification")/cmd(
     "injectScript"); that's UI-rendering logic entangled with a specific

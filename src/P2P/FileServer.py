@@ -19,7 +19,7 @@ import pathlib
 from .Host import Host
 from .ConnectionPolicy import ConnectionPolicy
 from .ProtocolRouter import ProtocolRouter
-from .protocols import getfile, pex, ping
+from .protocols import getfile, pex, ping, update
 
 
 class FileServer:
@@ -35,12 +35,19 @@ class FileServer:
         self.router.register(ping.PROTOCOL_ID, ping.handle)
         self.router.register(getfile.PROTOCOL_ID, getfile.make_handler(self._resolveSiteStorage))
         self.router.register(pex.PROTOCOL_ID, pex.make_handler(self._knownPeersForSite, self._onPeerReceived))
+        self.router.register(update.PROTOCOL_ID, update.make_handler(self._resolveSite))
 
     def _resolveSiteStorage(self, site_address: str):
         site = self.sites.get(site_address)
         if site is None or not site.isServing():
             return None
         return site.storage
+
+    def _resolveSite(self, site_address: str):
+        site = self.sites.get(site_address)
+        if site is None or not site.isServing():
+            return None
+        return site
 
     def _knownPeersForSite(self, site_address: str, exclude: set, limit: int) -> list:
         site = self.sites.get(site_address)

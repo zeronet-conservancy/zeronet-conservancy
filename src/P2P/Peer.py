@@ -1,10 +1,10 @@
 """Async replacement for Peer/Peer.py's public API, backed by PeerSession
 instead of Connection. Scoped to the commands that have protocol handlers
-so far (ping, getFile, pex) -- listModified/getHashfield/setHashfield/
-findHashIds/update land as their protocols/*.py handlers do; request()
-already returns a clean {"error": "Unknown command: ..."} for anything not
-yet registered, so adding them later doesn't require changing this file's
-shape.
+so far (ping, getFile, pex, update) -- listModified/getHashfield/
+setHashfield/findHashIds land as their protocols/*.py handlers do;
+request() already returns a clean {"error": "Unknown command: ..."} for
+anything not yet registered, so adding them later doesn't require
+changing this file's shape.
 
 streamFile (chunked raw-stream transfer) is still deferred per Phase 2's
 scoping note in protocols/getfile.py -- getFile here mirrors the original
@@ -72,3 +72,8 @@ class Peer:
     async def pex(self, site_address: str, my_peers: list, need_num: int = 5) -> list:
         from .protocols import pex as pex_protocol
         return await pex_protocol.request(self.host, self.peer_id, site_address, my_peers, need_num)
+
+    async def pushUpdate(self, site_address: str, inner_path: str, body: bytes) -> dict:
+        """Pushes a content.json update to this peer -- see
+        protocols/update.py for the receiving side."""
+        return await self.request("update", {"site": site_address, "inner_path": inner_path, "body": body})

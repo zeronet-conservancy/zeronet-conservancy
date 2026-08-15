@@ -386,6 +386,74 @@ class TestP2PActionsSiteDownload:
         assert on_disk == b"needFile target content"
 
 
+class TestP2PActionsSitePublish:
+    """Real end-to-end sitePublish(): signs locally, then pushes the new
+    content.json to a real seeded peer over protocols/update.py, proving
+    the actual push (not just the local sign) works."""
+
+    def testSitePublishPushesNewContentToSeededPeer(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as dc, tempfile.TemporaryDirectory() as dp, \
+                    tempfile.TemporaryDirectory() as peer_site_dir:
+                from P2P.FileServer import FileServer
+                from P2P.Site import Site
+
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+                # Peer already serves an OLDER signed version of the site --
+                # backdated "modified" so it's unambiguously older than
+                # whatever the client signs next, even within the same
+                # wall-clock second (both use int(time.time())).
+                peer_site = Site(address, pathlib.Path(peer_site_dir))
+                await peer_site.content_manager.sign(privatekey)
+                old_content = dict(peer_site.content_manager.contents["content.json"])
+                old_content["modified"] -= 100
+                old_content.pop("signs", None)
+                sign_content = json.dumps(old_content, sort_keys=True)
+                old_content["signs"] = {address: CryptBitcoin.sign(sign_content, privatekey)}
+                await peer_site.storage.writeJson("content.json", old_content)
+                peer_site.content_manager.contents["content.json"] = old_content
+
+                peer_server = FileServer(pathlib.Path(dp), ws_port=None)
+                peer_server.addSite(peer_site)
+
+                async with peer_server.run():
+                    multiaddr = peer_server.host.get_addrs()[0]
+                    tcp_port = multiaddr.value_for_protocol("tcp")
+
+                    actions = Actions(pathlib.Path(dc))
+                    await actions.site_manager.load()
+                    client_site = actions.site_manager.add(address, own=True)
+                    await client_site.storage.write("new.txt", b"published via update push")
+                    client_site.addPeer(peer_server.host.peer_id, ip="127.0.0.1", port=int(tcp_port), source="test")
+
+                    result = await actions.sitePublish(address, privatekey=privatekey, enable_dht=False)
+                    peer_content = await peer_site.storage.loadJson("content.json")
+                    return result, peer_content, client_site.content_manager.contents["content.json"]["modified"]
+
+        result, peer_content, published_modified = compat.run(scenario)
+        assert result["published"] == 1
+        assert peer_content["modified"] == published_modified
+        assert "new.txt" in peer_content["files"]
+
+    def testSitePublishRaisesWithoutPeers(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                actions = Actions(pathlib.Path(d))
+                await actions.site_manager.load()
+                actions.site_manager.add(address, own=True)
+                try:
+                    await actions.sitePublish(address, privatekey=privatekey, enable_dht=False)
+                    return "no-error"
+                except ActionError:
+                    return "raised"
+
+        assert compat.run(scenario) == "raised"
+
+
 class TestP2PActionsSiteCmd:
     def testSiteCmdTalksToRunningUiServer(self):
         async def scenario():
