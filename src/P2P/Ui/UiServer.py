@@ -1,30 +1,57 @@
 """Trio-native replacement for Ui/UiServer.py + Ui/UiRequest.py's routing,
 served via Hypercorn's trio worker instead of gevent.pywsgi.WSGIServer +
-the custom src/lib/gevent_ws WebSocketHandler. Hypercorn is a maintained
-ASGI server with native trio support and built-in WebSocket handling, so
-this is an ASGI-app rewrite of routing/serving rather than a from-scratch
-HTTP/WS protocol implementation -- the whole point of picking it over
-hand-rolling h11/trio-websocket directly.
+the custom src/lib/gevent_ws WebSocketHandler.
 
-Scoped to the actual technical risk this phase needs to retire: does
-Hypercorn's trio worker correctly serve HTTP and WebSocket, wired to the
-trio-native Site/SiteStorage stack built in Phase 6? Ported: basic HTTP
-routing, serving a real file out of a site's SiteStorage (the core of
-actionSiteMedia), and a WebSocket upgrade + minimal command round-trip
-(the core of actionWebsocket). NOT ported: wrapper HTML rendering (Jinja2
-templating), the ~1400-line websocket command API (UiWebsocket.py --
-siteInfo/sitePublish/fileGet/etc., one command at a time in later
-sessions, same pattern as protocols/*.py), CORS/host-allowlist security,
-auth/cookies, UiMedia (the UI's own static assets).
+Routing/dispatch itself is now Starlette, not a hand-rolled ASGI
+callable: Starlette sits on the same ASGI/Hypercorn foundation already
+chosen and gives real, tested replacements for pieces the original
+hand-rolled --
+
+  - TrustedHostMiddleware replaces isHostAllowed()'s manual Host-header
+    check (still defaults to 127.0.0.1/localhost, the original's own safe
+    default for local-only installs).
+  - CORSMiddleware is the real place cross-origin rules belong, in place
+    of hasCorsPermission()/isCrossOriginRequest()'s hand-rolled logic --
+    locked down (no cross-origin allowed) until the original's per-site
+    permission model is ported.
+  - StaticFiles mounts src/Ui/media/ at /uimedia/ directly -- the actual
+    production CSS/JS/images, not copies, so nothing to keep in sync.
+  - Route/WebSocketRoute replace the manual scope["type"] dispatch this
+    module used before Starlette.
+
+Wrapper HTML rendering (Wrapper.py, Jinja2-based) covers the common case:
+an HTML page (or the site root) gets wrapped, anything else is served
+raw from SiteStorage. NOT the original's isWrapperNecessary() Accept-
+header sniffing -- extension-based here, which covers the common
+navigations but not every edge case that logic handled.
+
+NOT ported at all yet: the ~1400-line websocket command API
+(UiWebsocket.py -- siteInfo/sitePublish/fileGet/etc., one command at a
+time in later sessions, same pattern as protocols/*.py), auth/cookies,
+UiMedia's dynamic pieces (this mounts the static assets directory, not
+the original's more elaborate content-negotiation for it).
 """
 import json
+import pathlib
 from contextlib import asynccontextmanager
 
 import trio
 from hypercorn.config import Config
 from hypercorn.trio import serve
+from starlette.applications import Starlette
+from starlette.middleware import Middleware
+from starlette.middleware.cors import CORSMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
+from starlette.requests import Request
+from starlette.responses import Response
+from starlette.routing import Mount, Route, WebSocketRoute
+from starlette.staticfiles import StaticFiles
+from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..SiteStorage import AccessError
+from .Wrapper import renderWrapper
+
+UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
 
 COMMAND_HANDLERS = {}
 
@@ -41,86 +68,87 @@ async def _cmdPing(app, params):
     return "pong"
 
 
-class UiApp:
-    """The ASGI application itself -- a callable(scope, receive, send),
-    same shape any ASGI server (Hypercorn, uvicorn, etc.) expects."""
+def _guessContentType(inner_path: str) -> str:
+    if inner_path.endswith(".json"):
+        return "application/json"
+    if inner_path.endswith(".html"):
+        return "text/html"
+    if inner_path.endswith(".css"):
+        return "text/css"
+    if inner_path.endswith(".js"):
+        return "application/javascript"
+    return "application/octet-stream"
 
-    def __init__(self, sites: dict):
+
+class UiApp:
+    def __init__(self, sites: dict, allowed_hosts: list | None = None):
         self.sites = sites  # site address -> P2P.Site
+        self.wrapper_nonces: list = []
+
+        routes = [
+            Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
+            Route("/{address}", self._handleSite, methods=["GET"]),
+            WebSocketRoute("/Ui", self._handleWebsocket),
+        ]
+        if UI_MEDIA_DIR.is_dir():
+            routes.insert(0, Mount("/uimedia", app=StaticFiles(directory=str(UI_MEDIA_DIR)), name="uimedia"))
+
+        middleware = [
+            Middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts or ["127.0.0.1", "localhost"]),
+            Middleware(CORSMiddleware, allow_origins=[], allow_credentials=False),
+        ]
+
+        self._asgi = Starlette(routes=routes, middleware=middleware)
 
     async def __call__(self, scope, receive, send) -> None:
-        if scope["type"] == "http":
-            await self._handleHttp(scope, send)
-        elif scope["type"] == "websocket":
-            await self._handleWebsocket(receive, send)
-        elif scope["type"] == "lifespan":
-            await self._handleLifespan(receive, send)
+        await self._asgi(scope, receive, send)
 
-    async def _handleLifespan(self, receive, send) -> None:
-        """ASGI lifespan protocol: hypercorn waits for an explicit
-        startup/shutdown handshake before nursery.start() considers the
-        server ready -- skipping this isn't optional, the app hangs (or
-        the channel closes early) without it."""
-        while True:
-            event = await receive()
-            if event["type"] == "lifespan.startup":
-                await send({"type": "lifespan.startup.complete"})
-            elif event["type"] == "lifespan.shutdown":
-                await send({"type": "lifespan.shutdown.complete"})
-                return
+    async def _handleSite(self, request: Request) -> Response:
+        address = request.path_params["address"]
+        inner_path = request.path_params.get("inner_path", "")
 
-    async def _handleHttp(self, scope, send) -> None:
-        parts = scope["path"].strip("/").split("/", 1)
-        site_address = parts[0] if parts else ""
-        inner_path = parts[1] if len(parts) > 1 and parts[1] else "content.json"
-
-        site = self.sites.get(site_address)
+        site = self.sites.get(address)
         if site is None or not site.isServing():
-            await self._respond(send, 404, b"Unknown site")
-            return
+            return Response(b"Unknown site", status_code=404)
 
+        is_html_page = inner_path in ("", "/") or inner_path.endswith("/") or inner_path.endswith(".html")
+        wants_wrapper = request.query_params.get("wrapper") != "0"
+
+        if is_html_page and wants_wrapper:
+            body = renderWrapper(
+                site,
+                scheme=request.url.scheme,
+                host=request.url.hostname or "127.0.0.1",
+                site_file_server_port=request.url.port or 80,
+                address=address,
+                inner_path=inner_path or "index.html",
+                title=address,
+            )
+            return Response(body, media_type="text/html")
+
+        target_path = inner_path or "content.json"
         try:
-            if not site.storage.isFile(inner_path):
-                await self._respond(send, 404, b"File not found")
-                return
-            data = await site.storage.read(inner_path)
+            if not site.storage.isFile(target_path):
+                return Response(b"File not found", status_code=404)
+            data = await site.storage.read(target_path)
         except AccessError:
-            await self._respond(send, 403, b"Invalid path")
+            return Response(b"Invalid path", status_code=403)
+
+        return Response(data, media_type=_guessContentType(target_path))
+
+    async def _handleWebsocket(self, websocket: WebSocket) -> None:
+        await websocket.accept()
+        try:
+            while True:
+                raw = await websocket.receive_text()
+                try:
+                    request = json.loads(raw)
+                except (ValueError, TypeError):
+                    continue
+                response = await self._handleCommand(request)
+                await websocket.send_text(json.dumps(response))
+        except WebSocketDisconnect:
             return
-
-        await self._respond(send, 200, data, content_type=_guessContentType(inner_path))
-
-    async def _respond(self, send, status: int, body: bytes, content_type: str = "text/plain") -> None:
-        await send({
-            "type": "http.response.start",
-            "status": status,
-            "headers": [(b"content-type", content_type.encode())],
-        })
-        await send({"type": "http.response.body", "body": body})
-
-    async def _handleWebsocket(self, receive, send) -> None:
-        event = await receive()
-        if event["type"] != "websocket.connect":
-            return
-        await send({"type": "websocket.accept"})
-
-        while True:
-            event = await receive()
-            if event["type"] == "websocket.disconnect":
-                return
-            if event["type"] != "websocket.receive":
-                continue
-
-            raw = event.get("text")
-            if raw is None:
-                raw = (event.get("bytes") or b"").decode("utf8", "ignore")
-            try:
-                request = json.loads(raw)
-            except (ValueError, TypeError):
-                continue
-
-            response = await self._handleCommand(request)
-            await send({"type": "websocket.send", "text": json.dumps(response)})
 
     async def _handleCommand(self, request: dict) -> dict:
         cmd = request.get("cmd")
@@ -134,34 +162,21 @@ class UiApp:
         return {"cmd": "response", "to": request.get("id"), "result": result}
 
 
-def _guessContentType(inner_path: str) -> str:
-    if inner_path.endswith(".json"):
-        return "application/json"
-    if inner_path.endswith(".html"):
-        return "text/html"
-    if inner_path.endswith(".css"):
-        return "text/css"
-    if inner_path.endswith(".js"):
-        return "application/javascript"
-    return "application/octet-stream"
-
-
 class UiServer:
-    def __init__(self, sites: dict, host: str = "127.0.0.1", port: int = 0):
-        self.app = UiApp(sites)
-        self.config = Config()
-        self.config.bind = ["%s:%s" % (host, port)]
+    def __init__(self, sites: dict, host: str = "127.0.0.1", port: int = 0, allowed_hosts: list | None = None):
+        self.app = UiApp(sites, allowed_hosts=allowed_hosts)
+        self._host = host
+        self._port = port
         self.bound_addresses: list[str] = []
 
     @asynccontextmanager
     async def run(self):
         """Async context manager: `async with ui_server.run(): ...` --
-        matches P2P.Host.run()'s shape. Uses @asynccontextmanager rather
-        than manually driving a nursery's __aenter__/__aexit__ (trio
-        explicitly disallows that outside of with/async-with -- it
-        corrupts the nursery's internal state)."""
+        matches P2P.Host.run()'s shape."""
+        config = Config()
+        config.bind = ["%s:%s" % (self._host, self._port)]
         async with trio.open_nursery() as nursery:
-            self.bound_addresses = await nursery.start(serve, self.app, self.config)
+            self.bound_addresses = await nursery.start(serve, self.app, config)
             try:
                 yield self
             finally:

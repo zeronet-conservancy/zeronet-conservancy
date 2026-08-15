@@ -26,6 +26,8 @@ import time
 
 from libp2p.peer.id import ID
 
+from Crypt import CryptHash
+
 from .SiteStorage import SiteStorage
 from .ContentManager import ContentManager
 
@@ -59,6 +61,15 @@ class Site:
         self.serving = serving
         self.peers: dict[str, PeerRecord] = {}  # peer_id.to_base58() -> PeerRecord
         self.peer_blacklist: set = set()  # of peer_id.to_base58()
+
+        # Minimal slice of the original's settings dict -- just what the
+        # Phase 7 wrapper-HTML rendering needs (permissions list, the two
+        # per-site auth keys for websocket access). The rest of settings
+        # (added/downloaded/size tracking, sites.json persistence) waits
+        # for whatever eventually needs it.
+        self.permissions: list = []
+        self.wrapper_key = CryptHash.random()
+        self.ajax_key = CryptHash.random()
 
     def isServing(self) -> bool:
         return self.serving

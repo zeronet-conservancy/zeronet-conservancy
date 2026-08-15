@@ -97,3 +97,84 @@ class TestP2PUiServer:
         assert reply["cmd"] == "response"
         assert reply["to"] == 2
         assert "Unknown command" in reply["error"]
+
+    def testHtmlPageServedWrapped(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestWrapSite", pathlib.Path(root))
+                await site.storage.write("index.html", b"<h1>real site content</h1>")
+
+                server = UiServer(sites={"1TestWrapSite": site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get("%s/1TestWrapSite/index.html" % base_url)
+                        return response.status_code, response.text, response.headers.get("content-type")
+
+        status, body, content_type = compat.run(scenario)
+        assert status == 200
+        assert content_type.startswith("text/html")
+        # This is the *wrapper* HTML, not the site's own raw content --
+        # the real page loads inside its iframe, not inlined here.
+        assert "<!DOCTYPE html>" in body
+        assert 'address = "1TestWrapSite"' in body
+        assert "<h1>real site content</h1>" not in body
+
+    def testWrapperOptOutServesRawFile(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestNoWrapSite", pathlib.Path(root))
+                await site.storage.write("index.html", b"<h1>raw content</h1>")
+
+                server = UiServer(sites={"1TestNoWrapSite": site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get("%s/1TestNoWrapSite/index.html?wrapper=0" % base_url)
+                        return response.status_code, response.text
+
+        status, body = compat.run(scenario)
+        assert status == 200
+        assert body == "<h1>raw content</h1>"
+
+    def testSiteRootServesWrapped(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestRootSite", pathlib.Path(root))
+                server = UiServer(sites={"1TestRootSite": site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get("%s/1TestRootSite" % base_url)
+                        return response.status_code, response.text
+
+        status, body = compat.run(scenario)
+        assert status == 200
+        assert "<!DOCTYPE html>" in body
+
+    def testStaticUiMediaServedFromRealAssets(self):
+        async def scenario():
+            server = UiServer(sites={})
+            async with server.run():
+                base_url = server.bound_addresses[0]
+                async with httpx.AsyncClient() as client:
+                    response = await client.get("%s/uimedia/all.css" % base_url)
+                    return response.status_code, len(response.content)
+
+        status, size = compat.run(scenario)
+        assert status == 200
+        assert size > 0  # served the real file from src/Ui/media/, not a stub
+
+    def testUntrustedHostRejected(self):
+        async def scenario():
+            server = UiServer(sites={})  # default allowed_hosts: 127.0.0.1/localhost only
+            async with server.run():
+                port = server.bound_addresses[0].rsplit(":", 1)[1]
+                async with httpx.AsyncClient() as client:
+                    response = await client.get(
+                        "http://127.0.0.1:%s/" % port,
+                        headers={"Host": "evil-attacker.example.com"},
+                    )
+                    return response.status_code
+
+        assert compat.run(scenario) == 400
