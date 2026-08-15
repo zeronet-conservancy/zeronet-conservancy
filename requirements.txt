@@ -27,3 +27,5 @@ GitPython>=3.1.41 # >=3.1.41 runs `git version` at import (CVE-2024-22190 mitiga
 # libp2p P2P networking migration (src/P2P/) -- runs on trio, not asyncio
 # trio/anyio/multiaddr etc. pulled in transitively
 libp2p==0.7.0
+# Phase 7: trio-native UI server (src/P2P/Ui/), ASGI via Hypercorn's trio worker
+hypercorn==0.18.0
