@@ -58,3 +58,28 @@ class TestP2PHost:
 
         negotiated = compat.run(scenario)
         assert negotiated == RELAY_HOP_PROTOCOL_ID
+
+    def testDialViaRelayReachesPeerWithNoDirectConnection(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as dr, tempfile.TemporaryDirectory() as dd, \
+                    tempfile.TemporaryDirectory() as dc:
+                relay = Host(pathlib.Path(dr), enable_relay_hop=True)
+                dest = Host(pathlib.Path(dd), enable_relay_client=True)
+                dialer = Host(pathlib.Path(dc), enable_relay_client=True)
+                async with relay.run(), dest.run(), dialer.run():
+                    relay_info = PeerInfo(relay.peer_id, relay.get_addrs())
+
+                    # dest reserves on the relay so it can be dialed through it.
+                    await dest.connect(relay_info)
+                    reserved = await dest.reserve_relay(relay_info)
+
+                    # dialer only ever talks to the relay -- never connects
+                    # to dest directly.
+                    await dialer.connect(relay_info)
+                    await dialer.dial_via_relay(relay_info, dest.peer_id)
+
+                    return reserved, dest.peer_id in dialer.get_network().connections
+
+        reserved, connected = compat.run(scenario)
+        assert reserved is True
+        assert connected is True
