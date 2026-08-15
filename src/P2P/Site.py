@@ -1,9 +1,10 @@
 """Trio-native replacement for Site/Site.py -- started with the peer table
 (addPeer/getConnectablePeers/isServing) and now owns a real SiteStorage
-(file I/O layer, also ported). ContentManager/WorkerManager/the UI layer
-are still gevent-based and much larger undertakings of their own --
-content loading, download orchestration, and plugin hooks extend this
-class once those land.
+(file I/O layer) and ContentManager (content.json loading + root-signature
+verification only -- see ContentManager.py's own module docstring for what
+that excludes). WorkerManager and the UI layer are still gevent-based and
+much larger undertakings of their own -- download orchestration and
+plugin hooks extend this class once those land.
 
 Peer identity is peer_id (libp2p), not ip:port like the old Site.peers
 table: host.connect() needs a peer_id up front to authenticate the Noise
@@ -17,6 +18,7 @@ import time
 from libp2p.peer.id import ID
 
 from .SiteStorage import SiteStorage
+from .ContentManager import ContentManager
 
 
 class PeerRecord:
@@ -43,6 +45,7 @@ class Site:
         self.address = address
         self.site_root = site_root
         self.storage = SiteStorage(site_root, allow_create=allow_create)
+        self.content_manager = ContentManager(self.storage, address)
         self.serving = serving
         self.peers: dict[str, PeerRecord] = {}  # peer_id.to_base58() -> PeerRecord
         self.peer_blacklist: set = set()  # of peer_id.to_base58()

@@ -1,33 +1,36 @@
 """Trio port of Content/ContentManager.py -- deliberately narrow scope.
 
-ContentManager doesn't split as cleanly as SiteStorage did: its core
-verification logic (content.json signing chains, cert verification,
-getValidSigners/verifyContent/verifyCert/sign) is one tightly-coupled,
-security-critical unit of ~800 lines. Rushing a port of *that* risks a
-real vulnerability (a subtly wrong signature check is worse than no
-check, because it looks safe) -- it deserves its own dedicated,
-carefully-reviewed pass, not a slice of a session already covering four
-other files. VerifyError is raised with a clear "not implemented" message
-for the content.json-signing path rather than silently treating any
-content.json as valid.
+ContentManager doesn't split as cleanly as SiteStorage did. Its full
+verification logic covers two cases:
 
-What's ported here: content.json *loading* (parsing only, not the
-original's 246-line loadContent() with its recursive-includes/bad-file-
-tracking/user-content-scanning logic -- another deliberate simplification)
-and getFileInfo()/verifyFile()'s regular-file path (sha512+size check),
-which is what's actually needed to validate a downloaded file against
-already-trusted content.json data.
+  1. The ROOT content.json, signed directly by the site's own address.
+     This is what every site has and what most sites only ever use.
+  2. Non-root content.json (subdirectory "includes", ZeroNet's
+     multi-user/forum feature), verified through a separate cert-signer
+     chain (getUserContentRules/verifyCert/getRules) -- a genuinely
+     different, more complex trust model layered on top of case 1.
 
-self.contents is a plain dict here, not the original's ContentDbDict
-(a SQLite-backed structure wrapping Db.py, itself not fully ported --
-see Phase 3's DbBackground.py). A plain dict satisfies the same
-.get()/[] interface getFileInfo() needs; the DB-backed caching layer is a
-separate, later concern, not a correctness requirement for this logic.
+This file ports case 1 in full (signature verification, replay/rollback
+protection, structural checks) since it's the actual security boundary
+every site depends on. Case 2 is NOT ported -- getValidSigners()/
+_verifySignature() explicitly raise NotImplementedError for any inner_path
+other than "content.json" rather than silently skipping or approving it.
+That cert-signer system is a separate, large undertaking deserving its
+own dedicated pass; a rushed port of a trust-chain feature is worse than
+leaving it unimplemented, because a subtly wrong check looks safe.
+
+self.contents is a plain dict here, not the original's ContentDbDict (a
+SQLite-backed structure wrapping Db.py, itself not fully ported -- see
+Phase 3's DbBackground.py). Same .get()/[] interface getFileInfo() needs;
+DB-backed caching is a separate, later concern. Likewise getTotalSize()
+here recomputes from self.contents rather than tracking an incremental
+running total on a settings dict that doesn't exist in this scoped model.
 """
 import json
+import re
+import time
 
-from Crypt import CryptHash
-from util import helper
+from Crypt import CryptBitcoin, CryptHash
 
 
 class VerifyError(Exception):
@@ -35,8 +38,9 @@ class VerifyError(Exception):
 
 
 class ContentManager:
-    def __init__(self, storage):
+    def __init__(self, storage, site_address: str):
         self.storage = storage
+        self.site_address = site_address
         self.contents: dict = {}  # content_inner_path -> parsed content.json dict
 
     async def loadContent(self, content_inner_path: str = "content.json") -> dict:
@@ -84,15 +88,143 @@ class ContentManager:
 
         return False
 
+    def isValidRelativePath(self, relative_path) -> bool:
+        """Ported verbatim -- pure string validation."""
+        relative_path = str(relative_path)
+        if ".." in relative_path.replace("\\", "/").split("/"):
+            return False
+        elif len(relative_path) > 255:
+            return False
+        elif not relative_path:
+            return False
+        elif relative_path[0] in ("/", "\\"):
+            return False
+        elif relative_path[-1] in (".", " "):
+            return False
+        elif re.match(r".*(^|/)(CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]|CONOUT\$|CONIN\$)(\.|/|$)", relative_path, re.IGNORECASE):
+            return False
+        else:
+            return bool(re.match(r"^[^\x00-\x1F\"*:<>?\\|]+$", relative_path))
+
+    def getTotalSize(self) -> int:
+        """Sum of all known (non-negative-size) file sizes across every
+        loaded content.json. Computed fresh rather than tracked
+        incrementally -- see module docstring."""
+        total = 0
+        for content in self.contents.values():
+            for file_info in content.get("files", {}).values():
+                if file_info.get("size", 0) >= 0:
+                    total += file_info["size"]
+        return total
+
+    def getValidSigners(self, inner_path: str) -> list:
+        """Root content.json only. Non-root paths need the cert-signer
+        chain (getUserContentRules/getRules), not ported -- see module
+        docstring."""
+        if inner_path != "content.json":
+            raise NotImplementedError(
+                "Non-root content.json signer resolution (includes/user content, "
+                "the cert-signer chain) is not ported -- see P2P/ContentManager.py's "
+                "module docstring."
+            )
+        valid_signers = []
+        root_content = self.contents.get("content.json")
+        if root_content and "signers" in root_content:
+            valid_signers += root_content["signers"][:]
+        if self.site_address not in valid_signers:
+            valid_signers.append(self.site_address)
+        return valid_signers
+
+    def getSignsRequired(self, inner_path: str) -> int:
+        return 1  # No multisig support yet (matches the original's own "Todo: Multisig")
+
+    def verifyContentJson(self, content: dict, size_limit_bytes: int | None = None) -> bool:
+        """Verify a ROOT content.json: signature, replay/rollback
+        protection, and basic structural rules. Raises VerifyError (bad
+        content) or NotImplementedError (asked to verify something outside
+        this file's scope -- see module docstring) rather than ever
+        silently approving something unchecked.
+        """
+        inner_path = "content.json"
+
+        if content.get("address") and content["address"] != self.site_address:
+            raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site_address))
+        if content.get("inner_path") and content["inner_path"] != inner_path:
+            raise VerifyError("Wrong inner_path: %s" % content["inner_path"])
+
+        old_content = self.contents.get(inner_path)
+        if old_content:
+            if old_content.get("modified") == content.get("modified"):
+                return False  # Same content.json we already have -- not an error, just nothing to do
+            if old_content.get("modified", 0) > content.get("modified", 0):
+                raise VerifyError(
+                    "We have newer (Our: %s, Sent: %s)" % (old_content["modified"], content.get("modified"))
+                )
+        if content.get("modified", 0) > time.time() + 60 * 60 * 24:  # allow 1 day+ clock drift
+            raise VerifyError("Modify timestamp is in the far future!")
+
+        for file_relative_path in list(content.get("files", {}).keys()) + list(content.get("files_optional", {}).keys()):
+            if not self.isValidRelativePath(file_relative_path):
+                raise VerifyError("Invalid relative path: %s" % file_relative_path)
+
+        content_size_file = len(json.dumps(content, indent=1))
+        if size_limit_bytes is not None and content_size_file > size_limit_bytes:
+            raise VerifyError("Content too large %s B > %s B" % (content_size_file, size_limit_bytes))
+
+        self._verifySignature(inner_path, content)
+        return True
+
+    def _verifySignature(self, inner_path: str, content: dict) -> bool:
+        if inner_path != "content.json":
+            raise NotImplementedError(
+                "Non-root content.json verification (cert-signer chain) is not "
+                "ported -- see P2P/ContentManager.py's module docstring."
+            )
+
+        new_content = dict(content)
+        old_sign = new_content.pop("sign", None)
+        signs = new_content.pop("signs", None)
+        sign_content = json.dumps(new_content, sort_keys=True)
+
+        if not signs:
+            if old_sign:
+                raise VerifyError("Invalid old-style sign")
+            raise VerifyError("Not signed")
+
+        valid_signers = self.getValidSigners(inner_path)
+        signs_required = self.getSignsRequired(inner_path)
+
+        # If the signer list itself was extended beyond the bare site
+        # address, the extended list has to be authorized by the site
+        # address too -- otherwise a malicious peer could just widen
+        # "signers" and add their own key to it.
+        if len(valid_signers) > 1:
+            if "signers_sign" not in content:
+                raise VerifyError("Missing signers_sign")
+            signers_data = "%s:%s" % (signs_required, ",".join(valid_signers))
+            if not CryptBitcoin.verify(signers_data, self.site_address, content["signers_sign"]):
+                raise VerifyError("Invalid signers_sign!")
+
+        valid_signs = 0
+        for address in valid_signers:
+            if address in signs:
+                valid_signs += CryptBitcoin.verify(sign_content, address, signs[address])
+            if valid_signs >= signs_required:
+                break
+        if valid_signs < signs_required:
+            raise VerifyError("Valid signs: %s/%s" % (valid_signs, signs_required))
+        return True
+
     def verifyFile(self, inner_path: str, file, ignore_same: bool = True) -> bool:
-        """Regular-file path only: sha512 + size check against the loaded
-        content.json's file entry. content.json itself (the signature/cert
-        trust chain) is NOT handled here -- see the module docstring."""
+        """Regular-file path: sha512 + size check against the loaded
+        content.json's file entry. content.json itself goes through
+        verifyContentJson() instead (different shape: takes a parsed dict,
+        not a file object, and the caller needs the True/False/raise
+        distinction verifyContentJson() gives for "unchanged" vs "invalid")."""
         if inner_path.endswith("content.json"):
             raise NotImplementedError(
-                "content.json signature verification is not ported yet -- "
-                "see P2P/ContentManager.py's module docstring. Do not treat "
-                "an unsigned content.json as valid; this is a hard stop, not a skip."
+                "Use verifyContentJson() for content.json, not verifyFile() -- "
+                "see P2P/ContentManager.py's module docstring."
             )
 
         file_info = self.getFileInfo(inner_path)
