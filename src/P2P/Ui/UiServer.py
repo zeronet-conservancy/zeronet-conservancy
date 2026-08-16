@@ -283,6 +283,11 @@ class UiApp:
         inner_path = request.path_params.get("inner_path", "")
 
         site = self.sites.get(address)
+        if site is None and self.site_manager is not None:
+            # SiteManager plugins (notably Zeroname) resolve virtual domains
+            # asynchronously; use the same lookup for HTTP as the UI/API
+            # layer instead of treating a domain as an unknown site.
+            site = await self.site_manager.get(address)
         just_added = False
         if site is None:
             site = await self._tryAutoAddSite(address)

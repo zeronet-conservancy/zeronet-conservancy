@@ -43,6 +43,36 @@ class TestP2PUiServer:
 
         assert compat.run(scenario) == 404
 
+    def testResolvedDomainServesNativeSite(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                from P2P.plugins.Zeroname.SiteManagerPlugin import BIT_RESOLVER, SiteManagerPlugin
+                from P2P.SiteManager import SiteManager
+
+                class DomainSiteManager(SiteManagerPlugin, SiteManager):
+                    pass
+
+                data_dir = pathlib.Path(root)
+                manager = DomainSiteManager(data_dir)
+                resolver = manager.add(BIT_RESOLVER)
+                target = manager.add("1ResolvedDomainSiteAAAAAAAAAAA")
+                await resolver.storage.write("data/names.json", b'{"example.bit": "1ResolvedDomainSiteAAAAAAAAAAA"}')
+                await resolver.storage.write("content.json", b'{"modified": 1}')
+                await target.storage.write("index.html", b"<h1>resolved domain</h1>")
+
+                server = UiServer(sites=manager.sites, site_manager=manager)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            "%s/example.bit/index.html?wrapper=0" % base_url
+                        )
+                        return response.status_code, response.text
+
+        status, body = compat.run(scenario)
+        assert status == 200
+        assert body == "<h1>resolved domain</h1>"
+
     def testMissingFileReturns404(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:
