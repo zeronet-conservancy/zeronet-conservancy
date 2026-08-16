@@ -276,14 +276,30 @@ class UiApp:
         if site is None:
             return Response(b"Unknown site", status_code=404)
 
-        if just_added and not site.storage.isFile("content.json"):
-            await self._tryDownloadSite(site)
+        if just_added:
             if not site.storage.isFile("content.json"):
-                return Response(
-                    b"Site not downloaded yet -- no peers found within %ss. Try reloading shortly."
-                    % str(self.auto_download_timeout).encode(),
-                    status_code=503,
-                )
+                await self._tryDownloadSite(site)
+                if not site.storage.isFile("content.json"):
+                    return Response(
+                        b"Site not downloaded yet -- no peers found within %ss. Try reloading shortly."
+                        % str(self.auto_download_timeout).encode(),
+                        status_code=503,
+                    )
+            if "content.json" not in site.content_manager.contents:
+                # SiteManager.add() (unlike load(), fixed earlier) is sync
+                # and can't load content itself -- found live, activating
+                # a site auto-added mid-process (ZeroTalk, already fully
+                # downloaded on disk from an earlier session): its
+                # content.json existed on disk the whole time, so the
+                # branch above never ran, and nothing else ever loaded it
+                # either. Every site.content_manager.contents.get(...)
+                # read elsewhere (formatSiteInfo, the sidebar, ZeroTalk's
+                # own site_info.content.settings) stayed None/crashed
+                # exactly like the already-fixed SiteManager.load() case.
+                try:
+                    await site.content_manager.loadContent()
+                except Exception:
+                    pass
 
         if not site.isServing():
             return Response(b"Unknown site", status_code=404)
