@@ -98,6 +98,7 @@ import base64
 import copy
 import html
 import os
+import re
 import stat
 import sys
 from pathlib import Path
@@ -133,6 +134,46 @@ def _requireSiteManager(session):
     if site_manager is None:
         raise CommandError("This server has no site manager configured")
     return site_manager
+
+
+_CORS_PATH_RE = re.compile(r"^cors-([A-Za-z0-9]{26,35})/(.*)$")
+
+
+def _resolveCorsPath(session, inner_path):
+    """Port of plugins/Cors/CorsPlugin.py's corsFuncWrapper()/
+    getCorsPath(): an inner_path of "cors-<address>/<rest>" reads from a
+    DIFFERENT site than the one this connection is scoped to, provided
+    the connected site was granted "Cors:<address>" (or is ADMIN).
+    "Cors" here is this stack's cross-SITE permission grant, not the
+    browser CORS security feature its name suggests -- reused verbatim
+    from the original's own docstring-less name, not renamed, to avoid
+    inventing a second name for the same concept the sites/plugins that
+    use this already call "cors".
+
+    Narrower than the original two ways: only the read-only commands
+    that (a) the original's own corsFuncWrapper actually covers and
+    (b) exist in this stack at all -- fileGet/fileList/dirList, not
+    fileRules/optionalFileInfo (neither ported here yet). And no HTTP
+    cors-<address>/file.jpg raw-file route (UiRequest.py's own
+    parsePath() half) -- websocket commands only.
+
+    Grant is direct (see corsPermissionAdd below), not gated behind the
+    original's own client-side confirm-dialog round trip -- this stack
+    has no server-initiated request/response continuation mechanism yet
+    (UiSession.push() is fire-and-forget), matching how permissionAdd
+    already grants directly with no confirm step."""
+    match = _CORS_PATH_RE.match(inner_path)
+    if not match:
+        return _requireSite(session), inner_path
+    acting_site = _requireSite(session)
+    cors_address, cors_inner_path = match.groups()
+    if ("Cors:%s" % cors_address) not in acting_site.permissions and "ADMIN" not in acting_site.permissions:
+        raise CommandError("This site has no permission to access site %s" % cors_address)
+    site_manager = _requireSiteManager(session)
+    target_site = site_manager.sites.get(cors_address)
+    if target_site is None:
+        raise CommandError("No site found: %s" % cors_address)
+    return target_site, cors_inner_path
 
 
 async def _requireUser(session):
@@ -389,8 +430,8 @@ async def _cmdSiteInfo(session, params):
 
 @command("fileGet")
 async def _cmdFileGet(session, params):
-    site = _requireSite(session)
     inner_path = _param(params, "inner_path", 0)
+    site, inner_path = _resolveCorsPath(session, inner_path)
     fmt = _param(params, "format", 1, "text")
     if not site.storage.isFile(inner_path):
         return None
@@ -432,15 +473,15 @@ async def _cmdFileNeed(session, params):
 
 @command("fileList")
 async def _cmdFileList(session, params):
-    site = _requireSite(session)
     inner_path = _param(params, "inner_path", 0, "")
+    site, inner_path = _resolveCorsPath(session, inner_path)
     return await site.storage.walk(inner_path)
 
 
 @command("dirList")
 async def _cmdDirList(session, params):
-    site = _requireSite(session)
     inner_path = _param(params, "inner_path", 0, "")
+    site, inner_path = _resolveCorsPath(session, inner_path)
     stats = _param(params, "stats", 1, False)
     names = await site.storage.list(inner_path)
     if not stats:
@@ -1159,6 +1200,37 @@ async def _cmdPermissionAdd(session, params):
     permission = _param(params, "permission", 0)
     if permission not in site.permissions:
         site.permissions.append(permission)
+        await _saveSitePermissions(session)
+    return "ok"
+
+
+@command("corsPermission")
+async def _cmdCorsPermission(session, params):
+    """Port of plugins/Cors/CorsPlugin.py's actionCorsPermission/
+    cbCorsPermission -- real production site JS calls this exact command
+    name with a list of addresses (Page.cmd("corsPermission", [address],
+    cb), found live in an already-downloaded site's own bundled all.js)
+    to request read access to another site via _resolveCorsPath() above.
+    Grants directly, no confirm-dialog round trip -- see
+    _resolveCorsPath()'s own docstring for why. Auto-adds a site that
+    isn't loaded yet (SiteManager.need()), matching the original's own
+    gevent.spawn(site_manager.need, address) -- awaited here rather than
+    fired-and-forgotten, since this stack has no equivalent background-
+    spawn convention for a plain command handler."""
+    site = _requireSite(session)
+    addresses = _param(params, "address", 0)
+    if not isinstance(addresses, list):
+        addresses = [addresses]
+    site_manager = _requireSiteManager(session)
+    granted = False
+    for address in addresses:
+        permission = "Cors:%s" % address
+        if permission in site.permissions:
+            continue
+        await site_manager.need(address)
+        site.permissions.append(permission)
+        granted = True
+    if granted:
         await _saveSitePermissions(session)
     return "ok"
 
