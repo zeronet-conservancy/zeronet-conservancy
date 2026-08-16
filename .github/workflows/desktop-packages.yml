@@ -127,7 +127,9 @@ jobs:
           flatpak-builder --force-clean --user --disable-rofiles-fuse \
             dist/flatpak/build \
             packaging/linux/org.zeronetconservancy.ZeroNet.yml
-          flatpak build-export dist/flatpak/repo dist/flatpak/build
+          flatpak build-export \
+            --branch=stable \
+            dist/flatpak/repo dist/flatpak/build
           flatpak build-bundle \
             dist/flatpak/repo \
             dist/installers/org.zeronetconservancy.ZeroNet.flatpak \
