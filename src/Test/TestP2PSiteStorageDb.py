@@ -171,3 +171,71 @@ class TestP2PSiteStorageDb:
                 return await storage.updateDbFile("data.json", b"{}")
 
         assert compat.run(scenario) is False
+
+    def testWriteAutoIndexesJsonIntoDb(self):
+        """write()'s own real caller (WorkerManager.syncSite(), fileWrite,
+        protocols/update.py) never calls updateDbFile() itself -- this is
+        the fix that makes indexing happen automatically, matching the
+        original's own onUpdated()."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                await _writeSchemaAndData(storage)  # dbschema.json only
+                await storage.write("data.json", json.dumps({"title": "auto-indexed"}).encode())
+                res = await storage.query("SELECT * FROM keyvalue WHERE key = 'title'")
+                return res.fetchone()
+
+        row = compat.run(scenario)
+        assert row["value"] == "auto-indexed"
+
+    def testWriteWithoutSchemaDoesNothing(self):
+        """No dbschema.json at all -- the common case for most sites --
+        stays a fast no-op, no db ever opened."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                await storage.write("data.json", json.dumps({"title": "no db here"}).encode())
+                return storage.db
+
+        assert compat.run(scenario) is None
+
+    def testDeleteClearsIndexedRow(self):
+        """Db.updateJson(file_bytes=None) clears the keyvalue row's own
+        VALUE to null (matching Db.py's real update-in-place semantics,
+        not a DELETE) -- confirming _onUpdated() reaches updateDbFile()
+        with content_bytes=None on delete, same as the original passing
+        file=False through onUpdated()."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                await _writeSchemaAndData(storage)
+                await storage.write("data.json", json.dumps({"title": "will be deleted"}).encode())
+                await storage.delete("data.json")
+                res = await storage.query("SELECT * FROM keyvalue WHERE key = 'title'")
+                return res.fetchone()
+
+        row = compat.run(scenario)
+        assert row["value"] is None
+
+    def testWritingDbschemaReopensLiveDb(self):
+        """Writing a NEW dbschema.json (a different db_file) while a Db is
+        already open closes the stale one -- the next getDb() call re-reads
+        the new schema instead of continuing to serve the old db_file,
+        matching the original's own onUpdated() dbschema.json special case."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                storage = SiteStorage(pathlib.Path(d))
+                await _writeSchemaAndData(storage)
+                db1 = await storage.getDb()
+
+                new_schema = dict(DB_SCHEMA)
+                new_schema["db_file"] = "site2.db"
+                await storage.writeJson("dbschema.json", new_schema)
+
+                assert storage.db is None  # Closed as a side effect of the dbschema.json write
+                db2 = await storage.getDb()
+                return db1.db_path, db2.db_path
+
+        db1_path, db2_path = compat.run(scenario)
+        assert db1_path != db2_path
+        assert db2_path.name == "site2.db"

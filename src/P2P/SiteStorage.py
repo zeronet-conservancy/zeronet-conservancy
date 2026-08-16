@@ -30,20 +30,21 @@ WorkerManager scheduling integration (the plan's own Layers B-D) are
 still NOT done -- this is the one storage primitive they'd all build on,
 not the rest of big-file support.
 
-Also NOT wired up here, deliberately: write()/delete() don't auto-trigger
-updateDbFile() the way the original's onUpdated() does on every file
-write. Doing that would mean threading a content_manager reference into
-every write() call (or storing one on SiteStorage itself, which would
-break the "constructed before ContentManager exists" ordering in
-Site.py) for a sync path nothing in this stack exercises yet -- no
-FileWrite-equivalent command drives writes through here today. The
-building blocks (updateDbFile(), rebuildDb()) are real and tested; wiring
-them into the write path is separate follow-up work once there's an
-actual caller. query()'s auto-rebuild-on-corrupt-db fallback (the
-original's query() catches sqlite3.DatabaseError and retries after a
-rebuildDb()) is dropped for the same content_manager-availability reason
--- query() here just raises, and it's the caller's job to rebuildDb()
-explicitly if it wants to recover.
+write()/delete() DO now auto-trigger updateDbFile() on every .json/
+.json.gz write, matching the original's own onUpdated() -- see that
+method's own docstring below. The earlier "not wired up" note here turned
+out to be solvable without the content_manager reference it worried
+about: hasDbSchema()/getDb() already check the filesystem directly (no
+cached self.has_db flag needing a content_manager-driven sync point), so
+the only state _onUpdated() itself needs is whether dbschema.json exists
+and whether self.db is currently open -- both already on SiteStorage.
+query()'s auto-rebuild-on-corrupt-db fallback (the original's query()
+catches sqlite3.DatabaseError and retries after a rebuildDb()) is still
+dropped, for a different reason than before: rebuildDb() needs a
+content_manager argument (to walk every currently-loaded file), which
+_onUpdated() -- called from write()/delete(), with no such reference --
+still doesn't have and isn't trying to get; query() here just raises, and
+it's the caller's job to rebuildDb() explicitly if it wants to recover.
 
 isFile()/read()/list()/walk() are also archive-transparent now (see
 _splitArchivePath()'s own docstring): an inner_path reaching inside a
@@ -66,13 +67,11 @@ small optimization for zero extra machinery.
 @acceptPlugins: same Phase 8 treatment as Site.py (see that module's own
 docstring) -- gives e.g. plugins/ContentFilter/ContentFilterPlugin.py's
 own SiteStoragePlugin.updateDbFile() override an actual class to attach
-to. Note this alone does NOT make that specific override do anything yet:
-write()/delete() still don't auto-call updateDbFile() on every write (see
-the "Also NOT wired up here" paragraph above), so a registered override
-sits unused until something drives writes through that method -- real,
-separate follow-up, same gap as before, just now on a pluggable class
-instead of an unpluggable one.
+to. Now that write()/delete() auto-call updateDbFile() (see _onUpdated()'s
+own docstring below), a registered override actually fires on every real
+write, not just when something happens to call updateDbFile() directly.
 """
+import logging
 import json
 import os
 import re
@@ -150,6 +149,7 @@ class SiteStorage:
         self._pool_write = ThreadPool(threads_write)
         self.db: Db | None = None
         self._db_lock = trio.Lock()
+        self.log = logging.getLogger("P2P.SiteStorage")
 
         if not self.directory.is_dir():
             if allow_create:
@@ -249,6 +249,7 @@ class SiteStorage:
                 with file_path.open("wb") as f:
                     f.write(content)
         await self._pool_write.apply(_write)
+        await self._onUpdated(inner_path)
 
     def createSparseFile(self, inner_path, size: int) -> None:
         """Pre-allocates inner_path so writeRange() can seek+write into it
@@ -315,9 +316,53 @@ class SiteStorage:
 
     async def delete(self, inner_path) -> None:
         await self._pool_write.apply(lambda: self.getPath(inner_path).unlink())
+        await self._onUpdated(inner_path, deleted=True)
 
     def deleteDir(self, inner_path) -> None:
         self.getPath(inner_path).rmdir()
+
+    async def _onUpdated(self, inner_path, deleted: bool = False) -> None:
+        """Port of the original's own onUpdated(): auto-index a .json/
+        .json.gz write (or clear it on delete) into the site's sqlite db,
+        the real caller updateDbFile()/rebuildDb() were waiting on -- see
+        this module's own docstring, which used to document this as an
+        open gap ("write()/delete() don't auto-trigger updateDbFile()").
+
+        dbschema.json itself is handled specially, same as the original:
+        writing/deleting it doesn't get indexed as a data row (it's schema,
+        not content), it invalidates whatever Db instance is currently
+        open so the next getDb() call re-reads the new schema. Unlike the
+        original's own cached self.has_db flag (kept in sync by hand at
+        exactly this call site), hasDbSchema() here just checks the
+        filesystem fresh every time, so there's no separate flag to
+        maintain -- closing the open Db is the only actually-necessary
+        side effect.
+
+        Errors indexing a single file are logged and swallowed, same as
+        the original's own try/except around updateDbFile() -- one bad
+        JSON file shouldn't take down the whole write/delete call."""
+        name = str(inner_path)
+        if not (name.endswith(".json") or name.endswith(".json.gz")):
+            return
+        if name == "dbschema.json" or name.endswith("/dbschema.json"):
+            if self.db is not None:
+                await self.closeDb("dbschema.json changed")
+            return
+        if not self.hasDbSchema():
+            return
+
+        content_bytes = None
+        if not deleted:
+            try:
+                content_bytes = await self.read(inner_path)
+            except Exception:
+                return
+
+        try:
+            await self.updateDbFile(inner_path, content_bytes)
+        except Exception as err:
+            self.log.error("Json %s load error: %s", inner_path, err)
+            await self.closeDb("Json load error")
 
     async def rename(self, inner_path_before, inner_path_after) -> None:
         def _rename():

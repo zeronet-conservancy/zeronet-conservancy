@@ -15,14 +15,18 @@ Narrower than the original two ways:
     actually hits clicking into one page/post. WorkerManager.syncSite()'s
     bulk whole-site download loop bypasses this (see WorkerManager.py's
     own docstring); a real, separate gap, not fixed here.
-  - No SiteStorage.updateDbFile() override (the original's second
-    enforcement point, refusing to index a muted user's file into the
-    site's sqlite db) or a FileRequest.actionUpdate()-equivalent (the
-    third, refusing a per-file update notification from a muted author).
-    SiteStorage IS pluggable now too, but nothing calls updateDbFile() on
-    the write path yet for an override to matter (see that module's own
-    docstring); wiring both is real, separate follow-up once there's an
-    actual caller to attach to.
+  - No FileRequest.actionUpdate()-equivalent (the original's third
+    enforcement point, refusing a per-file update NOTIFICATION from a
+    muted author) -- this stack has no per-file push-notification
+    protocol at all, only the content.json push protocols/update.py
+    covers (see that module's own docstring); not applicable until that
+    protocol exists.
+
+The second enforcement point (SiteStorage.updateDbFile(), refusing to
+index a muted user's file into the site's sqlite db) is a separate file,
+SiteStoragePlugin.py -- SiteStorage.write()/delete() now auto-call
+updateDbFile() on every real write (see that module's own docstring), so
+that override actually fires now.
 """
 import re
 

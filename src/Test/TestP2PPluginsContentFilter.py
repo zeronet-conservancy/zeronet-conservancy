@@ -7,9 +7,11 @@ import trio_websocket
 
 from P2P.Site import Site
 from P2P.SiteManager import SiteManager
+from P2P.SiteStorage import SiteStorage
 from P2P.WorkerManager import NoPeerHadFileError
 from P2P.plugins.ContentFilter.SiteManagerPlugin import SiteManagerPlugin
 from P2P.plugins.ContentFilter.SitePlugin import SitePlugin, MutedError
+from P2P.plugins.ContentFilter.SiteStoragePlugin import SiteStoragePlugin
 from P2P.plugins.ContentFilter import commands as _cf_commands  # noqa: F401 -- registers siteblock* commands
 from P2P.Ui.UiServer import UiServer
 from P2P import compat
@@ -29,6 +31,18 @@ class ContentFilterSiteManager(SiteManagerPlugin, SiteManager):
 
 class ContentFilterSite(SitePlugin, Site):
     pass
+
+
+class ContentFilterSiteStorage(SiteStoragePlugin, SiteStorage):
+    pass
+
+
+_DB_SCHEMA = {
+    "db_name": "TestSite",
+    "db_file": "site.db",
+    "version": 1,
+    "maps": {"(.*/)?data\\.json$": {"to_keyvalue": ["title"]}},
+}
 
 
 def _wsUrl(server, site):
@@ -189,3 +203,51 @@ class TestP2PPluginsContentFilterEnforcement:
                     await site.needFile("data/users/1UnmutedAuthorAAAAAAAAAAAAA/data.json", [])
 
         compat.run(scenario)
+
+
+class TestP2PPluginsContentFilterDbEnforcement:
+    """SiteStorage.updateDbFile() mute enforcement -- the second real hook,
+    now that SiteStorage.write()/delete() auto-call updateDbFile() on
+    every write (see SiteStorage.py's own docstring)."""
+
+    def testWriteSkipsIndexingMutedAuthorData(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+                from P2P.plugins.ContentFilter.storage import ContentFilterStorage
+                smp.filter_storage = ContentFilterStorage(pathlib.Path(d) / "filter")
+                smp.filter_storage.muteAdd("1MutedAuthorCCCCCCCCCCCCCCCC", reason="spam")
+
+                storage = ContentFilterSiteStorage(pathlib.Path(d) / "site")
+                schema = dict(_DB_SCHEMA)
+                await storage.writeJson("dbschema.json", schema)
+                await storage.write(
+                    "data/users/1MutedAuthorCCCCCCCCCCCCCCCC/data.json",
+                    json.dumps({"title": "spam post"}).encode(),
+                )
+                res = await storage.query("SELECT * FROM keyvalue WHERE key = 'title'")
+                return res.fetchone()
+
+        row = compat.run(scenario)
+        assert row is None  # Never indexed at all -- updateDbFile() returned False before any insert
+
+    def testWriteIndexesUnmutedAuthorData(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+                from P2P.plugins.ContentFilter.storage import ContentFilterStorage
+                smp.filter_storage = ContentFilterStorage(pathlib.Path(d) / "filter")
+                smp.filter_storage.muteAdd("1MutedAuthorDDDDDDDDDDDDDDDD", reason="spam")
+
+                storage = ContentFilterSiteStorage(pathlib.Path(d) / "site")
+                schema = dict(_DB_SCHEMA)
+                await storage.writeJson("dbschema.json", schema)
+                await storage.write(
+                    "data/users/1UnmutedAuthorBBBBBBBBBBBBBB/data.json",
+                    json.dumps({"title": "real post"}).encode(),
+                )
+                res = await storage.query("SELECT * FROM keyvalue WHERE key = 'title'")
+                return res.fetchone()
+
+        row = compat.run(scenario)
+        assert row["value"] == "real post"

@@ -7,16 +7,17 @@ P2P/plugins/CryptMessage/commands.py's own docstring, which hit and
 documented this same gotcha first.
 
 Mutes are now stored and manageable through muteAdd/muteRemove/muteList,
-and enforced on the on-demand single-file fetch path -- see this
-package's own SitePlugin.py, a registerTo("Site") override of the new
-Site.needFile() hook (P2P.Site and P2P.SiteStorage are both
-@acceptPlugins now). Still not enforced: WorkerManager.syncSite()'s bulk
-whole-site download loop (bypasses Site.needFile() entirely -- see
-WorkerManager.py's own docstring), SiteStorage.updateDbFile() (pluggable
-now too, but nothing calls it on the write path yet for an override to
-matter), and a FileRequest.actionUpdate()-equivalent (no per-file update-
-notification protocol exists in this stack at all, only the content.json
-push protocols/update.py covers -- see that module's own docstring).
+and enforced at two of the original's own three points: the on-demand
+single-file fetch path (this package's own SitePlugin.py, a
+registerTo("Site") override of the new Site.needFile() hook) and db
+indexing (SiteStoragePlugin.py, a registerTo("SiteStorage") override of
+updateDbFile() -- real now that SiteStorage.write()/delete() auto-call
+it on every write, see that module's own docstring). Still not enforced:
+WorkerManager.syncSite()'s bulk whole-site download loop (bypasses
+Site.needFile() entirely -- see WorkerManager.py's own docstring) and a
+FileRequest.actionUpdate()-equivalent (no per-file update-notification
+protocol exists in this stack at all, only the content.json push
+protocols/update.py covers -- see that module's own docstring).
 Deliberately not ported: filter-includes (subscribing to another site's
 shared block/mute list -- needs mutes to exist first, since an include's
 whole point is importing someone else's mute list too). Also not ported:
