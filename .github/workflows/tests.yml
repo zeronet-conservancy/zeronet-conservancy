@@ -27,7 +27,7 @@ jobs:
       run: |
         python3 -m pip install setuptools
         python3 -m pip install --upgrade pip wheel
-        python3 -m pip install --upgrade codecov coveralls flake8 mock "pytest<8" pytest-cov selenium
+        python3 -m pip install --upgrade codecov coveralls flake8 mock "pytest<8" pytest-cov
 
     - name: Install
       run: |
@@ -42,18 +42,12 @@ jobs:
     - name: Test
       run: |
         mkdir -p log
-        # TestSiteDownload exercises the legacy gevent site lifecycle and
-        # leaves process-global state behind for later parametrized cases.
-        # Run it in a fresh pytest process so it remains covered without
-        # contaminating the rest of the suite.
-        python3 -m pytest src/Test/TestSiteDownload.py
-        python3 -m pytest src/Test --ignore=src/Test/TestSiteDownload.py --cov=src --cov-config src/Test/coverage.ini
-        export ZERONET_LOG_DIR="log/CryptMessage"; python3 -m pytest -x plugins/CryptMessage/Test
-        export ZERONET_LOG_DIR="log/Bigfile"; python3 -m pytest -x plugins/Bigfile/Test
-        export ZERONET_LOG_DIR="log/AnnounceLocal"; python3 -m pytest -x plugins/AnnounceLocal/Test
-        export ZERONET_LOG_DIR="log/OptionalManager"; python3 -m pytest -x plugins/OptionalManager/Test
-        export ZERONET_LOG_DIR="log/Multiuser"; mv plugins/disabled-Multiuser plugins/Multiuser && python3 -m pytest -x plugins/Multiuser/Test
-        export ZERONET_LOG_DIR="log/Bootstrapper"; mv plugins/disabled-Bootstrapper plugins/Bootstrapper && python3 -m pytest -x plugins/Bootstrapper/Test
+        # The legacy gevent stack (and the plugin-specific/disabled-plugin
+        # test runs this step used to special-case around it -- Bigfile,
+        # AnnounceLocal, OptionalManager, Multiuser, Bootstrapper, plus the
+        # isolated TestSiteDownload.py run) has been removed. Everything it
+        # covered is now real, native P2P test coverage inside src/Test --
+        # one plain pytest invocation, no isolation/renaming steps needed.
+        python3 -m pytest src/Test --cov=src --cov-config src/Test/coverage.ini
         find src -name "*.json" | xargs -n 1 python3 -c "import json, sys; print(sys.argv[1], end=' '); json.load(open(sys.argv[1])); print('[OK]')"
-        find plugins -name "*.json" | xargs -n 1 python3 -c "import json, sys; print(sys.argv[1], end=' '); json.load(open(sys.argv[1])); print('[OK]')"
         flake8 . --count --select=E9,F63,F72,F82 --show-source --statistics --exclude=src/lib/pyaes/
