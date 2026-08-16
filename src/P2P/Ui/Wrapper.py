@@ -89,12 +89,13 @@ def renderWrapper(
     server_url: str = "",
     script_nonce: str = "",
     show_loadingscreen: bool | None = None,
+    wrapper_nonce: str | None = None,
 ) -> str:
     file_inner_path = inner_path or "index.html"
     if file_inner_path.endswith("/"):
         file_inner_path += "index.html"
 
-    wrapper_nonce = CryptHash.random()
+    wrapper_nonce = wrapper_nonce or CryptHash.random()
 
     # Leading bare "&" is deliberate, not a typo -- found live, loading a
     # real site (ZeroMe): its own router (Text.queryParse in its bundled

@@ -1,5 +1,6 @@
 import json
 import pathlib
+import re
 import tempfile
 
 import httpx
@@ -136,6 +137,48 @@ class TestP2PUiServer:
         status, body = compat.run(scenario)
         assert status == 200
         assert body == "<h1>raw content</h1>"
+
+    def testWrapperNonceIsSingleUse(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestNonceSite", pathlib.Path(root))
+                await site.storage.write("index.html", b"<h1>raw content</h1>")
+
+                server = UiServer(sites={"1TestNonceSite": site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        wrapper = await client.get("%s/1TestNonceSite/index.html" % base_url)
+                        nonce = re.search(r"wrapper_nonce=([A-Za-z0-9]+)", wrapper.text).group(1)
+                        first = await client.get(
+                            "%s/1TestNonceSite/index.html?wrapper=0&wrapper_nonce=%s" % (base_url, nonce)
+                        )
+                        second = await client.get(
+                            "%s/1TestNonceSite/index.html?wrapper=0&wrapper_nonce=%s" % (base_url, nonce)
+                        )
+                        return first.status_code, first.text, second.status_code
+
+        status, body, reused_status = compat.run(scenario)
+        assert status == 200
+        assert body == "<h1>raw content</h1>"
+        assert reused_status == 403
+
+    def testInvalidWrapperNonceRejected(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestBadNonceSite", pathlib.Path(root))
+                await site.storage.write("index.html", b"<h1>raw content</h1>")
+
+                server = UiServer(sites={"1TestBadNonceSite": site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        response = await client.get(
+                            "%s/1TestBadNonceSite/index.html?wrapper=0&wrapper_nonce=not-issued" % base_url
+                        )
+                        return response.status_code
+
+        assert compat.run(scenario) == 403
 
     def testSiteRootServesWrapped(self):
         async def scenario():

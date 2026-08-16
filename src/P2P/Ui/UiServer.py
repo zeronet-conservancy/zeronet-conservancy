@@ -93,9 +93,11 @@ lands, not something to force in one pass.
 import json
 import logging
 import pathlib
+import time
 from contextlib import asynccontextmanager
 
 import trio
+from Crypt import CryptHash
 from hypercorn.config import Config
 from hypercorn.trio import serve
 from starlette.applications import Starlette
@@ -182,6 +184,9 @@ def _guessContentType(inner_path: str) -> str:
 
 
 class UiApp:
+    WRAPPER_NONCE_TTL = 300.0
+    MAX_WRAPPER_NONCES = 4096
+
     def __init__(self, sites: dict, allowed_hosts: list | None = None, site_manager=None, user_manager=None,
                  file_server=None, announcers: dict | None = None, tor_manager=None,
                  homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0):
@@ -194,7 +199,10 @@ class UiApp:
         self.homepage = homepage  # Site address `/` redirects to, e.g. config.homepage
         self.on_missing_site = on_missing_site  # (address) -> Site | None, e.g. App.addSite; adds + wires a new site
         self.auto_download_timeout = auto_download_timeout
-        self.wrapper_nonces: list = []
+        # nonce -> monotonic expiry.  The legacy server kept a single-use
+        # list; expiry bounds memory when a wrapper is opened but its iframe
+        # never loads.
+        self.wrapper_nonces: dict[str, float] = {}
         self.sessions: set["UiSession"] = set()
 
         routes = [
@@ -315,6 +323,7 @@ class UiApp:
         wants_wrapper = request.query_params.get("wrapper") != "0"
 
         if is_html_page and wants_wrapper:
+            wrapper_nonce = self._issueWrapperNonce()
             body = renderWrapper(
                 site,
                 scheme=request.url.scheme,
@@ -324,8 +333,14 @@ class UiApp:
                 inner_path=inner_path or "index.html",
                 title=address,
                 homepage=("/" + self.homepage) if self.homepage else "/",
+                wrapper_nonce=wrapper_nonce,
             )
             return Response(body, media_type="text/html")
+
+        wrapper_nonce = request.query_params.get("wrapper_nonce")
+        if wrapper_nonce and not self._consumeWrapperNonce(wrapper_nonce):
+            log.warning("Invalid or expired wrapper nonce for %s: %s", address, wrapper_nonce)
+            return Response(b"Invalid wrapper nonce", status_code=403)
 
         target_path = inner_path or "content.json"
         try:
@@ -336,6 +351,28 @@ class UiApp:
             return Response(b"Invalid path", status_code=403)
 
         return Response(data, media_type=_guessContentType(target_path))
+
+    def _issueWrapperNonce(self) -> str:
+        nonce = CryptHash.random()
+        now = time.monotonic()
+        self._pruneWrapperNonces(now)
+        if len(self.wrapper_nonces) >= self.MAX_WRAPPER_NONCES:
+            oldest = min(self.wrapper_nonces, key=self.wrapper_nonces.get)
+            del self.wrapper_nonces[oldest]
+        self.wrapper_nonces[nonce] = now + self.WRAPPER_NONCE_TTL
+        return nonce
+
+    def _consumeWrapperNonce(self, nonce: str) -> bool:
+        now = time.monotonic()
+        expiry = self.wrapper_nonces.pop(nonce, None)
+        self._pruneWrapperNonces(now)
+        return expiry is not None and expiry >= now
+
+    def _pruneWrapperNonces(self, now: float | None = None) -> None:
+        now = time.monotonic() if now is None else now
+        for nonce, expiry in list(self.wrapper_nonces.items()):
+            if expiry < now:
+                del self.wrapper_nonces[nonce]
 
     async def _tryAutoAddSite(self, address: str):
         """Adds+wires a site the first time it's visited, matching the
