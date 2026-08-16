@@ -99,6 +99,22 @@ class TestP2PUiServer:
         assert reply["to"] == 2
         assert "Unknown command" in reply["error"]
 
+    def testWebsocketOriginMustMatchHost(self):
+        async def scenario():
+            server = UiServer(sites={})
+            async with server.run():
+                base_url = server.bound_addresses[0].replace("http://", "ws://")
+                try:
+                    async with trio_websocket.open_websocket_url(
+                        "%s/ZeroNet-Internal/Websocket" % base_url,
+                        extra_headers={"Origin": "http://evil.example.com"},
+                    ):
+                        return "connected"
+                except Exception as err:
+                    return type(err).__name__
+
+        assert compat.run(scenario) != "connected"
+
     def testHtmlPageServedWrapped(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:

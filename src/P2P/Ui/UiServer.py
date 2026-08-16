@@ -95,6 +95,7 @@ import logging
 import pathlib
 import time
 from contextlib import asynccontextmanager
+from urllib.parse import urlsplit
 
 import trio
 from Crypt import CryptHash
@@ -189,7 +190,8 @@ class UiApp:
 
     def __init__(self, sites: dict, allowed_hosts: list | None = None, site_manager=None, user_manager=None,
                  file_server=None, announcers: dict | None = None, tor_manager=None,
-                 homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0):
+                 homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0,
+                 allowed_ws_origins: set[str] | None = None):
         self.sites = sites  # site address -> P2P.Site
         self.site_manager = site_manager  # P2P.SiteManager, for siteAdd/siteDelete/sitePause/siteResume/siteList
         self.user_manager = user_manager  # P2P.UserManager, for cert*/user* commands
@@ -199,6 +201,7 @@ class UiApp:
         self.homepage = homepage  # Site address `/` redirects to, e.g. config.homepage
         self.on_missing_site = on_missing_site  # (address) -> Site | None, e.g. App.addSite; adds + wires a new site
         self.auto_download_timeout = auto_download_timeout
+        self.allowed_ws_origins = set(allowed_ws_origins or ())
         # nonce -> monotonic expiry.  The legacy server kept a single-use
         # list; expiry bounds memory when a wrapper is opened but its iframe
         # never loads.
@@ -429,6 +432,11 @@ class UiApp:
                 pass
 
     async def _handleWebsocket(self, websocket: WebSocket) -> None:
+        origin = websocket.headers.get("origin")
+        if origin and not self._isAllowedWebSocketOrigin(origin, websocket.headers.get("host", "")):
+            log.warning("Rejected WebSocket origin %s for host %s", origin, websocket.headers.get("host", ""))
+            await websocket.close(code=1008)
+            return
         await websocket.accept()
         wrapper_key = websocket.query_params.get("wrapper_key")
         site = self._resolveSiteByWrapperKey(wrapper_key) if wrapper_key else None
@@ -466,6 +474,19 @@ class UiApp:
             if getattr(site, "wrapper_key", None) == wrapper_key:
                 return site
         return None
+
+    def _isAllowedWebSocketOrigin(self, origin: str, host: str) -> bool:
+        """Match the legacy same-origin WebSocket guard.
+
+        Explicit origins are used for deployments behind a trusted proxy;
+        otherwise the browser Origin's network location must match Host.
+        """
+        if origin in self.allowed_ws_origins:
+            return True
+        try:
+            return urlsplit(origin).netloc == host
+        except ValueError:
+            return False
 
     def broadcast(self, channel: str, *args) -> None:
         """Port of UiWebsocket.event() -- push a "set*Info" update to
@@ -521,11 +542,12 @@ class UiServer:
     def __init__(self, sites: dict, host: str = "127.0.0.1", port: int = 0, allowed_hosts: list | None = None,
                  site_manager=None, user_manager=None, file_server=None, announcers: dict | None = None,
                  tor_manager=None, homepage: str | None = None, on_missing_site=None,
-                 auto_download_timeout: float = 15.0):
+                 auto_download_timeout: float = 15.0, allowed_ws_origins: set[str] | None = None):
         self.app = UiApp(
             sites, allowed_hosts=allowed_hosts, site_manager=site_manager, user_manager=user_manager,
             file_server=file_server, announcers=announcers, tor_manager=tor_manager,
             homepage=homepage, on_missing_site=on_missing_site, auto_download_timeout=auto_download_timeout,
+            allowed_ws_origins=allowed_ws_origins,
         )
         self._host = host
         self._port = port
