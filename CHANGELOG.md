@@ -1,3 +1,30 @@
+### zeronet-conservancy 1.0.0
+- Full rewrite of the networking/UI stack onto trio (structured concurrency)
+  and py-libp2p (transport/peer-routing/DHT), replacing the gevent-based
+  implementation entirely -- see the `libp2p-migration` branch history for
+  the phase-by-phase build-out
+- The legacy gevent stack, and the repo-root `plugins/` ecosystem built on
+  it, have been removed outright (not deprecated). `--no-p2p` no longer
+  falls back to a legacy server -- it now raises a clear error instead
+- New plugin system under `P2P/plugins/`, source- and API-incompatible with
+  the old `plugins/` -- ported/reimplemented: AnnounceLocal, Bigfile,
+  ContentFilter, CryptMessage, MergerSite, Newsfeed, OptionalManager,
+  PeerDb, Sidebar, Stats, TranslateSite, UiConfig, UiFileManager,
+  UiPluginManager, UiSiteBuilder, UiPassword, Multiuser, Cors, FilePack,
+  Zeroname
+- Wire protocol is not compatible with legacy zeronet-conservancy/ZeroNet
+  peers -- this stack speaks libp2p protocols, not the old raw-socket
+  msgpack framing
+- New: private sites (ECIES-encrypted content, approved-recipient keys),
+  opt-in zlib compression for file transfers, UPnP port mapping via
+  py-libp2p's own UpnpManager, a site-creation wizard with starter
+  templates, circuit-relay v2 NAT traversal
+- New: pywebview2-based desktop packaging (Windows/macOS/Linux/Android)
+- Known issue: the Windows MSI installer asset in this release is not a
+  functional installer (a WiX v3/v4 schema mismatch in the pywebview2
+  bundler -- fix submitted upstream, not yet merged/released). Use the
+  NSIS `.exe` installer on Windows instead
+
 ### zeronet-conservancy 0.7.10+
 - disable site-installed plugins for security reasons (@caryoscelus)
 - fix downloading geoip db (@caryoscelus)

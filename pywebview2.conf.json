@@ -1,6 +1,6 @@
 {
   "productName": "ZeroNet",
-  "version": "0.7.10",
+  "version": "1.0.0",
   "identifier": "org.zeronetconservancy.ZeroNet",
   "entry": "desktop.py",
   "window": {

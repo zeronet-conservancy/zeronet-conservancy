@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        0.7.10
+Version:        1.0.0
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,5 +20,7 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Sun Aug 16 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.0-1
+- trio/libp2p-native rewrite; legacy gevent stack removed
 * Thu Jan 01 1970 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 0.7.10-1
 - Initial desktop package
