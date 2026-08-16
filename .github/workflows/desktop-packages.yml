@@ -189,7 +189,15 @@ jobs:
             pkg-config \
             zlib1g-dev
           python -m pip install --upgrade pip
-          python -m pip install -r requirements-webview.txt
+          # Not requirements-webview.txt: its pywebview2[gtk] line fires on
+          # any Linux runner (the sys_platform=="linux" marker can't tell
+          # "desktop Linux" from "Android build host happens to run Linux"),
+          # pulling in PyGObject -- which needs libgirepository1.0-dev/
+          # gobject-introspection system packages this job doesn't install
+          # (those belong to the desktop Linux job's apt-get list, not
+          # here). The Android/buildozer build only needs pywebview2's own
+          # CLI, not the desktop GTK webview backend.
+          python -m pip install 'pywebview2[cli]'
           python -m pip install buildozer setuptools 'cython==0.29.34'
 
       - name: Cache Buildozer toolchain
