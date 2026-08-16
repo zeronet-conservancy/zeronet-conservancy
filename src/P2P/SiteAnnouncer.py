@@ -9,8 +9,14 @@ announce() is structurally present (matching the original's own
 architecture, and reusing discovery/tracker.py's TrackerStats/
 getAddressParts from Phase 5) but a no-op until something registers a
 handler -- exactly like upstream with no plugins loaded. The working,
-built-in discovery paths are DHT (discovery/kaddht.py) and peer exchange
-(protocols/pex.py) -- both real here, not stubs.
+built-in discovery paths are DHT (discovery/kaddht.py), peer exchange
+(protocols/pex.py), and now LAN broadcast (discovery/local.py) -- all
+real here, not stubs. Unlike the original, where AnnounceLocal is its
+own plugin, LAN discovery needs no legacy interop or external tracker
+infrastructure at all (see discovery/local.py's own docstring), so it's
+core here rather than a plugin extension point -- same reasoning
+FilePack's archive-transparency and Bigfile Layer A's sparse-file
+primitive already used for "no plugin-specific logic in this one."
 
 @acceptPlugins (Phase 8) marks this as the real plugin extension point
 that docstring paragraph above describes -- AnnounceShare/
@@ -39,10 +45,11 @@ class AnnounceError(Exception):
 
 @acceptPlugins
 class SiteAnnouncer:
-    def __init__(self, site, file_server, dht_discovery=None):
+    def __init__(self, site, file_server, dht_discovery=None, local_announcer=None):
         self.site = site
         self.file_server = file_server
         self.dht_discovery = dht_discovery
+        self.local_announcer = local_announcer  # One shared instance across every site's own SiteAnnouncer, like file_server itself -- see discovery/local.py's own docstring
         self.stats = TrackerStats()
         self.time_last_announce = 0.0
 
@@ -92,6 +99,18 @@ class SiteAnnouncer:
             return
         await self.dht_discovery.announce(self.site.address_sha1)
         self.onDhtPeers(await self.dht_discovery.find_peers(self.site.address_sha1))
+
+    async def announceLocal(self) -> None:
+        """Broadcasts every currently-served site (not just self.site) in
+        one packet -- see discovery/local.py's own docstring on why
+        discover() takes no site argument. Safe to call once per site's
+        own announce() round even though it's a whole-process broadcast:
+        LocalAnnouncer.discover() is cheap and idempotent, matching the
+        original's own per-site announce() triggering a shared
+        local_announcer.discover() call too."""
+        if self.local_announcer is None:
+            return
+        await self.local_announcer.discover()
 
     def onDhtPeers(self, peer_infos: list) -> None:
         my_peer_id = self.file_server.host.peer_id if self.file_server else None
@@ -143,6 +162,7 @@ class SiteAnnouncer:
             await self.announceTracker(tracker, mode=mode)
 
         await self.announceDHT()
+        await self.announceLocal()
 
         if pex:
             await self.announcePex()

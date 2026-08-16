@@ -55,6 +55,7 @@ from .Tor import TorManager
 from .UserManager import UserManager
 from .Ui.UiServer import UiServer
 from .discovery.kaddht import KadDHTDiscovery
+from .discovery.local import LocalAnnouncer
 
 log = logging.getLogger(__name__)
 
@@ -73,6 +74,7 @@ class App:
         ui_allowed_hosts: list | None = None,
         enable_dht: bool = True,
         dht_protocol_prefix: str | None = None,
+        enable_local_discovery: bool = True,
         announce_interval: float = DEFAULT_ANNOUNCE_INTERVAL,
         save_interval: float = DEFAULT_SAVE_INTERVAL,
         enable_tor: bool = False,
@@ -129,13 +131,23 @@ class App:
             self.dht_discovery = KadDHTDiscovery(self.file_server.host, **kwargs)
         self.ui_server.dht_discovery = self.dht_discovery
 
+        self.local_announcer = None
+        if enable_local_discovery:
+            # Shares site_manager.sites by reference, same "no separate
+            # sync step" reasoning as UiServer's own sites dict above --
+            # LocalAnnouncer.discover() always sees whatever's currently
+            # loaded, no matter when a site is added/removed.
+            self.local_announcer = LocalAnnouncer(self.file_server.host, self.site_manager.sites)
+
     @property
     def sites(self) -> dict[str, Site]:
         return self.site_manager.sites
 
     def _wireSite(self, site: Site) -> None:
         self.file_server.addSite(site)
-        self.announcers[site.address] = SiteAnnouncer(site, self.file_server, dht_discovery=self.dht_discovery)
+        self.announcers[site.address] = SiteAnnouncer(
+            site, self.file_server, dht_discovery=self.dht_discovery, local_announcer=self.local_announcer,
+        )
 
     async def loadSites(self) -> None:
         """Loads every site listed in data_dir/sites.json via SiteManager
@@ -230,6 +242,8 @@ class App:
             await stack.enter_async_context(self.ui_server.run())
             if self.dht_discovery is not None:
                 await stack.enter_async_context(self.dht_discovery.run())
+            if self.local_announcer is not None:
+                await stack.enter_async_context(self.local_announcer.run())
             if self._enable_tor:
                 await self._connectTor()
 
@@ -254,6 +268,7 @@ async def _main(args) -> None:
         ui_host=args.ui_host,
         ui_port=args.ui_port,
         enable_dht=not args.no_dht,
+        enable_local_discovery=not args.no_local_discovery,
         enable_tor=args.tor,
         tor_control_port=args.tor_control_port,
         tor_password=args.tor_password,
@@ -279,6 +294,7 @@ def main() -> None:
     parser.add_argument("--ui-host", default="127.0.0.1")
     parser.add_argument("--ui-port", type=int, default=43110)
     parser.add_argument("--no-dht", action="store_true")
+    parser.add_argument("--no-local-discovery", action="store_true")
     parser.add_argument("--tor", action="store_true", help="Connect to a local Tor control port and run an onion service")
     parser.add_argument("--tor-control-port", type=int, default=9051)
     parser.add_argument("--tor-socks-port", type=int, default=9050)
