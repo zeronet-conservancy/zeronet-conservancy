@@ -293,7 +293,7 @@ async def _cmdSiteInfo(session, params):
     info = formatSiteInfo(site, getattr(session.app, "site_manager", None), user)
     # User identity/auth-address generation is lazy. Persist it here so a
     # first visit to ZeroTalk/ZeroMe survives a restart like legacy ZeroNet.
-    if user._dirty:
+    if user is not None and user._dirty:
         await user.save()
     return info
 
