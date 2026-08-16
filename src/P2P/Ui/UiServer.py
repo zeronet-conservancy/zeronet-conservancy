@@ -157,6 +157,7 @@ class UiSession:
         self.state: dict = {}  # Scratch space for a plugin's own per-connection bookkeeping
         self.nursery: trio.Nursery | None = None  # Set once the connection's loops start
         self._send_channel, self._recv_channel = trio.open_memory_channel(256)
+        self._after_response: list[dict] = []
 
     def push(self, cmd: str, params=None) -> None:
         """Queue an unprompted message to this session's client, outside
@@ -171,6 +172,13 @@ class UiSession:
             self._send_channel.send_nowait({"cmd": cmd, "params": params or {}})
         except (trio.WouldBlock, trio.BrokenResourceError, trio.ClosedResourceError):
             pass
+
+    def pushAfterResponse(self, cmd: str, params=None) -> None:
+        """Queue a state push after the current command response.
+
+        Legacy callers expect the response callback first, notably certSet.
+        """
+        self._after_response.append({"cmd": cmd, "params": params or {}})
 
 
 def _guessContentType(inner_path: str) -> str:
@@ -285,6 +293,11 @@ class UiApp:
         site = self.sites.get(address)
         if site is None and self.site_manager is not None:
             site = await self.site_manager.get(address)
+            if site is None:
+                resolved = await self.site_manager.resolveDomain(address)
+                if resolved:
+                    address = resolved
+                    site = self.sites.get(address)
         if site is None:
             return Response(b"Unknown site", status_code=404)
         scheme = "wss" if request.url.scheme == "https" else "ws"
@@ -343,6 +356,11 @@ class UiApp:
             # asynchronously; use the same lookup for HTTP as the UI/API
             # layer instead of treating a domain as an unknown site.
             site = await self.site_manager.get(address)
+            if site is None:
+                resolved = await self.site_manager.resolveDomain(address)
+                if resolved:
+                    address = resolved
+                    site = self.sites.get(address)
         just_added = False
         if site is None:
             site = await self._tryAutoAddSite(address)
@@ -515,6 +533,9 @@ class UiApp:
                             continue
                         response = await self._handleCommand(session, request)
                         session._send_channel.send_nowait(response)
+                        for message in session._after_response:
+                            session._send_channel.send_nowait(message)
+                        session._after_response.clear()
                 except WebSocketDisconnect as err:
                     log.info(
                         "UI websocket disconnected (site=%s, code=%s)",

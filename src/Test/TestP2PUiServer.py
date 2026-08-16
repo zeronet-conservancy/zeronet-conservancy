@@ -53,6 +53,9 @@ class TestP2PUiServer:
                 site_manager = SiteManager(data_dir)
                 site = site_manager.add("1TestCertSelectorSiteAAAAAAAAAA1")
                 site.permissions = ["ADMIN"]
+                site.content_manager.contents["data/users/content.json"] = {
+                    "user_contents": {"cert_signers": {"zeroid.bit": ["1ProviderSite"]}}
+                }
                 server = UiServer(
                     sites=site_manager.sites, site_manager=site_manager,
                     user_manager=UserManager(data_dir), homepage=site.address,
@@ -62,13 +65,19 @@ class TestP2PUiServer:
                     async with trio_websocket.open_websocket_url(
                         base_url + "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site.wrapper_key
                     ) as ws:
-                        await ws.send_message(json.dumps({"cmd": "certSelect", "params": {}, "id": 1}))
+                        await ws.send_message(json.dumps({
+                            "cmd": "certSelect",
+                            "params": {"accepted_domains": ["zeroid.bit"]},
+                            "id": 1,
+                        }))
                         messages = [json.loads(await ws.get_message()) for _ in range(3)]
                         return messages
 
         messages = compat.run(scenario)
         by_cmd = {message["cmd"]: message for message in messages}
-        assert "No certificate" in by_cmd["notification"]["params"][1]
+        assert "Use local identity" in by_cmd["notification"]["params"][1]
+        assert "Register zeroid.bit" in by_cmd["notification"]["params"][1]
+        assert "1ProviderSite" in by_cmd["notification"]["params"][1]
         assert "certSet" in by_cmd["injectScript"]["params"]
         assert by_cmd["response"]["result"][0]["selected"] is True
 

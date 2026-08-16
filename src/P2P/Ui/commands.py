@@ -53,8 +53,8 @@ original, so this stays cheap for the sizes this stack deals with.
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
   - certSelect now uses the wrapper's existing notification/injected-script
-    channel to provide the account selector; provider registration links and
-    the full certificate trust-chain UI remain outside this native surface.
+    channel to provide the account selector, including the local auth
+    identity and provider registration links.
   - siteClone, siteFavourite/siteUnfavourite (needs a "dashboard" site
     concept not modeled here), announcerStats (the ALL-sites admin
     aggregation, as opposed to announcerInfo's per-site report -- the
@@ -461,6 +461,9 @@ async def _cmdCertAdd(session, params):
     cert_sign = _param(params, "cert_sign", 4) or _param(params, "cert", 4)
     result = await user.addCert(auth_address, domain, auth_type, auth_user_name, cert_sign)
     if result is True:
+        site = _requireSite(session)
+        user.setCert(site.address, domain)
+        await user.save()
         return "ok"
     elif result is None:
         return "Not changed"
@@ -474,6 +477,10 @@ async def _cmdCertSet(session, params):
     user = await _requireUser(session)
     domain = _param(params, "domain", 0)
     user.setCert(site.address, domain)
+    await user.save()
+    info = formatSiteInfo(site, getattr(session.app, "site_manager", None), user)
+    info["cert_changed"] = domain
+    session.pushAfterResponse("setSiteInfo", info)
     return "ok"
 
 
@@ -513,7 +520,9 @@ async def _cmdCertSelect(session, params):
     site_data = user.getSiteData(site.address)
     auth_address = site_data.get("auth_address")
     active = site_data.get("cert", "")
-    accounts = [("", "No certificate", active == "")]
+    local_identity = site_data.get("auth_address")
+    local_allowed = not accepted_domains and not accepted_pattern
+    accounts = [("", "Use local identity (%s)" % local_identity, active == "", local_allowed)]
     for domain, cert in user.certs.items():
         allowed = accept_any or domain in accepted_domains or (
             accepted_pattern and SafeRe.match(accepted_pattern, domain)
@@ -522,17 +531,44 @@ async def _cmdCertSelect(session, params):
             continue
         if cert.get("auth_address") != auth_address:
             continue
-        accounts.append((domain, "%s@%s" % (cert.get("auth_user_name", ""), domain), domain == active))
+        accounts.append((domain, "%s@%s" % (cert.get("auth_user_name", ""), domain), domain == active, True))
 
     body = "<span style='padding-bottom:5px;display:inline-block'>Select account you want to use in this site:</span>"
-    for domain, title, selected in accounts:
+    for domain, title, selected, selectable in accounts:
         css = " active" if selected else ""
+        css += " cert" if selectable else " disabled"
         body += (
-            "<a href='#Select+account' data-domain='%s' class='select select-close cert%s'>"
+            "<a href='#Select+account' data-domain='%s' class='select select-close%s'>"
             "<b>%s</b>%s</a>"
         ) % (
             html.escape(domain, quote=True), css, html.escape(title),
             " <small>(currently selected)</small>" if selected else "",
+        )
+
+    # A certificate is issued by a trusted provider; it cannot be generated
+    # locally without breaking the site's signer trust model. Match the
+    # legacy selector's first-use path by linking to each provider's
+    # registration site when an accepted domain is not present yet.
+    cert_signers = {}
+    for content in site.content_manager.contents.values():
+        user_contents = content.get("user_contents", {})
+        cert_signers.update(user_contents.get("cert_signers", {}) or {})
+        if cert_signers:
+            break
+    for domain in accepted_domains:
+        if domain in user.certs:
+            continue
+        if domain.endswith(".bit") and domain not in cert_signers:
+            provider_path = domain
+        elif domain in cert_signers:
+            provider = cert_signers[domain]
+            provider_path = provider[0] if isinstance(provider, (list, tuple)) else provider
+        else:
+            continue
+        body += (
+            "<a href='/%s' target='_top' class='select cert-register'>"
+            "<b>Register %s</b><small> (create an account)</small></a>"
+            % (html.escape(str(provider_path), quote=True), html.escape(domain))
         )
 
     session.push("notification", ["ask", body])
@@ -550,7 +586,7 @@ async def _cmdCertSelect(session, params):
         });
       })();
     """)
-    return [{"domain": domain, "title": title, "selected": selected} for domain, title, selected in accounts]
+    return [{"domain": domain, "title": title, "selected": selected} for domain, title, selected, _ in accounts]
 
 
 # -- Site management (admin, via SiteManager) --

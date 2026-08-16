@@ -20,7 +20,10 @@ def _wsUrl(server, site):
 
 async def _call(ws, cmd, params=None, msg_id=1):
     await ws.send_message(json.dumps({"cmd": cmd, "params": params or {}, "id": msg_id}))
-    return json.loads(await ws.get_message())
+    while True:
+        response = json.loads(await ws.get_message())
+        if response.get("cmd") == "response" and response.get("to") == msg_id:
+            return response
 
 
 class TestP2PUiCommandsSiteSignPublish:

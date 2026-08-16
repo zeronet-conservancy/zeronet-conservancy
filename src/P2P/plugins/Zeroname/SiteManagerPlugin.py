@@ -33,6 +33,12 @@ from P2P.PluginManager import registerTo
 log = logging.getLogger("P2P.plugins.Zeroname")
 
 BIT_RESOLVER = "1GnACKctkJrGWHTqxk9T9zXo2bLQc2PDnF"
+# ZeroID is the historical built-in authorization provider. Keep this
+# bootstrap mapping so a fresh node can reach the registration site before
+# its ZeroName database has been downloaded.
+BOOTSTRAP_DOMAINS = {
+    "zeroid.bit": "1iD5ZQJMNXu43w1qLB8sfdHVKppVMduGz",
+}
 
 
 @registerTo("SiteManager")
@@ -66,7 +72,7 @@ class SiteManagerPlugin:
             )
             self.db_domains_modified = site_zeroname_modified
 
-        return self.db_domains.get(domain)
+        return self.db_domains.get(domain) or BOOTSTRAP_DOMAINS.get(domain)
 
     async def resolveDomain(self, domain: str):
         resolved = await self.resolveBitDomain(domain)
