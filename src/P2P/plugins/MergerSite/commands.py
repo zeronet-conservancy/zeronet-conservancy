@@ -14,13 +14,26 @@ half of MergerSite this shares a foundation with). {} for any site with
 no merger permission at all, matching the original's own "not a merger
 site" case exactly.
 
-Deliberately NOT ported: mergerSiteAdd/mergerSiteDelete (registering a
-NEW merged site and syncing its own content.json -- a real, separate
-site-discovery/download feature, not a listing/path-resolution one) and
-the hasSitePermission() cross-site permission bridge (letting a merged
-site's own connection implicitly gain permissions on sites that merge
-it -- narrower, less commonly hit than the read-path this shares with
-_resolveMergerPath())."""
+mergerSiteAdd/mergerSiteDelete are ported now too, once it turned out
+they don't need a real download -- registering a site is already exactly
+what commands.py's own siteAdd does (SiteManager.add() + a fire-and-
+forget announce, no content actually fetched yet; that happens
+on-demand via whatever needs it next, same as siteAdd), so
+mergerSiteAdd is that same wiring per address, gated on the connected
+site actually being a merger (_mergerTypes() non-empty). Skips the
+original's confirm-dialog/RateLimit round trip for >1 address, same
+"grant directly, no confirm step" precedent permissionAdd/
+corsPermissionAdd already established (no server-held continuation
+mechanism exists here -- see _resolveCorsPath()'s own docstring).
+mergerSiteDelete matches the original closely: it doesn't actually
+delete anything either (validates the merge-type permission and
+responds "ok", relying on a separate real siteDelete call to do the
+actual removal) -- ported faithfully, not a simplification on my part.
+
+Deliberately NOT ported: the hasSitePermission() cross-site permission
+bridge (letting a merged site's own connection implicitly gain
+permissions on sites that merge it -- narrower, less commonly hit than
+the read-path _resolveMergerPath() already covers)."""
 from P2P.Ui.commands import _mergedType, _mergerTypes, _param, _requireSite, _requireSiteManager, command, formatSiteInfo
 
 
@@ -43,3 +56,46 @@ async def _cmdMergerSiteList(session, params):
         else:
             result[address] = merged_type
     return result
+
+
+@command("mergerSiteAdd")
+async def _cmdMergerSiteAdd(session, params):
+    site = _requireSite(session)
+    addresses = _param(params, "addresses", 0, [])
+    if not isinstance(addresses, list):
+        addresses = [addresses]
+    if not _mergerTypes(site):
+        return {"error": "Not a merger site"}
+
+    site_manager = _requireSiteManager(session)
+    add_site = getattr(session.app, "on_missing_site", None)
+    announce_once = getattr(session.app, "_announceOnce", None)
+    for address in addresses:
+        if address in site_manager.sites:
+            continue  # Already added
+        new_site = add_site(address) if add_site is not None else site_manager.add(address)
+        if not new_site:
+            continue
+        if announce_once is not None and session.nursery is not None:
+            session.nursery.start_soon(announce_once, new_site.address)
+    return "ok"
+
+
+@command("mergerSiteDelete")
+async def _cmdMergerSiteDelete(session, params):
+    site = _requireSite(session)
+    address = _param(params, "address", 0)
+
+    site_manager = _requireSiteManager(session)
+    target = site_manager.sites.get(address)
+    if target is None:
+        return {"error": "No site found: %s" % address}
+
+    merger_types = _mergerTypes(site)
+    if not merger_types:
+        return {"error": "Not a merger site"}
+    merged_type = _mergedType(target)
+    if merged_type not in merger_types:
+        return {"error": "Merged type (%s) not in %s" % (merged_type, merger_types)}
+
+    return "ok"

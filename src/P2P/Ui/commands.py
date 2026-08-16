@@ -82,14 +82,12 @@ explicitly on SiteManager.load()/saveDelayed()), _mergerTypes()/
 _mergedType() below just read live site state on every call -- cheap
 (a permissions list scan, a dict lookup already in memory) and never
 stale, so there's no rebuild-on-mutation bookkeeping to get wrong.
-P2P/plugins/MergerSite/commands.py's own mergerSiteList now returns real
-data using the same two helpers, not the unconditional {} stub it used
-to be. Narrower than the original: read-only (fileGet/fileList/dirList),
-same scope _resolveCorsPath() itself is limited to, and no
-hasSitePermission() cross-site bridge, actionPermissionDetails, or
-mergerSiteAdd/Delete (registering a NEW merged site and syncing its
-content.json -- a real, separate site-discovery/download feature, not a
-path-resolution one).
+P2P/plugins/MergerSite/commands.py's own mergerSiteList, mergerSiteAdd,
+and mergerSiteDelete now all use these same two helpers too -- see that
+module's own docstring. Narrower than the original: the read side is
+read-only (fileGet/fileList/dirList), same scope _resolveCorsPath()
+itself is limited to, and there's still no hasSitePermission() cross-site
+bridge or actionPermissionDetails.
 
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
