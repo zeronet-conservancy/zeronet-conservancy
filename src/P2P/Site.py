@@ -112,6 +112,21 @@ class Site:
         record.found(source)
         return record
 
+    def restorePeer(self, peer_id: ID, ip: str | None, port: int | None, reputation: int = 0) -> PeerRecord:
+        """Re-inserts a peer with an explicit reputation, bypassing
+        found()'s bump semantics -- used by SiteManager.load() to restore
+        peers persisted in sites.json across a restart (see that module's
+        own docstring on PeerDb-equivalent persistence), preserving
+        earned reputation exactly rather than treating rediscovery as a
+        fresh find. Unlike addPeer(), never rejected: a peer already
+        blacklisted since it was last persisted stays blacklisted for new
+        discoveries via addPeer(), but a straight restore of what was on
+        disk isn't a new "should we trust this" decision."""
+        record = PeerRecord(peer_id, ip, port)
+        record.reputation = reputation
+        self.peers[peer_id.to_base58()] = record
+        return record
+
     def getConnectablePeers(self, need_num: int = 5, exclude: set | None = None) -> list[PeerRecord]:
         exclude = exclude or set()
         candidates = [p for p in self.peers.values() if p.peer_id not in exclude]

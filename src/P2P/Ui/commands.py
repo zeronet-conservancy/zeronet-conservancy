@@ -135,7 +135,7 @@ import sys
 from pathlib import Path
 
 from Config import config
-from Crypt import CryptBitcoin
+from Crypt import CryptBitcoin, CryptHash
 from util import QueryJson, SafeRe
 
 from ..ContentManager import _getDirname
@@ -1746,3 +1746,70 @@ async def _cmdSiteListModifiedFiles(session, params):
                 modified_files.append(inner_path)
 
     return {"modified_files": modified_files}
+
+
+# -- Bigfile upload (Layer E) --
+
+UPLOAD_NONCES: dict[str, dict] = {}
+
+
+@command("bigfileUploadInit")
+async def _cmdBigfileUploadInit(session, params):
+    """Real port of plugins/Bigfile/BigfilePlugin.py's own
+    actionBigfileUploadInit(): mints a one-time nonce for a subsequent
+    raw-body upload to /ZeroNet-Internal/BigfileUpload (see UiServer.py's
+    own _handleBigfileUpload(), where the actual bytes/hashing/
+    content.json update happens) -- this command only validates
+    permission and reserves the nonce, matching the original's own split
+    between "who's allowed to start an upload" (a websocket command, real
+    session/user context) and "receive the actual bytes" (a plain HTTP
+    POST with no session at all -- the nonce is what proves the POST is
+    legitimate, not a fresh permission check on the POST itself).
+
+    Only the "xhr" protocol is ported -- one raw-body POST endpoint, not
+    the original's alternate WebSocket-streaming upload path
+    (BigfileUploadWebsocket). Both exist in the original purely as two
+    delivery mechanisms for identical upload logic; XHR is the simpler,
+    universally-supported one, and this repo bundles no client-side asset
+    that specifically needs the WebSocket variant."""
+    site = _requireSite(session)
+    inner_path = str(_param(params, "inner_path", 0)).strip("/")
+    size = int(_param(params, "size", 1, 0))
+    protocol = _param(params, "protocol", 2, "xhr")
+    if protocol != "xhr":
+        return {"error": "Unknown protocol"}
+
+    user = await _requireUser(session)
+    site_manager = _requireSiteManager(session)
+    is_own = site_manager.isOwn(site.address)
+    valid_signers = site.content_manager.getValidSigners(inner_path)
+    auth_address = user.getAuthAddress(site.address)
+    if not is_own and auth_address not in valid_signers:
+        return {"error": "Forbidden, you can only modify your own files"}
+
+    from ..Bigfile import DEFAULT_PIECE_SIZE
+
+    nonce = CryptHash.random()
+    piece_size = DEFAULT_PIECE_SIZE
+    piecemap_inner_path = inner_path + ".piecemap.msgpack"
+    file_info = site.content_manager.getFileInfo(inner_path, new_file=True)
+    content_inner_path = file_info["content_inner_path"] if file_info else "content.json"
+    content_inner_path_dir = _getDirname(content_inner_path)
+    file_relative_path = inner_path[len(content_inner_path_dir):]
+
+    UPLOAD_NONCES[nonce] = {
+        "site": site,
+        "inner_path": inner_path,
+        "size": size,
+        "piece_size": piece_size,
+        "piecemap_inner_path": piecemap_inner_path,
+        "content_inner_path": content_inner_path,
+        "file_relative_path": file_relative_path,
+        "piecemap_relative_path": piecemap_inner_path[len(content_inner_path_dir):],
+    }
+    return {
+        "url": "/ZeroNet-Internal/BigfileUpload?upload_nonce=" + nonce,
+        "piece_size": piece_size,
+        "inner_path": inner_path,
+        "file_relative_path": file_relative_path,
+    }
