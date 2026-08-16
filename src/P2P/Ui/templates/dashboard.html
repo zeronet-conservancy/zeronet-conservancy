@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} - ZeroNet</title>
+  <style>
+    :root { color-scheme: light dark; }
+    body { font: 15px/1.45 system-ui, sans-serif; margin: 0; padding: 2rem; background: #f5f5f5; color: #222; }
+    main { max-width: 1000px; margin: auto; background: white; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 12px #0002; }
+    nav { display: flex; gap: 1rem; margin-bottom: 1.5rem; }
+    nav a { color: #1769aa; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: .55rem; border-bottom: 1px solid #ddd; vertical-align: top; }
+    th { background: #eee; }
+    input[type=text] { width: min(100%, 30rem); padding: .35rem; }
+    button { padding: .4rem .8rem; cursor: pointer; }
+    .muted { color: #666; }
+    .pending { color: #a65d00; }
+    #status { min-height: 1.5em; margin: 1rem 0; }
+    @media (prefers-color-scheme: dark) {
+      body { background: #202124; color: #eee; } main { background: #292a2d; }
+      th { background: #3a3b3e; } th, td { border-color: #555; } .muted { color: #bbb; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <nav><a href="/Config">Configuration</a><a href="/Plugins">Plugins</a></nav>
+  <h1>{{ title }}</h1>
+  <p id="status" class="muted">Loading…</p>
+  <section id="content"></section>
+</main>
+<script>
+(() => {
+  const page = {{ page | tojson }};
+  const socketUrl = {{ websocket_url | tojson }};
+  const status = document.getElementById("status");
+  const content = document.getElementById("content");
+  let socket, nextId = 1, pending = new Map();
+
+  function call(cmd, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, {resolve, reject});
+      socket.send(JSON.stringify({cmd, params, id}));
+    });
+  }
+
+  function esc(value) {
+    const node = document.createElement("span");
+    node.textContent = String(value ?? "");
+    return node.innerHTML;
+  }
+
+  function renderConfig(values) {
+    const rows = Object.entries(values).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => {
+      const value = item.value;
+      const encoded = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+      return `<tr><td><code>${esc(key)}</code></td><td><input type="text" data-key="${esc(key)}" value="${esc(encoded)}"></td>` +
+        `<td class="muted">${esc(item.default)}</td><td>${item.pending ? '<span class="pending">restart required</span>' : ''}</td>` +
+        `<td><button data-save="${esc(key)}">Save</button></td></tr>`;
+    }).join("");
+    content.innerHTML = `<table><thead><tr><th>Key</th><th>Value</th><th>Default</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+    content.querySelectorAll("button[data-save]").forEach(button => button.onclick = async () => {
+      const key = button.dataset.save;
+      const input = content.querySelector(`input[data-key="${CSS.escape(key)}"]`);
+      let value = input.value;
+      try { value = JSON.parse(value); } catch (_) { /* plain strings are valid config values */ }
+      try { await call("configSet", {key, value}); status.textContent = `${key} saved.`; load(); }
+      catch (error) { status.textContent = error.message; }
+    });
+  }
+
+  function renderPlugins(data) {
+    const rows = data.plugins.sort((a, b) => a.name.localeCompare(b.name)).map(plugin =>
+      `<tr><td><code>${esc(plugin.name)}</code></td><td>${plugin.loaded ? "loaded" : "not loaded"}</td>` +
+      `<td><label><input type="checkbox" data-plugin="${esc(plugin.dir_name)}" ${plugin.enabled ? "checked" : ""}> enabled</label></td></tr>`
+    ).join("");
+    content.innerHTML = `<p class="muted">Changes take effect after restarting the native P2P process.</p>` +
+      `<table><thead><tr><th>Plugin</th><th>State</th><th>Enabled</th></tr></thead><tbody>${rows}</tbody></table>`;
+    content.querySelectorAll("input[data-plugin]").forEach(input => input.onchange = async () => {
+      try { await call("pluginConfigSet", {dir_name: input.dataset.plugin, key: "enabled", value: input.checked}); status.textContent = "Plugin setting saved."; }
+      catch (error) { input.checked = !input.checked; status.textContent = error.message; }
+    });
+  }
+
+  async function load() {
+    try {
+      const result = await call(page === "config" ? "configList" : "pluginList");
+      if (page === "config") renderConfig(result); else renderPlugins(result);
+      status.textContent = "";
+    } catch (error) { status.textContent = error.message; }
+  }
+
+  socket = new WebSocket(socketUrl);
+  socket.onopen = load;
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    const request = pending.get(message.to);
+    if (!request) return;
+    pending.delete(message.to);
+    if (message.error) request.reject(new Error(message.error)); else request.resolve(message.result);
+  };
+  socket.onerror = () => { status.textContent = "Could not connect to the native UI websocket."; };
+})();
+</script>
+</body>
+</html>

@@ -12,6 +12,31 @@ from P2P import compat
 
 
 class TestP2PUiServer:
+    def testDashboardPagesExposeNativeWebsocketBootstrap(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestDashboardSite", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(
+                    sites={site.address: site},
+                    homepage=site.address,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        config = await client.get("%s/Config" % base_url)
+                        plugins = await client.get("%s/Plugins" % base_url)
+                        return config.status_code, config.text, plugins.status_code, plugins.text
+
+        config_status, config_body, plugins_status, plugins_body = compat.run(scenario)
+        assert config_status == 200
+        assert "Configuration" in config_body
+        assert '"config"' in config_body
+        assert "configList" in config_body
+        assert plugins_status == 200
+        assert "Plugins" in plugins_body
+        assert '"plugins"' in plugins_body
+        assert "pluginList" in plugins_body
+
     def testServesRealSiteFileOverHttp(self):
         content = b'{"hello": "from a real site file served via Hypercorn"}'
 

@@ -113,6 +113,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from ..SiteStorage import AccessError
 from .Wrapper import renderWrapper
+from .Dashboard import renderDashboard
 
 UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
 
@@ -210,6 +211,10 @@ class UiApp:
 
         routes = [
             Route("/", self._handleHomepage, methods=["GET"]),
+            Route("/Config", self._handleConfig, methods=["GET"]),
+            Route("/Config/", self._handleConfig, methods=["GET"]),
+            Route("/Plugins", self._handlePlugins, methods=["GET"]),
+            Route("/Plugins/", self._handlePlugins, methods=["GET"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
             Route("/{address}", self._handleSite, methods=["GET"]),
             WebSocketRoute("/ZeroNet-Internal/Websocket", self._handleWebsocket),
@@ -241,6 +246,29 @@ class UiApp:
         if not self.homepage:
             return Response(b"No homepage configured", status_code=404)
         return RedirectResponse(url="/%s/" % self.homepage)
+
+    def _dashboardSite(self):
+        """Return the site whose wrapper key scopes dashboard websocket calls."""
+        if self.homepage and self.homepage in self.sites:
+            return self.sites[self.homepage]
+        return next(iter(self.sites.values()), None)
+
+    async def _handleDashboard(self, request: Request, page: str) -> Response:
+        site = self._dashboardSite()
+        if site is None:
+            return Response(b"No dashboard site configured", status_code=404)
+        scheme = "wss" if request.url.scheme == "https" else "ws"
+        host = request.headers.get("host") or request.url.netloc
+        websocket_url = "%s://%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (
+            scheme, host, site.wrapper_key
+        )
+        return Response(renderDashboard(page, websocket_url), media_type="text/html")
+
+    async def _handleConfig(self, request: Request) -> Response:
+        return await self._handleDashboard(request, "config")
+
+    async def _handlePlugins(self, request: Request) -> Response:
+        return await self._handleDashboard(request, "plugins")
 
     async def _handleUiMediaExtra(self, filename: str) -> bytes:
         """Found live: the legacy Plugin.PluginManager's own UiRequestPlugin
