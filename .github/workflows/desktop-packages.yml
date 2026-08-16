@@ -143,8 +143,16 @@ jobs:
 
   release:
     name: Publish desktop release
-    if: startsWith(github.ref, 'refs/tags/v')
-    needs: package
+    # Requires package (Windows/macOS/Linux) to have actually succeeded --
+    # android is allowed to fail without blocking the release (it's the
+    # newest, flakiest job here) via needs.package.result rather than a
+    # plain `needs: [package, android]` job dependency, which would skip
+    # this whole job (and every working desktop installer with it) if
+    # Android alone had a bad day. `if: always()` is required for this job
+    # to even evaluate its own condition when a needed job fails; without
+    # it, GitHub Actions skips dependents by default.
+    if: always() && startsWith(github.ref, 'refs/tags/v') && needs.package.result == 'success'
+    needs: [package, android]
     runs-on: ubuntu-latest
     steps:
       - name: Download package artifacts
@@ -153,6 +161,10 @@ jobs:
           pattern: zeronet-*
           path: release-artifacts
           merge-multiple: true
+          # Android's artifact only exists if that job actually succeeded
+          # (see the comment on this job's own `if:` above) -- don't fail
+          # the whole release just because it's missing.
+          if-no-artifact-found: warn
 
       - name: Publish tagged release artifacts
         uses: softprops/action-gh-release@v2
@@ -161,7 +173,12 @@ jobs:
 
   android:
     name: Android APK
-    if: github.event_name == 'workflow_dispatch'
+    # Runs for manual verification (workflow_dispatch, as we've been
+    # testing) AND for real tagged releases -- previously tag-only, this
+    # job never ran on `git push --tags`, so the Android APK could never
+    # actually reach a GitHub release regardless of the release job's own
+    # config below.
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-22.04
     steps:
       - name: Check out source
