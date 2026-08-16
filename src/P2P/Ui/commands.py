@@ -70,6 +70,27 @@ UiSession.push() has no equivalent of, so the client-side injected script
 calls the follow-up command (userSet/userLogin) directly instead of
 round-tripping through a callback the server would have to keep state for.
 
+_resolveMergerPath() (used by fileGet/fileList/dirList via the new
+_resolveCrossSitePath() dispatcher, alongside _resolveCorsPath()) is a
+real, narrow port of plugins/MergerSite/MergerSitePlugin.py's own
+checkMergerPath(): an inner_path of "merged-<type>/<address>/<rest>"
+reads from a DIFFERENT site than the one this connection is scoped to,
+provided the connected site declares a "Merger:<type>" permission and
+the target site's own content.json declares "merged_type": "<type>".
+Unlike the original's cached merger_db/merged_db module globals (rebuilt
+explicitly on SiteManager.load()/saveDelayed()), _mergerTypes()/
+_mergedType() below just read live site state on every call -- cheap
+(a permissions list scan, a dict lookup already in memory) and never
+stale, so there's no rebuild-on-mutation bookkeeping to get wrong.
+P2P/plugins/MergerSite/commands.py's own mergerSiteList now returns real
+data using the same two helpers, not the unconditional {} stub it used
+to be. Narrower than the original: read-only (fileGet/fileList/dirList),
+same scope _resolveCorsPath() itself is limited to, and no
+hasSitePermission() cross-site bridge, actionPermissionDetails, or
+mergerSiteAdd/Delete (registering a NEW merged site and syncing its
+content.json -- a real, separate site-discovery/download feature, not a
+path-resolution one).
+
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
   - announcerStats (the ALL-sites admin aggregation, as opposed to
@@ -186,6 +207,69 @@ def _resolveCorsPath(session, inner_path):
     if target_site is None:
         raise CommandError("No site found: %s" % cors_address)
     return target_site, cors_inner_path
+
+
+def _mergedType(site):
+    """The merge type this site itself declares via content.json's own
+    "merged_type" key (e.g. "ZeroMe"), or None if it isn't a mergeable
+    per-user site at all. Matches MergerSitePlugin.updateMergerSites()'s
+    own merged_db derivation -- just computed live instead of cached."""
+    return site.content_manager.contents.get("content.json", {}).get("merged_type")
+
+
+def _mergerTypes(site):
+    """Every merge type this site is allowed to READ merged content as,
+    derived from its own "Merger:<type>" permission strings -- matches
+    MergerSitePlugin.updateMergerSites()'s own merger_db derivation."""
+    return [p[len("Merger:"):] for p in site.permissions if p.startswith("Merger:")]
+
+
+_MERGED_PATH_RE = re.compile(r"^merged-([A-Za-z0-9_-]+)/([A-Za-z0-9]{26,35})/(.*)$")
+
+
+def _resolveMergerPath(session, inner_path):
+    """Port of plugins/MergerSite/MergerSitePlugin.py's own
+    checkMergerPath(): an inner_path of "merged-<type>/<address>/<rest>"
+    reads from a DIFFERENT site than the one this connection is scoped
+    to, provided the connected site declares a "Merger:<type>"
+    permission AND the target site's own content.json declares itself
+    as "merged_type": "<type>" -- both checks the original makes, kept
+    here. See this file's own module docstring for full scope."""
+    match = _MERGED_PATH_RE.match(inner_path)
+    if not match:
+        return _requireSite(session), inner_path
+    acting_site = _requireSite(session)
+    merger_type, merged_address, merged_inner_path = match.groups()
+    if merger_type not in _mergerTypes(acting_site):
+        raise CommandError(
+            "No merger (%s) permission to load: %s (%s not in %s)"
+            % (acting_site.address, inner_path, merger_type, _mergerTypes(acting_site))
+        )
+    site_manager = _requireSiteManager(session)
+    target_site = site_manager.sites.get(merged_address)
+    if target_site is None:
+        raise CommandError("No site found: %s" % merged_address)
+    if _mergedType(target_site) != merger_type:
+        raise CommandError(
+            "Merger site (%s) does not have permission for merged site: %s (%s)"
+            % (merger_type, merged_address, _mergedType(target_site))
+        )
+    return target_site, merged_inner_path
+
+
+def _resolveCrossSitePath(session, inner_path):
+    """Dispatches fileGet/fileList/dirList's inner_path to whichever
+    cross-site scheme (if any) it uses -- "merged-<type>/<address>/..."
+    (MergerSite) or "cors-<address>/..." (Cors) -- falling back to the
+    connection's own site otherwise. The two prefixes are mutually
+    exclusive by construction (checked directly rather than chaining
+    both resolvers), so a merger-resolved inner_path is never
+    mistakenly re-resolved as a cors path, or vice versa."""
+    if inner_path.startswith("merged-"):
+        return _resolveMergerPath(session, inner_path)
+    if inner_path.startswith("cors-"):
+        return _resolveCorsPath(session, inner_path)
+    return _requireSite(session), inner_path
 
 
 async def _requireUser(session):
@@ -443,7 +527,7 @@ async def _cmdSiteInfo(session, params):
 @command("fileGet")
 async def _cmdFileGet(session, params):
     inner_path = _param(params, "inner_path", 0)
-    site, inner_path = _resolveCorsPath(session, inner_path)
+    site, inner_path = _resolveCrossSitePath(session, inner_path)
     fmt = _param(params, "format", 1, "text")
     if not site.storage.isFile(inner_path):
         return None
@@ -490,14 +574,14 @@ async def _cmdFileNeed(session, params):
 @command("fileList")
 async def _cmdFileList(session, params):
     inner_path = _param(params, "inner_path", 0, "")
-    site, inner_path = _resolveCorsPath(session, inner_path)
+    site, inner_path = _resolveCrossSitePath(session, inner_path)
     return await site.storage.walk(inner_path)
 
 
 @command("dirList")
 async def _cmdDirList(session, params):
     inner_path = _param(params, "inner_path", 0, "")
-    site, inner_path = _resolveCorsPath(session, inner_path)
+    site, inner_path = _resolveCrossSitePath(session, inner_path)
     stats = _param(params, "stats", 1, False)
     names = await site.storage.list(inner_path)
     if not stats:
