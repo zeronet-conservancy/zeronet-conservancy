@@ -305,6 +305,42 @@ class TestP2PUiCommandsCerts:
 
 
 class TestP2PUiCommandsSiteManagement:
+    def testSiteSetLimitAcceptsSidebarScalarAndPersists20Mb(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                address = "1TestLimitSiteAAAAAAAAAAAAAA1"
+                site = site_manager.add(address)
+                site.permissions = ["ADMIN"]
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        reply = await _call(ws, "siteSetLimit", "20", msg_id=1)
+                return reply, site_manager.getSizeLimitOverride(address)
+
+        reply, override = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert override == 20.0
+
+    def testSiteSetBigfileLimitAcceptsSidebarScalar(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                address = "1TestBigfileLimitSiteAAAAAAAA1"
+                site = site_manager.add(address)
+                site.permissions = ["ADMIN"]
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        reply = await _call(ws, "siteSetAutodownloadBigfileLimit", "20", msg_id=1)
+                return reply, site_manager.getSiteSetting(address, "autodownload_bigfile_size_limit")
+
+        reply, limit = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert limit == 20.0
+
     def testSiteAddDeletePauseResumeAndList(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:

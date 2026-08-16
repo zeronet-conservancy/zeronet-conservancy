@@ -917,6 +917,17 @@ async def _cmdSiteSetLimit(session, params):
     return "ok"
 
 
+@command("siteSetAutodownloadBigfileLimit")
+async def _cmdSiteSetAutodownloadBigfileLimit(session, params):
+    site = _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    limit = float(_param(params, "limit", 0))
+    if limit < 0:
+        return {"error": "limit must be non-negative"}
+    await site_manager.setSiteSetting(site.address, "autodownload_bigfile_size_limit", limit)
+    return "ok"
+
+
 @command("siteSetOwned")
 async def _cmdSiteSetOwned(session, params):
     site = _requireAdmin(session)
