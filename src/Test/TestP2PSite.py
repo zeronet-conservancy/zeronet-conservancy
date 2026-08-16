@@ -83,3 +83,27 @@ class TestP2PSite:
                 await site.needFile("data.json", [])
 
         compat.run(scenario)
+
+    def testRestorePeerSetsReputationDirectlyWithoutBump(self):
+        """Unlike addPeer()'s found()-bump semantics, restorePeer() sets
+        reputation exactly to what's given -- SiteManager.load()'s own
+        sites.json-based peer persistence relies on this to bring back a
+        peer's earned reputation across a restart unchanged, not treat
+        rediscovery as a fresh find."""
+        site = Site("1Test", pathlib.Path("/tmp/x"))
+        peer_id = _random_peer_id()
+        record = site.restorePeer(peer_id, "1.2.3.4", 1234, reputation=42)
+        assert record.reputation == 42
+        assert site.peers[peer_id.to_base58()] is record
+
+    def testRestorePeerIgnoresBlacklist(self):
+        """A straight restore of what was already on disk isn't a new
+        trust decision -- addPeer() rejects a blacklisted peer_id, but
+        restorePeer() (only ever called from SiteManager.load(), never
+        from live network discovery) doesn't."""
+        site = Site("1Test", pathlib.Path("/tmp/x"))
+        peer_id = _random_peer_id()
+        site.peer_blacklist.add(peer_id.to_base58())
+        record = site.restorePeer(peer_id, "1.2.3.4", 1234, reputation=5)
+        assert record is not None
+        assert record.reputation == 5

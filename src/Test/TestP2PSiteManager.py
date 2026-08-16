@@ -142,3 +142,53 @@ class TestP2PSiteManager:
         sites, settings = compat.run(scenario)
         assert VALID_ADDRESS in sites
         assert settings[VALID_ADDRESS]["own"] is True
+
+    def testSavePersistsPeersAndLoadRestoresThem(self):
+        """This stack's own PeerDb-equivalent (see SiteManager.save()'s
+        own docstring): known peers fold into sites.json instead of a
+        separate global content.db, so a fresh process doesn't have to
+        rediscover the same swarm from nothing on every restart."""
+        async def scenario():
+            from libp2p.crypto.ed25519 import create_new_key_pair
+            from libp2p.peer.id import ID
+
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                sm1 = SiteManager(data_dir)
+                site1 = sm1.add(VALID_ADDRESS, own=True)
+                peer_id = ID.from_pubkey(create_new_key_pair().public_key)
+                site1.addPeer(peer_id, "203.0.113.5", 15441, source="tracker")
+                await sm1.save()
+
+                sm2 = SiteManager(data_dir)
+                await sm2.load()
+                return sm2.sites[VALID_ADDRESS].peers, peer_id.to_base58()
+
+        peers, peer_key = compat.run(scenario)
+        assert peer_key in peers
+        restored = peers[peer_key]
+        assert restored.ip == "203.0.113.5"
+        assert restored.port == 15441
+        assert restored.reputation == 1  # tracker source's own +1 bump, preserved exactly across the restart
+
+    def testSaveCapsPersistedPeersToHighestReputation(self):
+        async def scenario():
+            from P2P.SiteManager import MAX_PERSISTED_PEERS_PER_SITE
+            from libp2p.crypto.ed25519 import create_new_key_pair
+            from libp2p.peer.id import ID
+
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                sm = SiteManager(data_dir)
+                site = sm.add(VALID_ADDRESS, own=True)
+                for i in range(MAX_PERSISTED_PEERS_PER_SITE + 10):
+                    peer_id = ID.from_pubkey(create_new_key_pair().public_key)
+                    record = site.addPeer(peer_id, "10.0.%s.%s" % (i // 256, i % 256), 1000 + i, source="local")
+                    record.reputation = i  # Spread reputations so the cap picks the highest ones deterministically
+                await sm.save()
+                data = json.loads((data_dir / "sites.json").read_text())
+                return data[VALID_ADDRESS]["peers"], MAX_PERSISTED_PEERS_PER_SITE
+
+        persisted, cap = compat.run(scenario)
+        assert len(persisted) == cap
+        assert all(entry["reputation"] >= 10 for entry in persisted)  # The lowest 10 (0-9) were dropped

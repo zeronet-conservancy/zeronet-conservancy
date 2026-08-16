@@ -37,9 +37,12 @@ import re
 import time
 
 import trio
+from libp2p.peer.id import ID
 
 from .PluginManager import acceptPlugins
 from .Site import Site
+
+MAX_PERSISTED_PEERS_PER_SITE = 100  # Bounds sites.json growth -- highest-reputation peers only, same "cap it" precedent siteListModifiedFiles' own 100-file cap uses
 
 ADDRESS_RE = re.compile(r"^[A-Za-z0-9]{26,35}$")
 
@@ -110,6 +113,12 @@ class SiteManager:
                     await site.content_manager.loadContent()
                 except Exception:
                     self.log.exception("Failed to load content.json for %s", address)
+            for peer_entry in settings.get("peers") or []:
+                try:
+                    peer_id = ID.from_base58(peer_entry["peer_id"])
+                except Exception:
+                    continue
+                site.restorePeer(peer_id, peer_entry.get("ip"), peer_entry.get("port"), peer_entry.get("reputation", 0))
             self.sites[address] = site
             self._site_settings[address] = dict(settings)
 
@@ -124,17 +133,36 @@ class SiteManager:
 
     async def save(self) -> None:
         """Writes every currently loaded site's settings back to
-        sites.json, refreshing "serving", "size"/"size_optional", and
-        "permissions" from the live Site/ContentManager first -- a granted
-        ADMIN permission (or any other) needs to survive a process
-        restart the same way the original's Site.saveSettings() does, not
-        just live in the in-memory Site object for the rest of this run."""
+        sites.json, refreshing "serving", "size"/"size_optional",
+        "permissions", and "peers" from the live Site/ContentManager
+        first -- a granted ADMIN permission (or any other) needs to
+        survive a process restart the same way the original's
+        Site.saveSettings() does, not just live in the in-memory Site
+        object for the rest of this run.
+
+        "peers" is this stack's own PeerDb-equivalent: the original
+        persists known peers into a separate global content.db sqlite
+        table (a real, separate piece of infrastructure this stack has no
+        equivalent of -- see P2P.Db's own module docstring on why). Since
+        sites.json is already read/written on every load()/save() and
+        already carries per-site state, folding a compact peer list in
+        here needs no new file or db at all -- just the highest-
+        reputation MAX_PERSISTED_PEERS_PER_SITE peers, restored via
+        Site.restorePeer() at the next load() so a fresh process doesn't
+        have to rediscover the same swarm via DHT/tracker/PEX from
+        nothing every single restart."""
         data = {}
         for address, site in self.sites.items():
             settings = self._site_settings.setdefault(address, {"added": int(time.time()), "own": False})
             settings["serving"] = site.isServing()
             settings["size"] = site.content_manager.getTotalSize()
             settings["permissions"] = list(site.permissions)
+            best_peers = sorted(site.peers.values(), key=lambda record: record.reputation, reverse=True)
+            settings["peers"] = [
+                {"peer_id": record.peer_id.to_base58(), "ip": record.ip, "port": record.port,
+                 "reputation": record.reputation}
+                for record in best_peers[:MAX_PERSISTED_PEERS_PER_SITE]
+            ]
             data[address] = settings
 
         body = json.dumps(data, indent=1, sort_keys=True)
