@@ -13,6 +13,7 @@ import P2P.plugins.Sidebar  # noqa: F401
 
 from Config import config
 from P2P.Site import Site
+from P2P.UserManager import UserManager
 from P2P.Ui.UiServer import UiServer
 from P2P import compat
 
@@ -221,3 +222,112 @@ class TestP2PPluginsSidebar:
         assert "error" not in reply
         assert isinstance(reply["result"], str)
         assert "<label>Database" in reply["result"]
+
+    def testSiteRecoverPrivatekeyDerivesRealKeyFromMasterSeed(self):
+        """Simulates the real scenario this command exists for: a fresh
+        data_dir with only users.json (the master seed) restored, not the
+        per-site privatekey cache getNewSiteData() also writes -- the
+        privatekey must be re-derivable from the seed + content.json's
+        own address_index alone."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                address, address_index, site_data = await user.getNewSiteData()
+                original_privatekey = site_data["privatekey"]
+                del user.sites[address]["privatekey"]  # Simulate the cache being lost
+
+                site = Site(address, data_dir / address)
+                site.permissions.append("ADMIN")
+                await site.storage.writeJson("content.json", {"address_index": address_index})
+                await site.content_manager.loadContent("content.json")
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        reply = await _call(ws, "siteRecoverPrivatekey")
+                return reply, user.sites[address].get("privatekey"), original_privatekey
+
+        reply, recovered_privatekey, original_privatekey = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert recovered_privatekey == original_privatekey
+
+    def testSiteRecoverPrivatekeyRefusesWhenAlreadyStored(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                address, address_index, site_data = await user.getNewSiteData()  # Keeps its own privatekey
+
+                site = Site(address, data_dir / address)
+                site.permissions.append("ADMIN")
+                await site.storage.writeJson("content.json", {"address_index": address_index})
+                await site.content_manager.loadContent("content.json")
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "siteRecoverPrivatekey")
+
+        reply = compat.run(scenario)
+        assert "already has saved" in reply["result"]["error"]
+
+    def testSiteRecoverPrivatekeyRefusesWithoutAddressIndex(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                address = "1TestSidebarNoIndexSiteAAAAA1"
+
+                site = Site(address, data_dir / address)
+                site.permissions.append("ADMIN")
+                await site.storage.writeJson("content.json", {})
+                await site.content_manager.loadContent("content.json")
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "siteRecoverPrivatekey")
+
+        reply = compat.run(scenario)
+        assert "No address_index" in reply["result"]["error"]
+
+    def testSiteRecoverPrivatekeyRequiresAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                address = "1TestSidebarNonAdminRecoverA1"
+                site = Site(address, data_dir / address)  # No ADMIN permission
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "siteRecoverPrivatekey")
+
+        reply = compat.run(scenario)
+        assert "error" in reply
+
+    def testUserSetSitePrivatekeyStoresGivenKey(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                address = "1TestSidebarSetPrivatekeyAAA1"
+                site = Site(address, data_dir / address)
+                site.permissions.append("ADMIN")
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        reply = await _call(ws, "userSetSitePrivatekey", {"privatekey": "some-privatekey-value"})
+                return reply, user.sites.get(address, {}).get("privatekey")
+
+        reply, stored = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert stored == "some-privatekey-value"

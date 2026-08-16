@@ -34,14 +34,19 @@ JS didn't even run: the legacy plugin-media-injection mechanism
 onto /uimedia/all.js) was never ported at all -- see UiServer.py's
 _handleUiMediaExtra for that half of the fix.
 
-Still NOT ported: privatekey management (siteRecoverPrivatekey/
-userSetSitePrivatekey -- bip32 per-site key derivation, a separate
-concern from just displaying the sidebar), fileRules, and
-dbReload/dbRebuild as sidebar-triggerable actions (dbRebuild exists
-as a CLI-only action in P2P/actions.py, same
-"destructive, not a great fit for an unauthenticated-beyond-wrapper_key
-websocket command" reasoning P2P/Ui/commands.py's own module docstring
-already gives for it).
+siteRecoverPrivatekey/userSetSitePrivatekey are ported now too: pure
+bip32 derivation over data this stack already has everywhere else it
+creates a site (User.getNewSiteData()'s own address_index, stored in
+content.json's "extend" by siteCreate/siteClone/UiSiteBuilder's
+siteBuilderCreate) plus User.getSiteData()'s already-real per-site
+privatekey storage -- no new infrastructure needed, unlike most of what's
+still open elsewhere in this migration.
+
+Still NOT ported: fileRules, and dbReload/dbRebuild as sidebar-
+triggerable actions (dbRebuild exists as a CLI-only action in
+P2P/actions.py, same "destructive, not a great fit for an
+unauthenticated-beyond-wrapper_key websocket command" reasoning
+P2P/Ui/commands.py's own module docstring already gives for it).
 """
 import logging
 import re
@@ -50,9 +55,12 @@ import uuid
 import trio
 
 from Config import config
+from Crypt import CryptBitcoin
 from util import SafeRe
 
-from P2P.Ui.commands import CommandError, _param, _requireAdmin, _requireSite, _requireSiteManager, command, formatSiteInfo
+from P2P.Ui.commands import (
+    CommandError, _param, _requireAdmin, _requireSite, _requireSiteManager, _requireUser, command, formatSiteInfo,
+)
 
 from .render import renderSidebarHtml
 
@@ -178,3 +186,51 @@ async def _cmdSidebarGetHtmlTag(session, params):
     is_own = site_manager.isOwn(site.address) if site_manager else False
     formatted_info = formatSiteInfo(site, site_manager)
     return renderSidebarHtml(site, formatted_info, is_own, is_admin)
+
+
+@command("siteRecoverPrivatekey")
+async def _cmdSiteRecoverPrivatekey(session, params):
+    """Re-derive and store a site's own privatekey from the current user's
+    master seed, for a site that was created (address_index-tracked, e.g.
+    via siteCreate/siteClone/siteBuilderCreate) but whose privatekey
+    isn't in this user's own sites.json entry -- typically after moving
+    to a fresh data_dir and only restoring users.json (the seed), not the
+    per-site privatekey cache getNewSiteData() also writes there. Refuses
+    outright if a privatekey is already stored (matches the original --
+    this recovers a MISSING key, it doesn't overwrite one that's already
+    there) or if content.json has no address_index to derive from (a
+    site not created via this stack's own bip32 flow, e.g. cloned from
+    elsewhere with its own standalone privatekey)."""
+    site = _requireAdmin(session)
+    user = await _requireUser(session)
+
+    site_data = user.getSiteData(site.address)
+    if site_data.get("privatekey"):
+        return {"error": "This site already has saved privated key"}
+
+    content = site.content_manager.contents.get("content.json", {})
+    address_index = content.get("address_index")
+    if not address_index:
+        return {"error": "No address_index in content.json"}
+
+    privatekey = CryptBitcoin.hdPrivatekey(user.master_seed, address_index)
+    if CryptBitcoin.privatekeyToAddress(privatekey) != site.address:
+        return {"error": "Unable to deliver private key for this site from current user's master_seed"}
+
+    site_data["privatekey"] = privatekey
+    await user.save()
+    session.app.broadcast("siteChanged", site, {"event": "recover_privatekey"})
+    return "ok"
+
+
+@command("userSetSitePrivatekey")
+async def _cmdUserSetSitePrivatekey(session, params):
+    site = _requireAdmin(session)
+    user = await _requireUser(session)
+    privatekey = _param(params, "privatekey", 0)
+
+    site_data = user.getSiteData(site.address)
+    site_data["privatekey"] = privatekey
+    await user.save()
+    session.app.broadcast("siteChanged", site, {"event": "set_privatekey"})
+    return "ok"
