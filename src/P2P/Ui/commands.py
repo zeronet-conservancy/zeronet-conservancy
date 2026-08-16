@@ -210,7 +210,7 @@ async def _cmdChannelJoin(session, params):
     return "ok"
 
 
-def formatSiteInfo(site, site_manager=None):
+def formatSiteInfo(site, site_manager=None, user=None):
     """`settings`/`size_limit`/`next_size_limit`/`bad_files`/
     `started_task_num`/`tasks` were added after a real crash found live:
     the actual production wrapper.js (unmodified, from src/Ui/media/)
@@ -228,12 +228,10 @@ def formatSiteInfo(site, site_manager=None):
     per-site bad-file lists or expose a per-site WorkerManager instance
     the way the original's Site.worker_manager does.
 
-    Still NOT included: auth_address/cert_user_id/privatekey (need an
-    async User lookup; this function is synchronous and several existing
-    callers -- sitePublish's broadcast(), siteList -- have no session to
-    look one up from). Read by the wrapper's cert-selection UI, not the
-    initial page-load path this fix targets, so left as a separate,
-    documented follow-up rather than force-added here.
+    When a user is supplied, the legacy identity fields are included too:
+    auth_address, cert_user_id, and privatekey (a boolean indicating that
+    the server has the site's signing key). The private key itself is never
+    sent to the browser; siteSign resolves it server-side.
     """
     raw_content = site.content_manager.contents.get("content.json")
     size = 0
@@ -256,7 +254,7 @@ def formatSiteInfo(site, site_manager=None):
         if override is not None:
             size_limit_mb = override
 
-    return {
+    info = {
         "address": site.address,
         "address_hash": site.address_sha1.hex(),
         "permissions": list(site.permissions),
@@ -274,11 +272,30 @@ def formatSiteInfo(site, site_manager=None):
         "started_task_num": 0,
         "tasks": 0,
     }
+    if user is not None:
+        site_data = user.getSiteData(site.address)
+        info.update({
+            "auth_address": site_data.get("auth_address"),
+            "cert_user_id": user.getCertUserId(site.address),
+            "privatekey": bool(site_data.get("privatekey")),
+        })
+    return info
 
 
 @command("siteInfo")
 async def _cmdSiteInfo(session, params):
-    return formatSiteInfo(_requireSite(session), getattr(session.app, "site_manager", None))
+    site = _requireSite(session)
+    # Standalone/test UiServers may intentionally omit account storage; the
+    # production App always supplies UserManager and gets the full identity
+    # payload below.
+    user_manager = getattr(session.app, "user_manager", None)
+    user = await _requireUser(session) if user_manager is not None else None
+    info = formatSiteInfo(site, getattr(session.app, "site_manager", None), user)
+    # User identity/auth-address generation is lazy. Persist it here so a
+    # first visit to ZeroTalk/ZeroMe survives a restart like legacy ZeroNet.
+    if user._dirty:
+        await user.save()
+    return info
 
 
 @command("fileGet")

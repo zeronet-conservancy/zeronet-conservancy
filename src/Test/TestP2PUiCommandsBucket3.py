@@ -24,6 +24,28 @@ async def _call(ws, cmd, params=None, msg_id=1):
 
 
 class TestP2PUiCommandsSiteSignPublish:
+    def testSiteInfoExposesLocalIdentityForSiteApps(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                address = "1TestIdentitySiteAAAAAAAAAAAA"
+                site = Site(address, data_dir / address)
+                site.permissions = ["ADMIN"]
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        first = await _call(ws, "siteInfo")
+                        second = await _call(ws, "siteInfo", msg_id=2)
+                return first, second, user.getSiteData(address, create=False)
+
+        first, second, site_data = compat.run(scenario)
+        assert first["result"]["auth_address"] == site_data["auth_address"]
+        assert first["result"]["cert_user_id"] is None
+        assert first["result"]["privatekey"] is False
+        assert second["result"]["auth_address"] == first["result"]["auth_address"]
+
     def testSiteSignWithExplicitPrivatekey(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:
