@@ -21,12 +21,13 @@ class TestP2PUserManager:
         """The core primitive plugins/disabled-Multiuser/UserPlugin.py's
         own get() override provided -- folded into core here (see
         UserManager.py's own module docstring for why a separate plugin
-        package isn't earning its complexity for this one branch).
-        Deliberately not yet wired into UiServer/any CLI flag -- that's
-        real, separate follow-up work (resolving a browser's own
-        master_address from a cookie into a specific websocket session),
-        same "build the primitive standalone first" pattern as every
-        other phase of this migration."""
+        package isn't earning its complexity for this one branch). The
+        cookie-to-websocket-session wiring this needs to actually matter
+        (resolving a browser's own master_address from a cookie into a
+        specific connection) landed separately -- see
+        UiServer.py's own _ensureMultiuserCookie()/UiSession docstrings
+        and TestP2PUiMultiuser.py for the end-to-end proof; this file
+        stays focused on the primitive itself, standalone."""
         async def scenario():
             with tempfile.TemporaryDirectory() as d:
                 manager = UserManager(pathlib.Path(d), multiuser=True)

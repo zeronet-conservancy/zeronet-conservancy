@@ -89,11 +89,17 @@ class Actions:
         server). Known gaps callers relying on the legacy server should
         know about before dropping --no-p2p: the P2P stack doesn't load
         the legacy plugins/ ecosystem (a genuinely different,
-        non-overlapping plugin system -- see P2P/plugins/__init__.py),
-        and has no Multiuser equivalent. UiPassword (--ui-password, a
-        single shared UI password) and Tor (both control-port AND SOCKS5
-        dial-out, see P2P/Tor.py's own docstring) are both closed now --
-        stale gaps corrected here, not still open.
+        non-overlapping plugin system -- see P2P/plugins/__init__.py).
+        UiPassword (--ui-password, a single shared UI password), Tor
+        (both control-port AND SOCKS5 dial-out, see P2P/Tor.py's own
+        docstring), and Multiuser's core account isolation (--multiuser,
+        each browser cookie-identified to its own persisted account, see
+        P2P.UserManager's own docstring) are all closed now -- stale gaps
+        corrected here, not still open. Multiuser's account-switching/
+        master-seed-backup UI (letting one browser log into a DIFFERENT
+        existing account, or view/export its own seed) is still not
+        ported -- a real, separate gap from the account-isolation
+        primitive itself.
         --no-p2p remains a full, unchanged escape hatch to the exact
         previous default behavior -- nothing about the legacy path
         itself changed, only which one runs when no flag is given.
@@ -142,6 +148,7 @@ class Actions:
                 enable_tor=(config.tor != "disable"),
                 homepage=config.homepage,
                 ui_password=config.ui_password,
+                multiuser=config.multiuser,
             )
             await app.loadSites()
             await app.loadUsers()

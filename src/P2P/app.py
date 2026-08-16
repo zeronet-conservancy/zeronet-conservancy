@@ -83,6 +83,7 @@ class App:
         homepage: str | None = None,
         auto_download_timeout: float = 15.0,
         ui_password: str | None = None,
+        multiuser: bool = False,
     ):
         self.data_dir = data_dir
         self.announce_interval = announce_interval
@@ -101,7 +102,7 @@ class App:
         tor_proxy = (tor_control_ip, tor_socks_port) if enable_tor else None
         self.file_server = FileServer(p2p_dir, tcp_port=tcp_port, ws_port=ws_port, tor_socks_proxy=tor_proxy)
         self.site_manager = SiteManager(data_dir)
-        self.user_manager = UserManager(data_dir)
+        self.user_manager = UserManager(data_dir, multiuser=multiuser)
         # UiServer shares SiteManager's own sites dict by reference, so
         # anything added/removed via site_manager (load(), add(), delete())
         # is immediately visible to the UI/websocket layer with no separate
@@ -257,6 +258,7 @@ async def _main(args) -> None:
         tor_control_port=args.tor_control_port,
         tor_password=args.tor_password,
         ui_password=args.ui_password,
+        multiuser=args.multiuser,
     )
     await app.loadSites()
     await app.loadUsers()
@@ -282,6 +284,7 @@ def main() -> None:
     parser.add_argument("--tor-socks-port", type=int, default=9050)
     parser.add_argument("--tor-password", default=None)
     parser.add_argument("--ui-password", default=None, help="Password to access the web UI")
+    parser.add_argument("--multiuser", action="store_true", help="Each visiting browser gets its own account")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 

@@ -143,10 +143,26 @@ async def _requireUser(session):
     ZeroSiteTheme.coffee calls unconditionally on every page load to
     sync dark/light theme -- errored out from the very first page load
     on a brand new install, matching original ZeroNet's own implicit
-    "a local single-user-mode client always has a user" behavior."""
+    "a local single-user-mode client always has a user" behavior.
+
+    In multiuser mode, resolves by session.master_address (the cookie
+    UiApp._ensureMultiuserCookie already validated -- or minted a fresh
+    account and a fresh cookie for -- before this session's websocket
+    ever connected; see that method's and UiSession's own docstrings).
+    A master_address that doesn't resolve to a real user here means this
+    particular connection's cookie was never validated by that HTTP path
+    at all (a raw/programmatic websocket client, not a real browser that
+    loaded a wrapper page first) -- falls back to the same get-or-create
+    single-user behavior below rather than fabricating a user for an
+    address nothing can prove ownership of (an address is derived FROM a
+    seed, not freely assignable)."""
     user_manager = getattr(session.app, "user_manager", None)
     if user_manager is None:
         raise CommandError("This server has no user manager configured")
+    if user_manager.multiuser and session.master_address:
+        user = await user_manager.get(session.master_address)
+        if user is not None:
+            return user
     user = await user_manager.get()
     if user is None:
         user = user_manager.create()

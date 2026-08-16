@@ -88,9 +88,10 @@ class TestZeronetP2PDefaultFlip:
     runs the trio-native stack (Config.py's --p2p defaults to True as of
     this change), and --no-p2p is the escape hatch back to the exact
     previous default behavior. See Actions.mainP2P()'s own docstring for
-    what --no-p2p is still needed for (repo-root plugins/, Multiuser --
-    UiPassword and Tor SOCKS5 dial-out, both once listed here too, are
-    closed now)."""
+    what --no-p2p is still needed for (repo-root plugins/, Multiuser's
+    account-switching UI -- UiPassword, Tor SOCKS5 dial-out, and
+    Multiuser's own core account isolation, all once listed here too,
+    are closed now)."""
 
     def testMainWithNoFlagsDefaultsToP2P(self):
         with tempfile.TemporaryDirectory() as d:
@@ -260,6 +261,56 @@ class TestZeronetP2PEntrypoint:
 
         assert "login_form" in gated_body  # Redirected to the real login page
         assert "login_form" not in authed_body  # Same opener, now carrying a valid session cookie -- past the gate
+
+    def testMainWithMultiuserIssuesDifferentCookiesPerBrowser(self):
+        """--multiuser threaded through the REAL entrypoint (Config.py ->
+        Actions.mainP2P() -> P2P.app.App -> UserManager), against a real
+        P2P-created site so there's a real wrapper page to visit. Two
+        separate cookie jars (two "browsers") visiting the same site each
+        get their own master_address cookie."""
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            site = _createP2PSite(data_dir)
+            log_path = data_dir / "stdout.log"
+
+            with open(log_path, "wb") as log_file:
+                proc = subprocess.Popen(
+                    [
+                        sys.executable, str(ZERONET_PY),
+                        "--data-dir", str(data_dir),
+                        "--ui-port", "0", "--fileserver-port", "0",
+                        "--no-dht", "--tor", "disable", "--batch",
+                        "--multiuser",
+                        "main", "--p2p",
+                    ],
+                    cwd=str(REPO_ROOT), stdout=log_file, stderr=subprocess.STDOUT,
+                )
+
+            import http.cookiejar
+
+            try:
+                ip, port = _waitForBoundUiPort(log_path, time.time() + 20)
+                site_url = "http://%s:%s/%s/" % (ip, port, site["address"])
+
+                jar_a, jar_b = http.cookiejar.CookieJar(), http.cookiejar.CookieJar()
+                opener_a = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar_a))
+                opener_b = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(jar_b))
+                with opener_a.open(site_url, timeout=5):
+                    pass
+                with opener_b.open(site_url, timeout=5):
+                    pass
+
+                cookie_a = next(c.value for c in jar_a if c.name == "master_address")
+                cookie_b = next(c.value for c in jar_b if c.name == "master_address")
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+
+        assert cookie_a != cookie_b
 
 
 class TestZeronetP2PCliActions:

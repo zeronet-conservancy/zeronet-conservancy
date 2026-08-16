@@ -135,6 +135,10 @@ LEGACY_PLUGINS_DIR = pathlib.Path(__file__).resolve().parents[3] / "plugins"
 # _handleUiMediaExtra's docstring.
 _UIMEDIA_EXTRA_PLUGINS = ["Sidebar"]
 
+# Cookie name carrying a browser's own master_address in multiuser mode --
+# see _ensureMultiuserCookie()'s and UiSession's own docstrings.
+MULTIUSER_COOKIE = "master_address"
+
 log = logging.getLogger(__name__)
 
 COMMAND_HANDLERS = {}
@@ -155,10 +159,20 @@ class UiSession:
     place of the original's `self` (a whole UiWebsocket instance) --
     handlers here are plain functions, not methods, so they need this
     explicitly. session.app carries through to site_manager/user_manager
-    for commands that need them (siteAdd/siteDelete/certAdd/etc.)."""
-    def __init__(self, app: "UiApp", site=None):
+    for commands that need them (siteAdd/siteDelete/certAdd/etc.).
+
+    master_address is the multiuser cookie-to-session wiring this whole
+    class was previously missing (see UserManager.py's own docstring for
+    the get()-by-address primitive this resolves against): read from the
+    websocket handshake's own cookies -- an ordinary same-origin HTTP
+    request, so the browser sends whatever cookie _ensureMultiuserCookie
+    set when the wrapper page itself was served, no extra round trip or
+    URL-param threading needed. None in single-user mode (the default),
+    or if this particular connection genuinely has no cookie yet."""
+    def __init__(self, app: "UiApp", site=None, master_address: str | None = None):
         self.app = app
         self.site = site
+        self.master_address = master_address
         self.channels: list = []
         self.state: dict = {}  # Scratch space for a plugin's own per-connection bookkeeping
         self.nursery: trio.Nursery | None = None  # Set once the connection's loops start
@@ -308,6 +322,27 @@ class UiApp:
         response.delete_cookie(SESSION_COOKIE, path="/")
         return response
 
+    async def _ensureMultiuserCookie(self, request: Request) -> str | None:
+        """No-op (returns None) unless user_manager is configured AND in
+        multiuser mode -- the overwhelmingly common case, so every other
+        HTTP handler stays a single cheap attribute check away from
+        today's single-user behavior. Otherwise: honor an existing valid
+        master_address cookie, or create a brand new account and return
+        its address for the caller to set as the response's own cookie.
+        This is the HTTP-side half of the multiuser wiring -- by the time
+        a wrapper page's own JS opens the websocket, the cookie this sets
+        is already in the browser, so _handleWebsocket's cookie read
+        (same-origin, ordinary HTTP request) needs no extra round trip."""
+        if self.user_manager is None or not self.user_manager.multiuser:
+            return None
+        master_address = request.cookies.get(MULTIUSER_COOKIE)
+        if master_address and await self.user_manager.get(master_address):
+            return master_address
+        user = self.user_manager.create()
+        user.markDirty()
+        await user.save()
+        return user.master_address
+
     def _dashboardSite(self):
         """Return the site whose wrapper key scopes dashboard websocket calls."""
         if self.homepage and self.homepage in self.sites:
@@ -323,7 +358,11 @@ class UiApp:
         websocket_url = "%s://%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (
             scheme, host, site.wrapper_key
         )
-        return Response(renderDashboard(page, websocket_url, address=site.address), media_type="text/html")
+        response = Response(renderDashboard(page, websocket_url, address=site.address), media_type="text/html")
+        master_address = await self._ensureMultiuserCookie(request)
+        if master_address:
+            response.set_cookie(MULTIUSER_COOKIE, master_address, max_age=60 * 60 * 24 * 365, path="/", httponly=True, samesite="lax")
+        return response
 
     async def _handleConfig(self, request: Request) -> Response:
         return await self._handleDashboard(request, "config")
@@ -462,7 +501,11 @@ class UiApp:
                 homepage=("/" + self.homepage) if self.homepage else "/",
                 wrapper_nonce=wrapper_nonce,
             )
-            return Response(body, media_type="text/html")
+            response = Response(body, media_type="text/html")
+            master_address = await self._ensureMultiuserCookie(request)
+            if master_address:
+                response.set_cookie(MULTIUSER_COOKIE, master_address, max_age=60 * 60 * 24 * 365, path="/", httponly=True, samesite="lax")
+            return response
 
         wrapper_nonce = request.query_params.get("wrapper_nonce")
         if wrapper_nonce and not self._consumeWrapperNonce(wrapper_nonce):
@@ -564,7 +607,8 @@ class UiApp:
         await websocket.accept()
         wrapper_key = websocket.query_params.get("wrapper_key")
         site = self._resolveSiteByWrapperKey(wrapper_key) if wrapper_key else None
-        session = UiSession(self, site=site)
+        master_address = websocket.cookies.get(MULTIUSER_COOKIE)
+        session = UiSession(self, site=site, master_address=master_address)
         self.sessions.add(session)
         try:
             async with trio.open_nursery() as nursery:
