@@ -44,11 +44,32 @@ original's query() catches sqlite3.DatabaseError and retries after a
 rebuildDb()) is dropped for the same content_manager-availability reason
 -- query() here just raises, and it's the caller's job to rebuildDb()
 explicitly if it wants to recover.
+
+isFile()/read()/list()/walk() are also archive-transparent now (see
+_splitArchivePath()'s own docstring): an inner_path reaching inside a
+".zip"/".tar.gz" file (e.g. "assets.zip/page.html") reads out of that
+archive instead of the plain filesystem. Ported from
+plugins/FilePack/FilePackPlugin.py's own SiteStoragePlugin half and
+folded into core, not a plugin -- same "no plugin-specific logic in this
+primitive" reasoning as createSparseFile()/writeRange() above. Its
+UiRequestPlugin half (raw HTTP media serving with archive-handle
+caching and ajax_key checks) needed NO separate port at all: UiServer.py's
+_handleSite() raw-file branch already calls storage.isFile()/
+storage.read() directly, so making those two archive-aware was the
+whole port -- verified with a real end-to-end HTTP request through a
+real zip file, not just the storage layer in isolation. No archive-handle
+caching (the original's own 5-second-idle eviction needs a delayed
+callback outside a nursery this stack doesn't have a convenient
+equivalent for) -- opens fresh per call instead, trading a real but
+small optimization for zero extra machinery.
 """
 import json
 import os
+import re
 import shutil
 import sqlite3
+import tarfile
+import zipfile
 from pathlib import Path
 
 import trio
@@ -61,6 +82,48 @@ def _getDirname(path: str) -> str:
     if "/" in path:
         return path[:path.rfind("/") + 1].lstrip("/")
     return ""
+
+
+def _splitArchivePath(inner_path, require_slash: bool):
+    """Port of plugins/FilePack/FilePackPlugin.py's own path-matching --
+    folded into SiteStorage directly rather than a plugin (same "no
+    plugin-specific logic in this primitive" reasoning as
+    createSparseFile()/writeRange() above): isFile()/read() require the
+    slash (an inner_path ending exactly in ".zip" with nothing after it
+    means "does this archive file itself exist", the plain disk check
+    already answers that correctly with no redirect needed), list()/
+    walk() don't (a bare "data.zip" IS how the original lists an
+    archive's own root) -- matches the original's own two different
+    substring checks (".zip/" vs ".zip") exactly, not a simplification.
+    Returns (archive_inner_path, path_within) or None if inner_path
+    doesn't reach into an archive at all."""
+    inner_path = str(inner_path)
+    pattern = r"^(.*\.(?:tar\.gz|zip))/(.*)$" if require_slash else r"^(.*\.(?:tar\.gz|zip))(?:/(.*))?$"
+    match = re.match(pattern, inner_path)
+    if not match:
+        return None
+    return match.group(1), (match.group(2) or "")
+
+
+def _openArchive(archive_path: Path):
+    """No cross-call caching, deliberately unlike the original's own
+    archive_cache (module-level, 5-second-idle eviction via
+    gevent.spawn_later): this stack has no convenient fire-and-forget
+    delayed callback outside a nursery, and a cache needs somewhere to
+    hang cleanup on connection/process end too, so opening fresh each
+    call trades a real (but small -- these are already-local files,
+    typically opened once per request) performance optimization for
+    correctness with zero extra machinery. Revisit if profiling ever
+    shows this matters."""
+    if str(archive_path).endswith(".tar.gz"):
+        return tarfile.open(archive_path, mode="r:gz")
+    return zipfile.ZipFile(archive_path)
+
+
+def _archiveNamelist(archive) -> list[str]:
+    if isinstance(archive, zipfile.ZipFile):
+        return archive.namelist()
+    return [member.name for member in archive.getmembers()]
 
 
 class AccessError(Exception):
@@ -111,6 +174,17 @@ class SiteStorage:
         return True
 
     def isFile(self, inner_path) -> bool:
+        split = _splitArchivePath(inner_path, require_slash=True)
+        if split:
+            archive_inner_path, path_within = split
+            archive_path = self.getPath(archive_inner_path)
+            if not archive_path.is_file():
+                return False
+            try:
+                with _openArchive(archive_path) as archive:
+                    return path_within in _archiveNamelist(archive)
+            except Exception:
+                return False
         return self.getPath(inner_path).is_file()
 
     def isExists(self, inner_path) -> bool:
@@ -134,6 +208,19 @@ class SiteStorage:
         return file_path.open(mode, **kwargs)
 
     async def read(self, inner_path, mode: str = "rb"):
+        split = _splitArchivePath(inner_path, require_slash=True)
+        if split:
+            archive_inner_path, path_within = split
+
+            def _readFromArchive():
+                with _openArchive(self.getPath(archive_inner_path)) as archive:
+                    if isinstance(archive, zipfile.ZipFile):
+                        data = archive.read(path_within)
+                    else:
+                        data = archive.extractfile(path_within).read()
+                return data if "b" in mode else data.decode("utf8")
+            return await self._pool_read.apply(_readFromArchive)
+
         def _read():
             with self.getPath(inner_path).open(mode) as f:
                 return f.read()
@@ -229,8 +316,26 @@ class SiteStorage:
         """Returns a materialized list, not a generator like the original --
         the walk itself runs inside the offloaded thread, so it can't yield
         back into the trio task piecemeal."""
-        import re
         from util import SafeRe
+
+        split = _splitArchivePath(dir_inner_path, require_slash=False)
+        if split:
+            archive_inner_path, path_within = split
+
+            def _walkArchive():
+                with _openArchive(self.getPath(archive_inner_path)) as archive:
+                    if isinstance(archive, zipfile.ZipFile):
+                        file_names = [n for n in archive.namelist() if not n.endswith("/")]
+                    else:
+                        file_names = [m.name for m in archive.getmembers() if not m.isdir()]
+                found = []
+                for name in file_names:
+                    if not name.startswith(path_within):
+                        continue
+                    found.append(name[len(path_within):].lstrip("/"))
+                return found
+
+            return await self._pool_read.apply(_walkArchive)
 
         def _walk():
             directory = self.getPath(dir_inner_path)
@@ -273,6 +378,24 @@ class SiteStorage:
         return await self._pool_read.apply(_read_chunk)
 
     async def list(self, dir_inner_path) -> list:
+        split = _splitArchivePath(dir_inner_path, require_slash=False)
+        if split:
+            archive_inner_path, path_within = split
+
+            def _listArchive():
+                with _openArchive(self.getPath(archive_inner_path)) as archive:
+                    names = _archiveNamelist(archive)
+                found = []
+                for name in names:
+                    if not name.startswith(path_within):
+                        continue
+                    name_relative = name[len(path_within):].strip("/")
+                    if not name_relative or "/" in name_relative:  # Not a direct child
+                        continue
+                    found.append(name_relative)
+                return found
+
+            return await self._pool_read.apply(_listArchive)
         return await self._pool_read.apply(lambda: os.listdir(self.getPath(dir_inner_path)))
 
     async def loadJson(self, inner_path) -> dict:
