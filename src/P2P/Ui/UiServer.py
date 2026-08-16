@@ -120,6 +120,7 @@ from ..SiteStorage import AccessError
 from .Wrapper import renderWrapper
 from .Dashboard import renderDashboard
 from .UiPassword import PasswordGateMiddleware, SESSION_COOKIE, SessionStore, renderLogin
+from .Stats import renderStats, renderAbout
 
 UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
 
@@ -253,6 +254,8 @@ class UiApp:
             Route("/Plugins/", self._handlePlugins, methods=["GET"]),
             Route("/Console", self._handleConsole, methods=["GET"]),
             Route("/Console/", self._handleConsole, methods=["GET"]),
+            Route("/Stats", self._handleStats, methods=["GET"]),
+            Route("/About", self._handleAbout, methods=["GET"]),
             Route("/list/{address}/{inner_path:path}", self._handleFileManager, methods=["GET"]),
             Route("/list/{address}", self._handleFileManager, methods=["GET"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
@@ -372,6 +375,16 @@ class UiApp:
 
     async def _handleConsole(self, request: Request) -> Response:
         return await self._handleDashboard(request, "console")
+
+    async def _handleStats(self, request: Request) -> Response:
+        """Unlike /Config/Plugins/Console, not a websocket-driven page --
+        see Stats.py's own module docstring for why a live diagnostics
+        dump doesn't fit the bucket-3 command surface. Plain server-
+        rendered HTML, computed fresh on every request."""
+        return Response(renderStats(self), media_type="text/html")
+
+    async def _handleAbout(self, request: Request) -> Response:
+        return Response(renderAbout(), media_type="text/html")
 
     async def _handleFileManager(self, request: Request) -> Response:
         address = request.path_params["address"]

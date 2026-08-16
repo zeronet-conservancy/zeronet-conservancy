@@ -145,6 +145,44 @@ class TestP2PUiServer:
         assert '"plugins"' in plugins_body
         assert "pluginList" in plugins_body
 
+    def testStatsPageShowsRealSiteAndTrackerData(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                from libp2p.peer.id import ID
+                from P2P.discovery.tracker import global_tracker_stats
+
+                site = Site("1TestStatsPageSiteAAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                site.addPeer(ID(b"\x00" * 34), "127.0.0.1", 1234, source="test")
+                global_tracker_stats.get("udp://test-tracker.example:1337")["num_request"] = 3
+
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        return await client.get("%s/Stats" % base_url)
+
+        response = compat.run(scenario)
+        assert response.status_code == 200
+        assert "1TestStatsPageSiteAAAAAAAAAA1" in response.text
+        assert "test-tracker.example" in response.text
+
+    def testAboutPageShowsRealVersionInfo(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestAboutPageSiteAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        return await client.get("%s/About" % base_url)
+
+        response = compat.run(scenario)
+        assert response.status_code == 200
+        assert "trio" in response.text
+        assert "libp2p" in response.text
+        import sys
+        assert sys.version.split()[0] in response.text
+
     def testFileManagerAndConsolePagesExposeNativeBootstrap(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:
