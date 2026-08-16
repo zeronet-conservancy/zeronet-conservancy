@@ -154,13 +154,41 @@ class Actions:
             await app.loadSites()
             await app.loadUsers()
 
-            async with trio.open_nursery() as nursery:
-                nursery.start_soon(app.run)  # Logs "P2P app running: peer_id=..." once bound
+            window_process = None
+
+            async def wait_for_window(process):
+                while process.poll() is None:
+                    await trio.sleep(0.2)
+                logging.info("ZeroNet window closed; shutting down the P2P server")
+                shutdown_event.set()
+
+            async def wait_for_signal():
                 with trio.open_signal_receiver(signal.SIGTERM, signal.SIGINT) as signal_aiter:
                     async for signum in signal_aiter:
                         logging.info("Shutting down (signal: %s)...", signal.Signals(signum).name)
-                        nursery.cancel_scope.cancel()
-                        break
+                        shutdown_event.set()
+                        return
+
+            async with trio.open_nursery() as nursery:
+                shutdown_event = trio.Event()
+                nursery.start_soon(app.run)  # Logs "P2P app running: peer_id=..." once bound
+
+                if config.open_browser in ("webview", "pywebview", "pywebview2"):
+                    # The native P2P path does not pass through the legacy
+                    # helper.openBrowser() call. Wait for the UI listener and
+                    # launch the packaged pywebview2 child explicitly.
+                    for _ in range(200):
+                        if app.ui_server.bound_addresses:
+                            break
+                        await trio.sleep(0.05)
+                    if app.ui_server.bound_addresses:
+                        from util.WebView import open_window
+                        window_process = open_window(app.ui_server.bound_addresses[0] + "/")
+                        nursery.start_soon(wait_for_window, window_process)
+
+                nursery.start_soon(wait_for_signal)
+                await shutdown_event.wait()
+                nursery.cancel_scope.cancel()
 
         compat.run(_run)
 

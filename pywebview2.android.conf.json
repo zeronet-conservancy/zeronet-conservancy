@@ -1,0 +1,28 @@
+{
+  "productName": "ZeroNet",
+  "version": "0.7.10",
+  "identifier": "org.zeronetconservancy.ZeroNet",
+  "entry": "main.py",
+  "window": {
+    "title": "ZeroNet",
+    "width": 1280,
+    "height": 800,
+    "resizable": true
+  },
+  "bundle": {
+    "targets": ["android"],
+    "resources": [
+      "src/Ui/media",
+      "src/Ui/template",
+      "src/P2P/Ui/templates",
+      "plugins"
+    ]
+  },
+  "mobile": {
+    "android": {
+      "buildozerSpecOverrides": {
+        "requirements": "python3==3.11.9,hostpython3==3.11.9,kivy,pywebview2"
+      }
+    }
+  }
+}

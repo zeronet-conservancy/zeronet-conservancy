@@ -18,13 +18,23 @@ def pyReq():
 def launch():
     '''renamed from main to avoid clashes with main module'''
     pyReq()
+    main = None
 
     if '--silent' not in sys.argv:
         from greet import fancy_greet
         fancy_greet(config.version)
 
     try:
-        import main
+        try:
+            import main
+            if not hasattr(main, 'start'):
+                raise ImportError('resolved the desktop entrypoint instead of src.main')
+        except ImportError:
+            from src import main
+            # The application historically imports this module as `main` from
+            # many subsystems. Keep that compatibility alias when frozen
+            # alongside the Android-required root main.py entrypoint.
+            sys.modules['main'] = main
         main.start()
     except Exception as err:  # Prevent closing
         import traceback
@@ -35,8 +45,13 @@ def launch():
             print("Failed to log error:", log_err)
             traceback.print_exc()
         error_log_path = config.log_dir / "error.log"
-        with open(error_log_path, 'w') as f:
-            traceback.print_exc(file=f)
+        try:
+            with open(error_log_path, 'w') as f:
+                traceback.print_exc(file=f)
+        except OSError:
+            # Keep the original startup error visible when the data directory
+            # is read-only (for example, a system-wide installation).
+            error_log_path = None
         print("---")
         print("Please report it: https://github.com/zeronet-conservancy/zeronet-conservancy/issues/new?template=bug-report.md")
         if sys.platform.startswith("win") and "python.exe" not in sys.executable:
@@ -136,6 +151,36 @@ def start():
     os.chdir(app_dir)  # Change working dir to zeronet.py dir
     sys.path.insert(0, os.path.join(app_dir, "src/lib"))  # External liblary directory
     sys.path.insert(0, os.path.join(app_dir, "src"))  # Imports relative to src
+    if getattr(sys, 'frozen', False):
+        # Source modules historically import `util`, `Config`, `Actions`,
+        # etc. as top-level names after src/ is added to sys.path. PyInstaller
+        # stores the package as src.*, so provide the first compatibility
+        # alias before src.main is loaded.
+        import importlib
+        try:
+            # PyInstaller collects the legacy modules under their historical
+            # top-level names. Prefer that namespace so plugin imports such as
+            # ``from util import helper`` resolve normally.
+            util_package = importlib.import_module('util')
+            util_prefix = 'util'
+        except ImportError:
+            util_package = importlib.import_module('src.util')
+            util_prefix = 'src.util'
+
+        util_modules = (
+            'Cached', 'Diff', 'Electrum', 'Event', 'Flag', 'Git', 'GreenletManager',
+            'Msgpack', 'Noparallel', 'OpensslFindPatch', 'Platform', 'Pooled',
+            'QueryJson', 'RateLimit', 'SafeRe', 'SocksProxy', 'ThreadPool',
+            'UpnpPunch', 'WebView', 'argparseCompat', 'compat', 'helper',
+        )
+        for module_name in util_modules:
+            try:
+                module = importlib.import_module(f'{util_prefix}.{module_name}')
+            except ImportError:
+                module = importlib.import_module(f'src.util.{module_name}')
+            setattr(util_package, module_name, module)
+            sys.modules[f'util.{module_name}'] = module
+        sys.modules['util'] = util_package
 
     if "--update" in sys.argv:
         sys.argv.remove("--update")
@@ -147,4 +192,9 @@ def start():
 
 
 if __name__ == '__main__':
-    start()
+    if '--webview-child' in sys.argv:
+        from src.util.WebView import main as webview_main
+        sys.argv.remove('--webview-child')
+        webview_main()
+    else:
+        start()

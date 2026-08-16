@@ -323,13 +323,18 @@ def encodeResponse(func):  # Encode returned data from utf8 to bytes
 
 def openBrowser(agent):
     if agent and agent != "False":
-        print(f"Opening browser: {agent}...")
         ui_ip = config.ui_ip if config.ui_ip != "*" else "127.0.0.1"
         if ':' in ui_ip: # IPv6
             url = f'http://[{ui_ip}]:{config.ui_port}/{config.homepage}'
         else: # IPv4
             url = f'http://{ui_ip}:{config.ui_port}/{config.homepage}'
         try:
+            if str(agent).lower() in {"webview", "pywebview", "pywebview2"}:
+                print("Opening ZeroNet in the pywebview2 shell...")
+                from util.WebView import open_window
+                return open_window(url)
+
+            print(f"Opening browser: {agent}...")
             import subprocess
             return subprocess.Popen([config.open_browser, url])
         except Exception as err:

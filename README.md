@@ -125,9 +125,11 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - `python3 -m venv venv` (make python virtual environment, the last `venv` is just a name, if you use different you should replace it in later commands)
  - `source venv/bin/activate` (activate environment)
  - `python3 -m pip install -r requirements.txt` (install dependencies)
+ - (optional) install the native desktop shell and bundler: `python3 -m pip install -r requirements-webview.txt`
  - for a reproducible install use the pinned lockfile instead: `python3 -m pip install --require-hashes -r requirements.lock` (regenerate it with `pip-compile --allow-unsafe --generate-hashes --output-file=requirements.lock requirements.txt`)
  - `python3 zeronet.py` (**run zeronet-conservancy!**)
  - open the landing page in your browser by navigating to: http://127.0.0.1:43110/
+ - or open it in the native shell with: `python3 zeronet.py --webview`
  - to start it again from fresh terminal, you need to navigate to repo directory and:
  - `source venv/bin/activate`
  - `python3 zeronet.py`
@@ -166,6 +168,44 @@ you want to store `zeronet-conservancy`:
 
 Download and extract .zip archive
 [zeronet-conservancy-0.7.10-unofficial-win64.zip](https://github.com/zeronet-conservancy/zeronet-conservancy/releases/download/v0.7.10/zeronet-conservancy-0.7.10-unofficial-win64.zip)
+
+### pywebview2 zero-configuration deployment
+
+`pywebview2` provides a Tauri-inspired CLI and bundler. Install the CLI extra,
+then use a `pywebview.conf.json` configuration to build platform-native
+installers with `pywebview2 build`. The supported installer targets are MSI or
+NSIS on Windows, DMG on macOS, and DEB or AppImage on Linux. The Linux
+workflow additionally creates RPM and Flatpak artifacts from the same frozen
+application. Builds are
+performed on the target OS; the CLI does not cross-compile installers.
+
+Platform prerequisites are:
+
+ - Windows: `pythonnet` and the WebView2 Runtime. Windows 10 needs the
+   Evergreen Runtime installer or a bundled Fixed Version Runtime; Windows 11
+   normally includes WebView2.
+ - macOS: PyObjC (`pyobjc-core`, Cocoa, Quartz, WebKit, Security, and Uniform
+   Type Identifiers frameworks).
+ - Linux: either GTK/WebKitGTK (`PyGObject` plus `gir1.2-webkit2-4.1`) or Qt
+   (`pywebview2[qt]`); AppImage and Flatpak cannot bundle WebKitGTK, so the
+   target system/runtime must provide it. DEB and RPM packages should declare
+   their native dependencies in their package metadata.
+ - Android: manually dispatch the workflow to run the separate experimental
+   Buildozer job. It uses the pywebview2 Android template and is currently a packaging scaffold;
+   ZeroNet's full native/P2P dependency set still needs an Android-compatible
+   python-for-android recipe set before the APK can be considered production-ready.
+
+Run `pywebview2 doctor` before building. The CLI uses PyInstaller and can
+produce a one-file executable, but ZeroNet's data directory must remain
+external to the application bundle. The repository's CI tests Ubuntu Qt,
+Ubuntu GTK, Windows EdgeChromium, and macOS; it installs WebView2 on the
+Windows runner and system GTK/Qt/Xvfb dependencies on Linux.
+
+This repository provides the corresponding `pywebview2.conf.json` and
+`desktop.py` entrypoint. The `desktop-packages` GitHub Actions workflow builds
+the native targets on their matching runners when manually dispatched or when
+a `v*` tag is pushed, then uploads the installers and publishes tagged release
+artifacts.
 
 ### Building under Windows OS
 

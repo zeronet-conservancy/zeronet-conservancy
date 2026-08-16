@@ -431,6 +431,8 @@ class Config:
 
         self.parser.add_argument('--open-browser', help='Open homepage in web browser automatically',
                                  nargs='?', const="default_browser", metavar='browser_name')
+        self.parser.add_argument('--webview', help='Open homepage in an optional native webview window',
+                                 action='store_true')
         self.parser.add_argument('--homepage', help='Web interface Homepage', default='191CazMVNaAcT9Y1zhkxd9ixMBPs59g2um',
                                  metavar='address')
         # self.parser.add_argument('--updatesite', help='Source code update site', default='1uPDaT3uSyWAPdCv1WkMb5hBQjWSNNACf',
@@ -519,7 +521,14 @@ class Config:
 
         self.trackers = self.arguments.trackers[:]
 
-        for trackers_file in self.trackers_file:
+        tracker_files = self.trackers_file
+        if isinstance(tracker_files, str):
+            tracker_files = [tracker_files]
+
+        for trackers_file in tracker_files:
+            # Older generated config files stored argparse list defaults using
+            # Python repr syntax, e.g. "['{data_dir}/...']".
+            trackers_file = trackers_file.strip().strip('[]').strip("'\"")
             try:
                 if trackers_file.startswith("/"):  # Absolute
                     trackers_file_path = trackers_file
@@ -649,6 +658,8 @@ class Config:
                 self.arguments = {}
         else:
             self.arguments = self.parser.parse_args(argv[1:])
+        if getattr(self.arguments, 'webview', False):
+            self.arguments.open_browser = 'webview'
         if self.arguments.ui_site_port is None:
             self.arguments.ui_site_port = self.arguments.ui_port + 1
         if self.arguments.ui_ip_protect == 'always':

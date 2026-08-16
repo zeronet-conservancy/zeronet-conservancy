@@ -62,6 +62,8 @@ import jinja2
 from Crypt import CryptHash
 
 TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
+if not TEMPLATE_DIR.is_dir():
+    TEMPLATE_DIR = pathlib.Path(__file__).resolve().parents[2] / "src" / "P2P" / "Ui" / "templates"
 _env = jinja2.Environment(
     loader=jinja2.FileSystemLoader(str(TEMPLATE_DIR)),
     autoescape=True,

@@ -1,0 +1,4 @@
+# Optional native desktop shell and the Tauri-inspired bundler.
+pywebview2[cli]
+# GTK/WebKitGTK is the Linux CI backend; Linux users may use [qt] instead.
+pywebview2[gtk]; sys_platform == "linux"
