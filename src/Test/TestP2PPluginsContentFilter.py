@@ -2,10 +2,14 @@ import json
 import pathlib
 import tempfile
 
+import pytest
 import trio_websocket
 
+from P2P.Site import Site
 from P2P.SiteManager import SiteManager
+from P2P.WorkerManager import NoPeerHadFileError
 from P2P.plugins.ContentFilter.SiteManagerPlugin import SiteManagerPlugin
+from P2P.plugins.ContentFilter.SitePlugin import SitePlugin, MutedError
 from P2P.plugins.ContentFilter import commands as _cf_commands  # noqa: F401 -- registers siteblock* commands
 from P2P.Ui.UiServer import UiServer
 from P2P import compat
@@ -20,6 +24,10 @@ from P2P import compat
 # bootstrap-ordering wiring, which is separate, already-documented
 # follow-up work (see P2P.PluginManager's own module docstring).
 class ContentFilterSiteManager(SiteManagerPlugin, SiteManager):
+    pass
+
+
+class ContentFilterSite(SitePlugin, Site):
     pass
 
 
@@ -143,3 +151,41 @@ class TestP2PPluginsContentFilterCommands:
         assert add_reply["result"] == "ok"
         assert list_reply["result"]["1AuthAddressAAAAAAAAAAAAAAAA"]["cert_user_id"] == "alice@example"
         assert remove_reply["result"] == "ok"
+
+
+class TestP2PPluginsContentFilterEnforcement:
+    """Site.needFile() mute enforcement -- the real per-file hook
+    SitePlugin.py attaches to now that P2P.Site is @acceptPlugins (see
+    that module's own docstring). Composed via multiple inheritance, same
+    reasoning as ContentFilterSiteManager above."""
+
+    def testNeedFileRefusesMutedAuthor(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+                from P2P.plugins.ContentFilter.storage import ContentFilterStorage
+                smp.filter_storage = ContentFilterStorage(pathlib.Path(d) / "filter")
+                smp.filter_storage.muteAdd("1MutedAuthorAAAAAAAAAAAAAAAA", reason="spam")
+
+                site = ContentFilterSite("1TestMuteEnforceSiteAAAAAAAA1", pathlib.Path(d) / "site")
+                with pytest.raises(MutedError):
+                    await site.needFile("data/users/1MutedAuthorAAAAAAAAAAAAAAAA/data.json", [])
+
+        compat.run(scenario)
+
+    def testNeedFileAllowsUnmutedAuthor(self):
+        """No mute match -- the override delegates to the real Scheduler,
+        proven by getting the real "no peers available" failure instead
+        of MutedError (an empty peers list can't succeed any other way)."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+                from P2P.plugins.ContentFilter.storage import ContentFilterStorage
+                smp.filter_storage = ContentFilterStorage(pathlib.Path(d) / "filter")
+                smp.filter_storage.muteAdd("1MutedAuthorBBBBBBBBBBBBBBBB", reason="spam")
+
+                site = ContentFilterSite("1TestMuteAllowSiteAAAAAAAAA1", pathlib.Path(d) / "site")
+                with pytest.raises(NoPeerHadFileError):
+                    await site.needFile("data/users/1UnmutedAuthorAAAAAAAAAAAAA/data.json", [])
+
+        compat.run(scenario)

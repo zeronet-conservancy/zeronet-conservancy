@@ -1,9 +1,12 @@
 import pathlib
 
+import pytest
 from libp2p.crypto.ed25519 import create_new_key_pair
 from libp2p.peer.id import ID
 
+from P2P import compat
 from P2P.Site import Site
+from P2P.WorkerManager import NoPeerHadFileError
 
 
 def _random_peer_id() -> ID:
@@ -66,3 +69,17 @@ class TestP2PSite:
     def testIsServing(self):
         assert Site("1Test", pathlib.Path("/tmp/x"), serving=True).isServing() is True
         assert Site("1Test", pathlib.Path("/tmp/x"), serving=False).isServing() is False
+
+    def testNeedFileDelegatesToScheduler(self):
+        """Baseline, no-plugin regression check for the new needFile()
+        wrapper: an empty peers list can't succeed, so the real Scheduler
+        underneath raises its own NoPeerHadFileError -- proving this
+        actually reaches WorkerManager.Scheduler, not just returning
+        early or swallowing the call. See TestP2PPluginsContentFilter.py
+        for the plugin-override version of this same call."""
+        async def scenario():
+            site = Site("1Test", pathlib.Path("/tmp/x"))
+            with pytest.raises(NoPeerHadFileError):
+                await site.needFile("data.json", [])
+
+        compat.run(scenario)

@@ -455,7 +455,12 @@ async def _cmdFileGet(session, params):
 
 @command("fileNeed")
 async def _cmdFileNeed(session, params):
-    """Fetch a missing regular file or Bigfile through the native scheduler."""
+    """Fetch a missing regular file or Bigfile through the native scheduler.
+
+    Goes through site.needFile() rather than constructing a Scheduler
+    directly -- see Site.py's own docstring on why: that's now the real
+    plugin-overridable hook point (e.g. ContentFilter's mute check), and
+    the fresh-Scheduler-per-call behavior is unchanged either way."""
     site = _requireSite(session)
     inner_path = _param(params, "inner_path", 0)
     timeout = float(_param(params, "timeout", 1, 60))
@@ -465,7 +470,6 @@ async def _cmdFileNeed(session, params):
 
     from multiaddr import Multiaddr
     from ..Peer import Peer
-    from ..WorkerManager import Scheduler
 
     records = site.getConnectablePeers(need_num=5)
     peers = []
@@ -478,7 +482,7 @@ async def _cmdFileNeed(session, params):
             except Exception:
                 pass
         peers.append(Peer(record.peer_id, file_server.host, file_server.connection_policy))
-    data = await Scheduler(site).needFile(inner_path, peers, timeout=timeout)
+    data = await site.needFile(inner_path, peers, timeout=timeout)
     session.app.broadcast("siteChanged", site, {"event": "file_done"})
     return {"inner_path": inner_path, "size": len(data), "downloaded": True}
 

@@ -80,7 +80,7 @@ from .Peer import Peer
 from .SiteAnnouncer import SiteAnnouncer
 from .SiteManager import SiteManager
 from .UserManager import UserManager
-from .WorkerManager import Scheduler, downloadContentJson, publishUpdate, syncSite
+from .WorkerManager import downloadContentJson, publishUpdate, syncSite
 from .discovery.kaddht import KadDHTDiscovery
 
 log = logging.getLogger("P2P.actions")
@@ -346,8 +346,7 @@ class Actions:
                     else:
                         await downloadContentJson(site, peers)
 
-                scheduler = Scheduler(site)
-                data = await scheduler.needFile(inner_path, peers, timeout=timeout)
+                data = await site.needFile(inner_path, peers, timeout=timeout)
                 await site.storage.write(inner_path, data)
 
         if no_peers:

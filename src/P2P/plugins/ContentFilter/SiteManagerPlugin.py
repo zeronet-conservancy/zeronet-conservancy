@@ -6,16 +6,21 @@ relative import beyond this package's own top level fails; see
 P2P/plugins/CryptMessage/commands.py's own docstring, which hit and
 documented this same gotcha first.
 
-Mutes are now stored and manageable through muteAdd/muteRemove/muteList;
-the native download/content pipeline does not yet enforce them. Deliberately
-not ported: mutes' full per-user content enforcement (requires
-SiteStorage.updateDbFile()/Site.needFile()/FileRequest.actionUpdate()
-hooks -- none of P2P.SiteStorage/P2P.Site/the update protocol handler
-are @acceptPlugins yet, and wiring three separate cross-cutting
-enforcement points is real, separate work, not a small addition) and
-filter-includes (subscribing to another site's shared block/mute list --
-needs mutes to exist first, since an include's whole point is importing
-someone else's mute list too). Also not ported: the original's
+Mutes are now stored and manageable through muteAdd/muteRemove/muteList,
+and enforced on the on-demand single-file fetch path -- see this
+package's own SitePlugin.py, a registerTo("Site") override of the new
+Site.needFile() hook (P2P.Site and P2P.SiteStorage are both
+@acceptPlugins now). Still not enforced: WorkerManager.syncSite()'s bulk
+whole-site download loop (bypasses Site.needFile() entirely -- see
+WorkerManager.py's own docstring), SiteStorage.updateDbFile() (pluggable
+now too, but nothing calls it on the write path yet for an override to
+matter), and a FileRequest.actionUpdate()-equivalent (no per-file update-
+notification protocol exists in this stack at all, only the content.json
+push protocols/update.py covers -- see that module's own docstring).
+Deliberately not ported: filter-includes (subscribing to another site's
+shared block/mute list -- needs mutes to exist first, since an include's
+whole point is importing someone else's mute list too). Also not ported:
+the original's
 address-hashing "ignore_block" trick for privacy-preserving blocklist
 sharing -- plain address matching only (see storage.py's own docstring).
 The UiRequestPlugin half (actionWrapper's "this site is blocklisted"

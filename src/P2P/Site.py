@@ -20,6 +20,16 @@ peer genuinely doesn't have one to give. The real dialing address always
 lives in the libp2p host's own peerstore once any connection or DHT
 lookup has touched that peer_id; ip/port here are best-effort display
 info (as pex's wire format still provides), not what dialing depends on.
+
+@acceptPlugins: same Phase 8 treatment as User/SiteAnnouncer/SiteManager,
+added so a plugin's own registerTo("Site") override can actually attach to
+something -- e.g. plugins/ContentFilter/ContentFilterPlugin.py's own
+SitePlugin.needFile() mute check, which had no equivalent method to
+override here until needFile() itself was added below. Only needFile()
+is exposed as an overridable method for now, not the rest of a plugin's
+conceivable surface (addPeer, isServing, ...) -- add more as a real
+plugin actually needs to hook them, same "wire it up when there's an
+actual caller" discipline SiteStorage.py's own docstring already uses.
 """
 import hashlib
 import time
@@ -28,6 +38,7 @@ from libp2p.peer.id import ID
 
 from Crypt import CryptHash
 
+from .PluginManager import acceptPlugins
 from .SiteStorage import SiteStorage
 from .ContentManager import ContentManager
 
@@ -51,6 +62,7 @@ class PeerRecord:
         self.time_found = time.time()
 
 
+@acceptPlugins
 class Site:
     def __init__(self, address: str, site_root, serving: bool = True, allow_create: bool = True,
                  permissions: list | None = None):
@@ -105,3 +117,17 @@ class Site:
         candidates = [p for p in self.peers.values() if p.peer_id not in exclude]
         candidates.sort(key=lambda p: p.reputation, reverse=True)
         return candidates[:need_num]
+
+    async def needFile(self, inner_path: str, peers: list, priority: int = 0, timeout: float = 60) -> bytes:
+        """Thin wrapper around WorkerManager.Scheduler.needFile() -- the
+        real per-site fetch entrypoint, matching the original's own
+        Site.needFile() shape closely enough for a plugin's registerTo
+        ("Site") override to actually mean something (see this class's
+        own docstring). Deliberately doesn't hold a persistent Scheduler
+        across calls: both existing call sites (P2P/Ui/commands.py's
+        fileNeed, P2P/actions.py's siteNeedFile) already constructed a
+        fresh one per call before this method existed, so a fresh one
+        here changes nothing about in-flight-dedup behavior, just moves
+        where it's constructed."""
+        from .WorkerManager import Scheduler
+        return await Scheduler(self).needFile(inner_path, peers, priority=priority, timeout=timeout)

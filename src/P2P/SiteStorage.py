@@ -62,6 +62,16 @@ caching (the original's own 5-second-idle eviction needs a delayed
 callback outside a nursery this stack doesn't have a convenient
 equivalent for) -- opens fresh per call instead, trading a real but
 small optimization for zero extra machinery.
+
+@acceptPlugins: same Phase 8 treatment as Site.py (see that module's own
+docstring) -- gives e.g. plugins/ContentFilter/ContentFilterPlugin.py's
+own SiteStoragePlugin.updateDbFile() override an actual class to attach
+to. Note this alone does NOT make that specific override do anything yet:
+write()/delete() still don't auto-call updateDbFile() on every write (see
+the "Also NOT wired up here" paragraph above), so a registered override
+sits unused until something drives writes through that method -- real,
+separate follow-up, same gap as before, just now on a pluggable class
+instead of an unpluggable one.
 """
 import json
 import os
@@ -75,6 +85,7 @@ from pathlib import Path
 import trio
 
 from .Db import Db
+from .PluginManager import acceptPlugins
 from .ThreadPool import ThreadPool
 
 
@@ -130,6 +141,7 @@ class AccessError(Exception):
     pass
 
 
+@acceptPlugins
 class SiteStorage:
     def __init__(self, directory: Path, allow_create: bool = True,
                  threads_read: int = 4, threads_write: int = 4):

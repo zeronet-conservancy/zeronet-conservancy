@@ -25,6 +25,15 @@ Out of scope, same reasoning as the rest of this migration: optional-file
 discovery via findHashIds across the network, and the site-wide periodic
 health-check sweep (checkTasks()'s broader responsibilities beyond one
 task's lifecycle, like internet-outage detection).
+
+Scheduler.needFile() is now wrapped by Site.needFile() (see Site.py's own
+docstring) -- the real, plugin-overridable per-file fetch entrypoint, e.g.
+ContentFilter's mute check. syncSite()'s own bulk per-file loop below
+still calls fetchAndVerify()/downloadBigfile() directly, bypassing that
+hook -- a real, separate gap (bulk site sync doesn't consult per-file
+mute state), not fixed by this pass. needFile() is what a user actually
+hits clicking into a single page/post; syncSite() is the whole-site CLI
+download path.
 """
 import heapq
 import itertools
