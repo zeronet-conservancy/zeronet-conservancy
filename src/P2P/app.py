@@ -112,6 +112,15 @@ class App:
             auto_download_timeout=auto_download_timeout, data_dir=data_dir,
             shutdown_callback=self.requestShutdown,
         )
+        # A peer pushing us a fresh content.json (protocols/update.py) is
+        # genuinely network-driven, unlike UiApp.broadcast()'s other four
+        # call sites (sitePublish/sitePause/siteResume/siteUpdate, all
+        # user-initiated from this same process) -- see update.py's own
+        # docstring on why this threads through as a late-bound attribute
+        # rather than a FileServer constructor param.
+        self.file_server.on_update_applied = lambda site, inner_path: self.ui_server.app.broadcast(
+            "siteChanged", site, {"event": "updated"}
+        )
         self.dht_discovery = None
         if enable_dht:
             kwargs = {} if dht_protocol_prefix is None else {"protocol_prefix": dht_protocol_prefix}

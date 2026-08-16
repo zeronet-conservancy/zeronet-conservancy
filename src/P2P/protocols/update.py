@@ -30,9 +30,13 @@ import json
 PROTOCOL_ID = "/zeronet/update/1.0.0"
 
 
-def make_handler(site_resolver):
+def make_handler(site_resolver, on_applied=None):
     """site_resolver(site_address) -> Site | None: the site to update, or
-    None if unknown/not serving."""
+    None if unknown/not serving. on_applied(site, inner_path), if given, is
+    called after a real write -- not for the "Same content, not updated"
+    no-op case -- so callers (FileServer.py) can push a live UI update to
+    any open dashboard/site tab without this handler needing to know
+    anything about UiApp.broadcast() itself."""
 
     async def handle(params: dict) -> dict:
         site = site_resolver(params.get("site"))
@@ -62,6 +66,8 @@ def make_handler(site_resolver):
 
         await site.storage.write(inner_path, body)
         site.content_manager.contents[inner_path] = content
+        if on_applied is not None:
+            on_applied(site, inner_path)
         return {"ok": "Thanks, file %s updated!" % inner_path}
 
     return handle

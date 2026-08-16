@@ -36,6 +36,13 @@ class FileServer:
         self.router = ProtocolRouter(self.host)
         self.sites: dict = {}  # site address -> site object
 
+        # Set by App.__init__ after both FileServer and UiServer exist --
+        # FileServer is constructed first (see app.py), so this can't be a
+        # constructor param, only a late-bound attribute the handler reads
+        # at call time via _onUpdateApplied. None means "no UI wired up",
+        # e.g. a standalone FileServer with no UiServer at all.
+        self.on_update_applied = None
+
         self._registerProtocols()
 
     def _registerProtocols(self) -> None:
@@ -43,7 +50,7 @@ class FileServer:
         self.router.register(getfile.PROTOCOL_ID, getfile.make_handler(self._resolveSiteStorage))
         self.router.register(pex.PROTOCOL_ID, pex.make_handler(self._knownPeersForSite, self._onPeerReceived))
         self.router.register(piecefields.PROTOCOL_ID, piecefields.make_handler(self._piecefieldsForSite))
-        self.router.register(update.PROTOCOL_ID, update.make_handler(self._resolveSite))
+        self.router.register(update.PROTOCOL_ID, update.make_handler(self._resolveSite, on_applied=self._onUpdateApplied))
 
     def _resolveSiteStorage(self, site_address: str):
         site = self.sites.get(site_address)
@@ -68,6 +75,10 @@ class FileServer:
         site = self.sites.get(site_address)
         if site is not None:
             site.addPeer(peer_id, ip, port, source="pex")
+
+    def _onUpdateApplied(self, site, inner_path: str) -> None:
+        if self.on_update_applied is not None:
+            self.on_update_applied(site, inner_path)
 
     async def _piecefieldsForSite(self, site_address: str) -> dict:
         site = self.sites.get(site_address)

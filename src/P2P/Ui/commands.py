@@ -50,27 +50,38 @@ exist in this stack -- see P2P.SiteManager's own docstring) and always
 walks every listed file; still capped at 100 files, same as the
 original, so this stays cheap for the sizes this stack deals with.
 
+certSelect (uses the wrapper's existing notification/injected-script
+channel to provide the account selector, including the local auth
+identity and provider registration links), serverShutdown, and configSet
+(the latter via the UiConfig plugin, not this file) are all ported now,
+despite older notes in this file once listing them as gaps -- checked
+against the actual @command(...) registrations, not just this docstring,
+before writing this.
+
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
-  - certSelect now uses the wrapper's existing notification/injected-script
-    channel to provide the account selector, including the local auth
-    identity and provider registration links.
-  - announcerStats (the ALL-sites admin
-    aggregation, as opposed to announcerInfo's per-site report -- the
-    original filters by self.site.announcer.getTrackers(), which is
-    always [] in this stack's core with no tracker plugins registered
-    yet, so a faithful port would always return {}; not worth the extra
-    surface for something that can't do anything until a tracker plugin
-    exists), serverUpdate/serverShutdown/configSet (need the global
-    `main` module server handles this package deliberately has no
-    equivalent of -- see P2P/app.py's own module docstring), dbRebuild
-    (CLI-only, via P2P/actions.py -- a destructive full-rebuild isn't a
-    great fit for an unauthenticated-beyond-wrapper_key websocket
-    command either).
-  - The original's channel *events* (site.websockets iteration pushing
-    "setSiteInfo"/etc. to other joined connections on change) -- channelJoin
-    here only tracks per-session membership, since nothing in this stack
-    yet emits change events to push.
+  - announcerStats (the ALL-sites admin aggregation, as opposed to
+    announcerInfo's per-site report -- the original filters by
+    self.site.announcer.getTrackers(), which is always [] in this
+    stack's core with no tracker plugins registered yet, so a faithful
+    port would always return {}; not worth the extra surface for
+    something that can't do anything until a tracker plugin exists).
+  - serverUpdate (the original's self-update-and-restart flow -- no
+    equivalent of the global `main` module server handles this package
+    deliberately has, see P2P/app.py's own module docstring, and no
+    update-channel/restart mechanism either).
+  - dbRebuild as a UI command (CLI-only, via P2P/actions.py -- a
+    destructive full-rebuild isn't a great fit for an
+    unauthenticated-beyond-wrapper_key websocket command either).
+  - The original's channel *events* triggered by genuinely background,
+    non-UI-initiated activity -- peer count changes, optional-file
+    discovery, etc. UiApp.broadcast() itself is real and used now
+    (sitePublish/sitePause/siteResume/siteUpdate/fileNeed, all
+    user-initiated, plus one real network-driven trigger via
+    FileServer.on_update_applied when a peer pushes us a fresh
+    content.json -- see UiServer.py's own module docstring), so this
+    gap is narrower than it used to be, not the "nothing pushes at all"
+    it once was.
 
 siteVerify() re-derives its own equivalent of the original's
 site.storage.verifyFiles() inline (a hash-check pass over every file
@@ -399,6 +410,7 @@ async def _cmdFileNeed(session, params):
                 pass
         peers.append(Peer(record.peer_id, file_server.host, file_server.connection_policy))
     data = await Scheduler(site).needFile(inner_path, peers, timeout=timeout)
+    session.app.broadcast("siteChanged", site, {"event": "file_done"})
     return {"inner_path": inner_path, "size": len(data), "downloaded": True}
 
 

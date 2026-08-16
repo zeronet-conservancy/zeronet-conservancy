@@ -215,6 +215,142 @@ class TestP2PUiCommandsSiteSignPublish:
         assert push["params"]["serving"] is True  # real formatSiteInfo() output, not a stub
         assert unjoined_timed_out is True  # Never joined the channel -- no push
 
+    def testUpdatePushFromPeerBroadcastsSiteChangedOnReceiver(self):
+        """Network-driven push, not a UI command: peer A publishes over
+        protocols/update.py straight to peer B's FileServer -- nothing on
+        B's side ever called a UI command -- and B's own joined websocket
+        session should still get a live setSiteInfo, via
+        FileServer.on_update_applied -> UiApp.broadcast() (the wiring
+        App.__init__ does in real deployment; this test wires the same
+        two lines by hand since it doesn't spin up a full App)."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as ds, tempfile.TemporaryDirectory() as dr:
+                from libp2p.peer.peerinfo import PeerInfo
+                from P2P.FileServer import FileServer
+                from P2P.Peer import Peer
+                from P2P.WorkerManager import publishUpdate
+
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+                # Receiver starts with an older signed version, backdated so
+                # the sender's publish below is unambiguously newer even
+                # within the same wall-clock second.
+                receiver_site = Site(address, pathlib.Path(dr))
+                receiver_site.permissions = ["ADMIN"]
+                await receiver_site.content_manager.sign(privatekey)
+                old_content = dict(receiver_site.content_manager.contents["content.json"])
+                old_content["modified"] -= 100
+                old_content.pop("signs", None)
+                sign_content = json.dumps(old_content, sort_keys=True)
+                old_content["signs"] = {address: CryptBitcoin.sign(sign_content, privatekey)}
+                await receiver_site.storage.writeJson("content.json", old_content)
+                receiver_site.content_manager.contents["content.json"] = old_content
+
+                (pathlib.Path(dr) / ".p2p").mkdir(parents=True, exist_ok=True)
+                (pathlib.Path(ds) / ".p2p").mkdir(parents=True, exist_ok=True)
+                receiver_server = FileServer(pathlib.Path(dr) / ".p2p", ws_port=None)
+                receiver_server.addSite(receiver_site)
+                receiver_ui = UiServer(sites={address: receiver_site})
+                # The one line App.__init__ adds beyond constructing both --
+                # see app.py's own comment at this exact wiring.
+                receiver_server.on_update_applied = lambda site, inner_path: receiver_ui.app.broadcast(
+                    "siteChanged", site, {"event": "updated"}
+                )
+
+                sender_site = Site(address, pathlib.Path(ds))
+                sender_site.content_manager.contents["content.json"] = dict(old_content)
+                sender_server = FileServer(pathlib.Path(ds) / ".p2p", ws_port=None)
+                sender_server.addSite(sender_site)
+
+                async with receiver_server.run(), sender_server.run(), receiver_ui.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(receiver_ui, receiver_site)) as ws:
+                        await _call(ws, "channelJoin", {"channels": ["siteChanged"]}, msg_id=1)
+
+                        await sender_server.host.connect(
+                            PeerInfo(receiver_server.host.peer_id, receiver_server.host.get_addrs())
+                        )
+                        await sender_site.storage.write("new.txt", b"pushed peer-to-peer, no UI command")
+                        await sender_site.content_manager.sign(privatekey)
+                        sender_site.addPeer(receiver_server.host.peer_id, source="test")
+                        peers = [Peer(receiver_server.host.peer_id, sender_server.host, sender_server.connection_policy)]
+                        push_result = await publishUpdate(sender_site, peers)
+
+                        with trio.move_on_after(2) as cancel_scope:
+                            push = json.loads(await ws.get_message())
+                        timed_out = cancel_scope.cancelled_caught
+
+                applied_files = receiver_site.content_manager.contents["content.json"]["files"]
+                return push_result, (None if timed_out else push), timed_out, applied_files
+
+        push_result, push, timed_out, applied_files = compat.run(scenario)
+        assert push_result >= 1
+        assert timed_out is False
+        assert "new.txt" in applied_files  # the pushed content.json's file listing was actually applied
+        assert push["cmd"] == "setSiteInfo"
+        assert push["params"]["content"]["files"] == len(applied_files)  # real formatSiteInfo() output, not a stub
+
+    def testFileNeedBroadcastsSiteChangedOnCompletion(self):
+        """fileNeed over the websocket should push setSiteInfo to every
+        joined session once the fetch actually completes -- same
+        "confirm via a second, independent connection" pattern as
+        testSitePublishBroadcastsSiteChangedToJoinedSessions."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as ds, tempfile.TemporaryDirectory() as dc:
+                from P2P.FileServer import FileServer
+
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+                source_site = Site(address, pathlib.Path(ds) / "site")
+                await source_site.storage.write("data.txt", b"fileNeed broadcast target")
+                await source_site.content_manager.sign(privatekey)
+                (pathlib.Path(ds) / ".p2p").mkdir(parents=True, exist_ok=True)
+                source_server = FileServer(pathlib.Path(ds) / ".p2p", ws_port=None)
+                source_server.addSite(source_site)
+
+                client_site = Site(address, pathlib.Path(dc) / "site")
+                client_site.permissions = ["ADMIN"]
+                # fileNeed (unlike sitePublish's siteDownload/siteNeedFile CLI
+                # actions) doesn't fetch content.json itself -- it only
+                # verifies the requested file's hash against whatever's
+                # already loaded, matching a real "site already added,
+                # fetching one more optional file" case. Seed it here so
+                # Scheduler.needFile has something to verify data.txt against.
+                await client_site.storage.writeJson(
+                    "content.json", source_site.content_manager.contents["content.json"]
+                )
+                await client_site.content_manager.loadContent("content.json")
+                (pathlib.Path(dc) / ".p2p").mkdir(parents=True, exist_ok=True)
+                client_file_server = FileServer(pathlib.Path(dc) / ".p2p", ws_port=None)
+                client_file_server.addSite(client_site)
+
+                ui_server = UiServer(sites={address: client_site}, file_server=client_file_server)
+
+                async with source_server.run(), client_file_server.run(), ui_server.run():
+                    from libp2p.peer.peerinfo import PeerInfo
+                    await client_file_server.host.connect(
+                        PeerInfo(source_server.host.peer_id, source_server.host.get_addrs())
+                    )
+                    tcp_port = source_server.host.get_addrs()[0].value_for_protocol("tcp")
+                    client_site.addPeer(source_server.host.peer_id, ip="127.0.0.1", port=int(tcp_port), source="test")
+
+                    async with trio_websocket.open_websocket_url(_wsUrl(ui_server, client_site)) as joined_ws, \
+                            trio_websocket.open_websocket_url(_wsUrl(ui_server, client_site)) as fetching_ws:
+                        await _call(joined_ws, "channelJoin", {"channels": ["siteChanged"]}, msg_id=1)
+
+                        fetch_reply = await _call(
+                            fetching_ws, "fileNeed", {"inner_path": "data.txt", "timeout": 5}, msg_id=2
+                        )
+                        push = json.loads(await joined_ws.get_message())
+
+                return fetch_reply, push
+
+        fetch_reply, push = compat.run(scenario)
+        assert fetch_reply["result"]["downloaded"] is True
+        assert push["cmd"] == "setSiteInfo"
+        assert push["params"]["serving"] is True  # real formatSiteInfo() output, not a stub
+
 
 class TestP2PUiCommandsCerts:
     def testProviderCreateBuildsSignedSite(self):

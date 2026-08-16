@@ -82,13 +82,18 @@ dict living in the core session class.
 UiApp.broadcast() is the second push consumer: a port of the original's
 UiWebsocket.event(), pushing setSiteInfo/setServerInfo/setAnnouncerInfo
 to every session joined to the relevant channel (channelJoin already
-existed in commands.py; nothing previously called the other half). Only
-sitePublish calls it so far, after a successful sign+push -- the
-original calls Site.py's updateWebsocket() (which drives this) from
-many more places (download progress, peer count changes, etc.) that
-don't have equivalents in this stack yet. Each additional trigger is its
-own small, separate addition as the corresponding Site.py machinery
-lands, not something to force in one pass.
+existed in commands.py; nothing previously called the other half).
+sitePublish/sitePause/siteResume/siteUpdate/fileNeed all call it now,
+after their own user-initiated change -- the original calls Site.py's
+updateWebsocket() (which drives this) from several more places (peer
+count changes, etc.) that still don't have equivalents in this stack.
+One genuinely network-driven trigger IS wired now, though, not just
+UI-command ones: FileServer.on_update_applied (set by App.__init__)
+fires broadcast("siteChanged", ..., {"event": "updated"}) when a peer
+pushes us a fresh content.json over protocols/update.py -- see that
+module's own docstring. Each additional trigger is its own small,
+separate addition as the corresponding machinery lands, not something to
+force in one pass.
 """
 import json
 import logging
