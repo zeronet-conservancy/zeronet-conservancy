@@ -13,7 +13,7 @@ def __getattr__(name):
         'Cached', 'Diff', 'Electrum', 'Event', 'Flag', 'Git', 'GreenletManager',
         'Msgpack', 'Noparallel', 'OpensslFindPatch', 'Platform', 'Pooled',
         'QueryJson', 'RateLimit', 'SafeRe', 'SocksProxy', 'ThreadPool',
-        'UpnpPunch', 'WebView', 'argparseCompat', 'compat', 'helper',
+        'WebView', 'argparseCompat', 'compat', 'helper',
     }:
         import importlib
         module = importlib.import_module(f'{__name__}.{name}')

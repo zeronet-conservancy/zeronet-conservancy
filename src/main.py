@@ -126,15 +126,16 @@ def init_dirs():
             f.write("{}")
 
 def load_plugins():
-    # The native P2P stack has its own plugin manager. Loading the legacy
-    # root-level plugins here can import incompatible gevent-era modules and
-    # prevent the native desktop app from starting.
-    if config.p2p:
-        return
-    from Plugin import PluginManager
-    PluginManager.plugin_manager.loadPlugins()
-    config.loadPlugins()
-    config.parse()  # Parse again to add plugin configuration options
+    # The native P2P stack has its own plugin manager (P2P.PluginManager,
+    # loaded lazily from Actions.mainP2P()/Actions._runP2PAction() instead
+    # of here). The legacy root-level plugins/ ecosystem this used to load
+    # for --no-p2p has been removed entirely -- see Actions.py's own
+    # module docstring.
+    if not config.p2p:
+        raise RuntimeError(
+            "The legacy gevent implementation has been removed -- "
+            "pass p2p=True (the default) to use the trio/libp2p stack."
+        )
 
 def init():
     load_config()

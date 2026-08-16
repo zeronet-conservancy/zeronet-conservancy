@@ -1,9 +1,0 @@
-{
- "title": "Gallery",
- "slug": "gallery",
- "blocks": [
-  {"type": "heading", "level": 1, "body": "Gallery"},
-  {"type": "text", "body": "Upload images in the editor to fill this gallery. Click any image for a lightbox."},
-  {"type": "gallery", "images": []}
- ]
-}

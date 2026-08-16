@@ -1,6 +1,9 @@
 import base64
+from pathlib import Path
 
 from Crypt import CryptHash
+
+TESTDATA_DBSCHEMA = Path(__file__).parent / "testdata" / "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT-original" / "dbschema.json"
 
 sha512t_sum_hex = "2e9466d8aa1f340c91203b4ddbe9b6669879616a1b8e9571058a74195937598d"
 sha512t_sum_bin = b".\x94f\xd8\xaa\x1f4\x0c\x91 ;M\xdb\xe9\xb6f\x98yaj\x1b\x8e\x95q\x05\x8at\x19Y7Y\x8d"
@@ -9,8 +12,8 @@ sha256_sum_hex = "340cd04be7f530e3a7c1bc7b24f225ba5762ec7063a56e1ae01a30d56722e5
 
 class TestCryptBitcoin:
 
-    def testSha(self, site):
-        file_path = site.storage.getPath("dbschema.json")
+    def testSha(self):
+        file_path = TESTDATA_DBSCHEMA
         assert CryptHash.sha512sum(file_path) == sha512t_sum_hex
         assert CryptHash.sha512sum(open(file_path, "rb")) == sha512t_sum_hex
         assert CryptHash.sha512sum(open(file_path, "rb"), format="digest") == sha512t_sum_bin

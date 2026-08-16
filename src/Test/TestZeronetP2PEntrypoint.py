@@ -84,14 +84,12 @@ def _terminate(proc):
 
 
 class TestZeronetP2PDefaultFlip:
-    """Phase 10 default flip: `zeronet.py main` with no flags at all now
-    runs the trio-native stack (Config.py's --p2p defaults to True as of
-    this change), and --no-p2p is the escape hatch back to the exact
-    previous default behavior. See Actions.mainP2P()'s own docstring for
-    what --no-p2p is still needed for (repo-root plugins/ -- UiPassword,
-    Tor SOCKS5 dial-out, Multiuser's core account isolation, and
-    Multiuser's account-switching/master-seed UI, all once listed here
-    too, are closed now)."""
+    """Legacy removal: the gevent stack `zeronet.py main --no-p2p` used to
+    fall back to is gone (Site/Peer/Tor/Ui/User/Worker/Connection/Content/
+    Plugin/DHT/File and the repo-root legacy plugins/ ecosystem). The
+    trio-native stack (Config.py's --p2p, default True) is now the only
+    implementation -- see Actions.py's own module docstring and
+    Actions._requireP2P()."""
 
     def testMainWithNoFlagsDefaultsToP2P(self):
         with tempfile.TemporaryDirectory() as d:
@@ -105,23 +103,20 @@ class TestZeronetP2PDefaultFlip:
 
         assert "P2P app running" in log_text
 
-    def testMainWithNoP2PFlagRunsLegacyServer(self):
+    def testMainWithNoP2PFlagRaisesInsteadOfRunningRemovedLegacyServer(self):
         with tempfile.TemporaryDirectory() as d:
             data_dir = pathlib.Path(d)
             proc, log_path = _spawnMain(data_dir, extra_main_args=["--no-p2p"])
             try:
-                deadline = time.time() + 20
-                while time.time() < deadline:
-                    if log_path.is_file() and "Starting servers" in log_path.read_text(errors="replace"):
-                        break
-                    time.sleep(0.1)
-                else:
-                    raise TimeoutError("Legacy server never logged its startup line")
+                proc.wait(timeout=20)
             finally:
                 _terminate(proc)
             log_text = log_path.read_text(errors="replace")
 
-        assert "Starting servers" in log_text
+        # zeronet.py's own top-level except-and-log wrapper always exits 0
+        # (it logs and reports the crash rather than propagating a nonzero
+        # code) -- assert on the actual error surfaced, not the exit code.
+        assert "legacy gevent implementation has been removed" in log_text
         assert "P2P app running" not in log_text
 
 

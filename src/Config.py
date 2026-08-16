@@ -781,7 +781,7 @@ class Config:
         open(self.config_file, "w").write("\n".join(lines))
 
     def getServerInfo(self):
-        from Plugin import PluginManager
+        from P2P.PluginManager import plugin_manager as p2p_plugin_manager
         import main
 
         info = {
@@ -794,7 +794,7 @@ class Config:
             "rev": self.rev,
             "language": self.language,
             "debug": self.debug,
-            "plugins": PluginManager.plugin_manager.plugin_names,
+            "plugins": p2p_plugin_manager.plugin_names,
 
             "log_dir": os.path.abspath(self.log_dir),
             "data_dir": os.path.abspath(self.data_dir),
