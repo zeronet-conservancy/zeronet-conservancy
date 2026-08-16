@@ -261,6 +261,7 @@ class UiApp:
             Route("/GcCollect", self._handleGcCollect, methods=["GET"]),
             Route("/list/{address}/{inner_path:path}", self._handleFileManager, methods=["GET"]),
             Route("/list/{address}", self._handleFileManager, methods=["GET"]),
+            Route("/ZeroNet-Internal/BigfileUpload", self._handleBigfileUpload, methods=["POST"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
             Route("/{address}", self._handleSite, methods=["GET"]),
             WebSocketRoute("/ZeroNet-Internal/Websocket", self._handleWebsocket),
@@ -413,6 +414,88 @@ class UiApp:
         stays available unconditionally too."""
         import gc
         return Response(str(gc.collect()), media_type="text/plain")
+
+    async def _handleBigfileUpload(self, request: Request) -> Response:
+        """Raw-body counterpart to commands.py's bigfileUploadInit() --
+        receives the actual bytes for a nonce minted there, streaming
+        them straight to a sparse file via SiteStorage.writeRange()
+        (Bigfile Layer A) rather than buffering the whole upload in
+        memory, hashing each piece as it completes
+        (Bigfile.digest_piece()) the same way the original's own
+        single-pass hashBigfile() read loop does.
+
+        A single-piece upload (small enough to fit in one piece) is left
+        as a plain file on disk with no content.json change at all --
+        same as fileWrite's own behavior; the next real siteSign's
+        hashFiles() picks it up like any other file, no special
+        bookkeeping needed. A genuine multi-piece file gets its own
+        msgpack piecemap plus a files_optional entry (piecemap/
+        piece_size), exactly the shape WorkerManager.downloadBigfile()'s
+        own loadBigfileInfo() already expects to read back -- and its
+        piecefield is marked fully complete immediately, since every
+        piece we just wrote came from this upload, not a partial
+        download in progress."""
+        from . import commands
+        from ..Bigfile import Piecefield, digest_piece, merkle_root
+        from util import Msgpack
+
+        nonce = request.query_params.get("upload_nonce")
+        upload = commands.UPLOAD_NONCES.pop(nonce, None) if nonce else None
+        if upload is None:
+            return Response("Upload nonce error.", status_code=403)
+
+        site = upload["site"]
+        inner_path = upload["inner_path"]
+        size = upload["size"]
+        piece_size = upload["piece_size"]
+
+        site.storage.createSparseFile(inner_path, size)
+        piece_hashes: list[bytes] = []
+        position = 0
+        buffer = b""
+        async for chunk in request.stream():
+            buffer += chunk
+            while len(buffer) >= piece_size:
+                piece, buffer = buffer[:piece_size], buffer[piece_size:]
+                await site.storage.writeRange(inner_path, position, piece)
+                piece_hashes.append(digest_piece(piece))
+                position += len(piece)
+        if buffer:
+            await site.storage.writeRange(inner_path, position, buffer)
+            piece_hashes.append(digest_piece(buffer))
+
+        root = merkle_root(piece_hashes)
+
+        if len(piece_hashes) > 1:
+            file_name = pathlib.PurePosixPath(inner_path).name
+            piecemap_body = Msgpack.pack({file_name: {"sha512_pieces": piece_hashes, "piece_size": piece_size}})
+            await site.storage.write(upload["piecemap_inner_path"], piecemap_body)
+
+            content_inner_path = upload["content_inner_path"]
+            if site.storage.isFile(content_inner_path):
+                content = await site.storage.loadJson(content_inner_path)
+            else:
+                content = {}
+            content.setdefault("files_optional", {})
+            content["files_optional"][upload["file_relative_path"]] = {
+                "sha512": root, "size": size,
+                "piecemap": upload["piecemap_relative_path"], "piece_size": piece_size,
+            }
+            await site.storage.writeJson(content_inner_path, content)
+            await site.content_manager.loadContent(content_inner_path)
+
+            piecefield = Piecefield(len(piece_hashes))
+            for piece_index in range(len(piece_hashes)):
+                piecefield[piece_index] = True
+            await site.storage.savePiecefield(root, piecefield)
+
+        return Response(
+            json.dumps({
+                "merkle_root": root, "piece_num": len(piece_hashes),
+                "piece_size": piece_size, "inner_path": inner_path,
+            }),
+            media_type="application/json",
+        )
 
     async def _handleFileManager(self, request: Request) -> Response:
         address = request.path_params["address"]
