@@ -475,6 +475,15 @@ class UiApp:
                 return site
         return None
 
+    def deleteSite(self, address: str) -> None:
+        """Remove a site from the manager and all UI/P2P live registries."""
+        if self.site_manager is not None:
+            self.site_manager.delete(address)
+        if self.file_server is not None:
+            self.file_server.removeSite(address)
+        if self.announcers is not None:
+            self.announcers.pop(address, None)
+
     def _isAllowedWebSocketOrigin(self, origin: str, host: str) -> bool:
         """Match the legacy same-origin WebSocket guard.
 

@@ -36,9 +36,10 @@ UiServer.py's own module docstring) and stays explicitly deferred.
 
 Per-site announce loops are simple fixed-interval polling (default 30
 minutes, matching the original's ANNOUNCE_INTERVAL default order of
-magnitude) -- not the original's event-driven "announce on new site add /
-peer count drop / needFile miss" triggers, which need WorkerManager and
-UI-event plumbing this module doesn't own.
+magnitude). New sites added through the native UI are also wired into the
+file server/announcer registries and receive one immediate best-effort
+announce; peer-count-drop and needFile-triggered announces still need the
+remaining WorkerManager/UI-event plumbing.
 """
 import logging
 import pathlib
@@ -138,6 +139,12 @@ class App:
             self._wireSite(site)
         return site
 
+    def deleteSite(self, address: str) -> None:
+        """Remove a site from persistence and every live P2P wiring table."""
+        self.site_manager.delete(address)
+        self.file_server.removeSite(address)
+        self.announcers.pop(address, None)
+
     async def loadUsers(self) -> None:
         await self.user_manager.load()
 
@@ -157,6 +164,15 @@ class App:
             except Exception:
                 log.exception("Announce failed for %s", address)
             await trio.sleep(self.announce_interval)
+
+    async def _announceOnce(self, address: str) -> None:
+        announcer = self.announcers.get(address)
+        if announcer is None:
+            return
+        try:
+            await announcer.announce(force=True)
+        except Exception:
+            log.exception("Initial announce failed for %s", address)
 
     async def _saveLoop(self) -> None:
         while True:

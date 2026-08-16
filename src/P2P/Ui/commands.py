@@ -461,9 +461,16 @@ async def _cmdSiteAdd(session, params):
     address = _param(params, "address", 0)
     if address in site_manager.sites:
         return {"error": "Site already added"}
-    site = site_manager.add(address)
+    add_site = getattr(session.app, "on_missing_site", None)
+    site = add_site(address) if add_site is not None else site_manager.add(address)
     if not site:
         return {"error": "Invalid address"}
+    # App.addSite() wires the site into FileServer and creates its announcer.
+    # Trigger the original's announce-on-add behavior without delaying the
+    # command response; the connection nursery owns this task's lifetime.
+    announce_once = getattr(session.app, "_announceOnce", None)
+    if announce_once is not None and session.nursery is not None:
+        session.nursery.start_soon(announce_once, site.address)
     return "ok"
 
 
@@ -474,7 +481,11 @@ async def _cmdSiteDelete(session, params):
     address = _param(params, "address", 0)
     if address not in site_manager.sites:
         return {"error": "Unknown site: %s" % address}
-    site_manager.delete(address)
+    delete_site = getattr(session.app, "deleteSite", None)
+    if delete_site is not None:
+        delete_site(address)
+    else:
+        site_manager.delete(address)
     return "Deleted"
 
 

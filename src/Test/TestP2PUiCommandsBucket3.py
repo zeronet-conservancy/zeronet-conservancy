@@ -266,6 +266,37 @@ class TestP2PUiCommandsSiteManagement:
         assert delete_reply["result"] == "Deleted"
         assert still_present is False
 
+    def testSiteAddWiresAndDeleteUnwiresAppSite(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.app import App
+
+                app = App(pathlib.Path(d), enable_dht=False)
+                admin_address = "1TestLifecycleAdminAAAAAAAAAA1"
+                admin_site = app.addSite(admin_address)
+                admin_site.permissions = ["ADMIN"]
+                target_address = "1TestLifecycleTargetAAAAAAAAA2"
+                server = app.ui_server
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        reply = await _call(ws, "siteAdd", {"address": target_address}, msg_id=1)
+                        wired_after_add = (
+                            target_address in app.file_server.sites and
+                            target_address in app.announcers
+                        )
+                        delete_reply = await _call(ws, "siteDelete", {"address": target_address}, msg_id=2)
+                        unwired_after_delete = (
+                            target_address not in app.file_server.sites and
+                            target_address not in app.announcers
+                        )
+                        return reply, wired_after_add, delete_reply, unwired_after_delete
+
+        reply, wired, delete_reply, unwired = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert wired is True
+        assert delete_reply["result"] == "Deleted"
+        assert unwired is True
+
     def testSitePauseAndResumeBroadcastSiteChanged(self):
         """sitePause/siteResume should push setSiteInfo to any session
         connected to the *target* site (not the admin session issuing the
