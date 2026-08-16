@@ -171,7 +171,7 @@ def start():
             'Cached', 'Diff', 'Electrum', 'Event', 'Flag', 'Git', 'GreenletManager',
             'Msgpack', 'Noparallel', 'OpensslFindPatch', 'Platform', 'Pooled',
             'QueryJson', 'RateLimit', 'SafeRe', 'SocksProxy', 'ThreadPool',
-            'UpnpPunch', 'WebView', 'argparseCompat', 'compat', 'helper',
+            'WebView', 'argparseCompat', 'compat', 'helper',
         )
         for module_name in util_modules:
             try:

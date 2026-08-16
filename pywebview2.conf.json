@@ -39,7 +39,6 @@
           "--hidden-import", "util.SafeRe",
           "--hidden-import", "util.SocksProxy",
           "--hidden-import", "util.ThreadPool",
-          "--hidden-import", "util.UpnpPunch",
           "--hidden-import", "util.WebView",
           "--hidden-import", "util.argparseCompat",
           "--hidden-import", "lib.subtl",
@@ -60,7 +59,6 @@
           "--hidden-import", "src.util.SafeRe",
           "--hidden-import", "src.util.SocksProxy",
           "--hidden-import", "src.util.ThreadPool",
-          "--hidden-import", "src.util.UpnpPunch",
           "--hidden-import", "src.util.WebView",
           "--hidden-import", "src.util.argparseCompat",
           "--hidden-import", "src.util.compat",
@@ -73,10 +71,8 @@
     },
     "resources": [
       "src/Ui/media",
-      "src/Ui/template",
       "src/P2P/Ui/templates",
-      "src/P2P/plugins",
-      "plugins"
+      "src/P2P/plugins"
     ],
     "windows": {
       "webview2InstallMode": "downloadBootstrapper"

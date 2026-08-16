@@ -13,9 +13,7 @@
     "targets": ["android"],
     "resources": [
       "src/Ui/media",
-      "src/Ui/template",
-      "src/P2P/Ui/templates",
-      "plugins"
+      "src/P2P/Ui/templates"
     ]
   },
   "mobile": {
