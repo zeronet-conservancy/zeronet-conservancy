@@ -128,8 +128,7 @@ jobs:
             dist/flatpak/build \
             packaging/linux/org.zeronetconservancy.ZeroNet.yml
           flatpak build-export \
-            --branch=stable \
-            dist/flatpak/repo dist/flatpak/build
+            dist/flatpak/repo dist/flatpak/build stable
           flatpak build-bundle \
             dist/flatpak/repo \
             dist/installers/org.zeronetconservancy.ZeroNet.flatpak \
