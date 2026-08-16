@@ -17,13 +17,19 @@ dependencies. ecdsaSign optionally falls back to the connected site's own
 stored auth privatekey (via session.app.user_manager), matching the
 original's own "sign using user's privatekey" default.
 
-Deliberately NOT ported this round: eciesEncrypt/eciesDecrypt/
-userPublickey. Those need a real per-site encryption keypair derived from
-the user's master seed (getEncryptPrivatekey/getEncryptPublickey in the
-original's own User plugin extension) -- P2P.User is marked @acceptPlugins
-now specifically so that extension can land, but the extension itself
-(and these three commands built on it) is separate follow-up work, not
-done here.
+userPublickey/eciesEncrypt/eciesDecrypt are ported now too, using the new
+User.getEncryptPrivatekey()/getEncryptPublickey() extension this
+package's own UserPlugin.py adds (registerTo("User"), landing alongside
+this file). Reuses sslcrypto's own curve.encrypt()/curve.decrypt()
+directly (the same ECIES primitives plugins/CryptMessage/CryptMessage.py's
+own eciesEncrypt/eciesDecrypt wrap, no separate module needed for two
+short calls) rather than adding a parallel helper module.
+
+eciesDecrypt here only supports the original's single-item calling
+convention (one ciphertext, not the batch list-of-ciphertexts form
+eciesDecryptMulti provides) -- same simplification aesDecrypt below
+already makes, for the identical reason: real callers of a headless
+command handler can call this once per candidate ciphertext themselves.
 
 aesDecrypt here only supports the original's single-item calling
 convention (iv/encrypted/key, not the batch iv-encrypted-pairs/keys-list
@@ -125,3 +131,63 @@ async def _cmdEccPubToAddr(session, params):
     publickey = _param(params, "publickey")
     addr = curve.public_to_address(bytes.fromhex(publickey))
     return addr.decode("ascii")
+
+
+@command("userPublickey")
+async def _cmdUserPublickey(session, params):
+    """Returns the connected user's per-site ECIES publickey -- unique to
+    this site (and, if a cert is selected, to that cert's own auth
+    identity), matching the original's own "publickey unique to site"
+    docstring."""
+    from P2P.Ui.commands import _requireSite, _requireUser
+
+    site = _requireSite(session)
+    user = await _requireUser(session)
+    index = _param(params, "index", 0)
+    return user.getEncryptPublickey(site.address, index)
+
+
+@command("eciesEncrypt")
+async def _cmdEciesEncrypt(session, params):
+    import base64
+
+    from P2P.Ui.commands import _requireSite, _requireUser
+
+    text = _param(params, "text")
+    publickey = _param(params, "publickey", 0)
+    return_aes_key = bool(_param(params, "return_aes_key", False))
+
+    if isinstance(publickey, int):  # Encrypt using the connected user's own per-site publickey
+        site = _requireSite(session)
+        user = await _requireUser(session)
+        publickey = user.getEncryptPublickey(site.address, publickey)
+
+    encrypted, aes_key = curve.encrypt(
+        text.encode("utf8"), base64.b64decode(publickey), algo="aes-256-cbc", derivation="sha512", return_aes_key=True,
+    )
+    if return_aes_key:
+        return [base64.b64encode(encrypted).decode("utf8"), base64.b64encode(aes_key).decode("utf8")]
+    return base64.b64encode(encrypted).decode("utf8")
+
+
+@command("eciesDecrypt")
+async def _cmdEciesDecrypt(session, params):
+    import base64
+
+    from P2P.Ui.commands import _requireSite, _requireUser
+
+    encrypted_b64 = _param(params, "param")
+    privatekey = _param(params, "privatekey", 0)
+
+    if isinstance(privatekey, int):  # Decrypt using the connected user's own per-site privatekey
+        site = _requireSite(session)
+        user = await _requireUser(session)
+        privatekey = user.getEncryptPrivatekey(site.address, privatekey)
+
+    try:
+        decrypted = curve.decrypt(
+            base64.b64decode(encrypted_b64), curve.wif_to_private(privatekey.encode()), derivation="sha512",
+        )
+        return decrypted.decode("utf8")
+    except Exception:
+        return None
