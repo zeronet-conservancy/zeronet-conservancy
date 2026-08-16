@@ -96,7 +96,26 @@ def renderWrapper(
 
     wrapper_nonce = CryptHash.random()
 
-    file_url = "/%s/%s?wrapper=0&wrapper_nonce=%s" % (address, inner_path, wrapper_nonce)
+    # Leading bare "&" is deliberate, not a typo -- found live, loading a
+    # real site (ZeroMe): its own router (Text.queryParse in its bundled
+    # all.js) only ever populates params.urls from a query segment that
+    # has NO "=" in it (treating that lone segment as the app's own route
+    # path); every other "&"-joined segment is parsed as key=value and
+    # skipped for that purpose. Since wrapper=0/wrapper_nonce are both
+    # key=value, a query string starting with either of them left
+    # params.urls permanently undefined, crashing the site's own
+    # ZeroMe.route() on page load -- not a bug in this stack's http
+    # handling, but a real incompatibility this single-port
+    # wrapper=0/wrapper_nonce substitute introduces for any site whose
+    # router makes that same "first bare segment is the route" assumption
+    # (a real, if naive, convention -- an empty first segment is exactly
+    # what a plain "no deep link" visit's query would look like without
+    # our added flags at all). The empty leading segment restores that:
+    # split on "&" yields "" first, which queryParse treats as an empty
+    # bare route (site's own default view) exactly as if no query string
+    # had been added here, while wrapper=0/wrapper_nonce still parse
+    # correctly as ordinary key=value pairs right after it.
+    file_url = "/%s/%s?&wrapper=0&wrapper_nonce=%s" % (address, inner_path, wrapper_nonce)
 
     theme = "light"  # No multi-user theme system ported yet -- see module docstring
     themeclass = "theme-%-6s" % theme

@@ -78,20 +78,20 @@ else if (window.opener && window.opener.location.toString()) {
 
 <!-- Site info -->
 <script id="script_init" nonce="{{ script_nonce }}">
-iframe_src = "{{ site_file_server }}{{ file_url }}{{ query_string }}"
+iframe_src = {{ (site_file_server ~ file_url ~ query_string) | tojson }}
 console.log("Changing url from " + document.getElementById("inner-iframe").src + " to " + iframe_src)
 document.getElementById("inner-iframe").src = document.getElementById("inner-iframe").src  // Workaround for Firefox back button bug
 document.getElementById("inner-iframe").src = iframe_src
-address = "{{ address }}"
-wrapper_nonce = "{{ wrapper_nonce }}"
-wrapper_key = "{{ wrapper_key }}"
-ajax_key = "{{ ajax_key }}"
+address = {{ address | tojson }}
+wrapper_nonce = {{ wrapper_nonce | tojson }}
+wrapper_key = {{ wrapper_key | tojson }}
+ajax_key = {{ ajax_key | tojson }}
 postmessage_nonce_security = {{ postmessage_nonce_security | safe }}
-file_inner_path = "{{ file_inner_path }}"
+file_inner_path = {{ file_inner_path | tojson }}
 permissions = {{ permissions | safe }}
 show_loadingscreen = {{ show_loadingscreen | safe }}
-server_url = '{{ server_url }}'
-script_nonce = '{{ script_nonce }}'
+server_url = {{ server_url | tojson }}
+script_nonce = {{ script_nonce | tojson }}
 
 if (typeof WebSocket === "undefined") {
 	tag = document.createElement('div');
