@@ -48,6 +48,20 @@ jobs:
           choco install webview2-runtime --no-progress --ignore-checksums
           choco install wixtoolset nsis --no-progress
 
+          # Chocolatey updates PATH via the registry. This step's own
+          # process already has NSIS on PATH by the time it finishes, but
+          # GitHub Actions spawns a fresh process per step -- the later
+          # "Build desktop packages" step never re-reads the registry, so
+          # it never sees makensis.exe (confirmed: it fails with "NSIS not
+          # found on PATH" and just writes the unbuilt .nsi script).
+          # $GITHUB_PATH is the file Actions itself uses to persist PATH
+          # additions across every later step in this job.
+          $nsisDir = (Get-ChildItem -Path 'C:\Program Files (x86)\NSIS' -Filter 'makensis.exe' -Recurse -ErrorAction SilentlyContinue | Select-Object -First 1).DirectoryName
+          if (-not $nsisDir) {
+              throw "makensis.exe not found after installing NSIS via chocolatey"
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $nsisDir
+
       - name: Install Linux packaging dependencies
         if: runner.os == 'Linux'
         run: |
