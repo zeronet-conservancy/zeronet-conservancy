@@ -112,6 +112,18 @@ from .Wrapper import renderWrapper
 
 UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
 
+# Legacy repo-root plugins/ (one level above src/) -- see _handleUiMediaExtra's
+# own docstring for why this stack reaches into it for a couple of plugins'
+# pure client-side JS/CSS.
+LEGACY_PLUGINS_DIR = pathlib.Path(__file__).resolve().parents[3] / "plugins"
+
+# Plugin name -> extra client media this stack injects onto /uimedia/all.js
+# and /uimedia/all.css, IF that plugin is currently loaded (checked against
+# P2P.PluginManager.plugin_manager.plugin_names). Only plugins with real,
+# gevent-free client JS/CSS worth reusing verbatim belong here -- see
+# _handleUiMediaExtra's docstring.
+_UIMEDIA_EXTRA_PLUGINS = ["Sidebar"]
+
 COMMAND_HANDLERS = {}
 
 
@@ -189,7 +201,17 @@ class UiApp:
             WebSocketRoute("/ZeroNet-Internal/Websocket", self._handleWebsocket),
         ]
         if UI_MEDIA_DIR.is_dir():
+            # all.js/all.css get their own routes (plugin-media injection --
+            # see _handleUiMediaExtra), matched before the generic mount
+            # below so Starlette prefers them over StaticFiles for exactly
+            # those two paths; everything else (images, fonts, ...) still
+            # falls through to the plain static mount. Insertion order
+            # matters: each insert(0, ...) pushes to the front, so the
+            # Mount must go in FIRST for the two specific Routes to end up
+            # ahead of it in the final list (Starlette matches in order).
             routes.insert(0, Mount("/uimedia", app=StaticFiles(directory=str(UI_MEDIA_DIR)), name="uimedia"))
+            routes.insert(0, Route("/uimedia/all.css", self._handleUiMediaCss, methods=["GET"]))
+            routes.insert(0, Route("/uimedia/all.js", self._handleUiMediaJs, methods=["GET"]))
 
         middleware = [
             Middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts or ["127.0.0.1", "localhost"]),
@@ -205,6 +227,42 @@ class UiApp:
         if not self.homepage:
             return Response(b"No homepage configured", status_code=404)
         return RedirectResponse(url="/%s/" % self.homepage)
+
+    async def _handleUiMediaExtra(self, filename: str) -> bytes:
+        """Found live: the legacy Plugin.PluginManager's own UiRequestPlugin
+        .actionUiMedia() appends a plugin's client media (plugins/<name>/
+        media/all.js or all.css) onto the end of /uimedia/all.js|all.css --
+        that's how e.g. the Sidebar plugin's drag-to-open-sidebar gesture
+        and console-log panel actually get into the page; this stack's
+        /uimedia mount just served the bare core file with no such
+        mechanism, so plugins with client-side media never loaded it.
+
+        Reuses the LEGACY plugin's media file directly rather than copying
+        it under P2P/plugins/ -- it's pure client JS/CSS with no gevent
+        dependency (same "verbatim real asset" precedent as UI_MEDIA_DIR
+        itself), and P2P/plugins/Sidebar has no media of its own yet.
+        Gated on the plugin actually being loaded (checked against
+        P2P.PluginManager's plugin_names, the same registry loadPlugins()
+        populates) so this doesn't silently inject a legacy plugin's JS
+        when that plugin was disabled or failed to load on the P2P side."""
+        from ..PluginManager import plugin_manager
+
+        extra = b""
+        for name in _UIMEDIA_EXTRA_PLUGINS:
+            if name not in plugin_manager.plugin_names:
+                continue
+            path = LEGACY_PLUGINS_DIR / name / "media" / filename
+            if path.is_file():
+                extra += b"\n" + path.read_bytes()
+        return extra
+
+    async def _handleUiMediaJs(self, request: Request) -> Response:
+        body = (UI_MEDIA_DIR / "all.js").read_bytes() + await self._handleUiMediaExtra("all.js")
+        return Response(body, media_type="application/javascript")
+
+    async def _handleUiMediaCss(self, request: Request) -> Response:
+        body = (UI_MEDIA_DIR / "all.css").read_bytes() + await self._handleUiMediaExtra("all.css")
+        return Response(body, media_type="text/css")
 
     async def _handleSite(self, request: Request) -> Response:
         address = request.path_params["address"]

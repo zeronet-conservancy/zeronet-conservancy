@@ -210,7 +210,7 @@ async def _cmdChannelJoin(session, params):
     return "ok"
 
 
-def formatSiteInfo(site):
+def formatSiteInfo(site, site_manager=None):
     """`settings`/`size_limit`/`next_size_limit`/`bad_files`/
     `started_task_num`/`tasks` were added after a real crash found live:
     the actual production wrapper.js (unmodified, from src/Ui/media/)
@@ -251,6 +251,10 @@ def formatSiteInfo(site):
         content.pop("signers_sign", None)
 
     size_limit_mb = (raw_content or {}).get("size_limit", 10)
+    if site_manager is not None:
+        override = site_manager.getSizeLimitOverride(site.address)
+        if override is not None:
+            size_limit_mb = override
 
     return {
         "address": site.address,
@@ -274,7 +278,7 @@ def formatSiteInfo(site):
 
 @command("siteInfo")
 async def _cmdSiteInfo(session, params):
-    return formatSiteInfo(_requireSite(session))
+    return formatSiteInfo(_requireSite(session), getattr(session.app, "site_manager", None))
 
 
 @command("fileGet")
@@ -475,7 +479,25 @@ async def _cmdSiteResume(session, params):
 async def _cmdSiteList(session, params):
     _requireAdmin(session)
     site_manager = _requireSiteManager(session)
-    return [formatSiteInfo(site) for site in site_manager.sites.values()]
+    return [formatSiteInfo(site, site_manager) for site in site_manager.sites.values()]
+
+
+@command("siteSetLimit")
+async def _cmdSiteSetLimit(session, params):
+    site = _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    size_limit = float(_param(params, "size_limit", 0))
+    await site_manager.setSizeLimitOverride(site.address, size_limit)
+    return "ok"
+
+
+@command("siteSetOwned")
+async def _cmdSiteSetOwned(session, params):
+    site = _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    owned = bool(_param(params, "owned", 0))
+    await site_manager.setOwn(site.address, owned)
+    return "ok"
 
 
 # -- Permissions --
@@ -600,14 +622,32 @@ def formatServerInfo(session):
     real version string. rev is always the same dummy integer either way
     (config.user_agent_rev), matching the original's own "some legacy
     code relies on this being an integer" comment -- not a simplification
-    here, that's genuinely what the original does too."""
+    here, that's genuinely what the original does too.
+
+    user_settings was missing entirely -- found live, clicking the real
+    ZeroHello's theme menu: Head.renderMenuTheme() unconditionally reads
+    Page.server_info.user_settings.use_system_theme, and with no
+    user_settings key at all that's "reading a property of undefined",
+    not just a missing sub-field. The original always includes this (both
+    the admin and non-admin branches use self.user.settings, unlike
+    version/plugins which differ by branch), so it's added unconditionally
+    here too. formatServerInfo() itself stays synchronous (broadcast()
+    calls it from a sync context), so this can't await UserManager.get()
+    -- instead it peeks at whatever user_manager.users already has
+    loaded, same "single user mode, first user wins" convention
+    UserManager.get() itself uses, just without the await. Empty {} if no
+    user has been created/loaded yet in this process at all, which is
+    honest (there genuinely are no settings yet), not a stand-in fake."""
     site = getattr(session, "site", None)
     is_admin = bool(site is not None and "ADMIN" in site.permissions)
+    user_manager = getattr(session.app, "user_manager", None)
+    user = next(iter(user_manager.users.values()), None) if user_manager else None
     info = {
         "platform": sys.platform,
         "version": config.version if is_admin else config.user_agent,
         "rev": config.user_agent_rev,
         "plugins": list(plugin_manager.plugin_names) if is_admin else [],
+        "user_settings": user.settings if user else {},
     }
     file_server = getattr(session.app, "file_server", None)
     if file_server is not None:

@@ -23,11 +23,26 @@ without an explicit consoleLogStreamRemove still cleans up correctly --
 closing the connection cancels session.nursery, which cancels every
 background task it holds, including any live log streams.
 
-Still NOT ported: the rest of plugins/Sidebar/SidebarPlugin.py (HTML
-sidebar tag rendering, peer info panels, owned-site/privatekey
-management, DB reload/rebuild) -- a much larger surface, out of scope
-for this pass, which is specifically about proving simple new-command
-plugins keep landing cleanly.
+sidebarGetHtmlTag (added later, see render.py's own module docstring for
+scope) is what actually turned out to be needed for the fixbutton's
+drag-to-open-sidebar gesture to render anything -- found live, driving
+the real ZeroHello dashboard, chasing a user report that the drag
+gesture ("pull down for log, pull left for sidebar") used to work.
+That investigation also found the real root cause of why the gesture's
+JS didn't even run: the legacy plugin-media-injection mechanism
+(UiRequestPlugin.actionUiMedia appending a plugin's own media/all.js
+onto /uimedia/all.js) was never ported at all -- see UiServer.py's
+_handleUiMediaExtra for that half of the fix.
+
+Still NOT ported: privatekey management (siteRecoverPrivatekey/
+userSetSitePrivatekey -- bip32 per-site key derivation, a separate
+concern from just displaying the sidebar), fileRules, certSelect,
+serverShowdirectory (opens a native OS file manager -- not meaningful
+for a headless server), and dbReload/dbRebuild as sidebar-triggerable
+actions (dbRebuild exists as a CLI-only action in P2P/actions.py, same
+"destructive, not a great fit for an unauthenticated-beyond-wrapper_key
+websocket command" reasoning P2P/Ui/commands.py's own module docstring
+already gives for it).
 """
 import logging
 import re
@@ -38,7 +53,9 @@ import trio
 from Config import config
 from util import SafeRe
 
-from P2P.Ui.commands import CommandError, _param, _requireAdmin, command
+from P2P.Ui.commands import CommandError, _param, _requireAdmin, _requireSite, _requireSiteManager, command, formatSiteInfo
+
+from .render import renderSidebarHtml
 
 
 @command("consoleLogRead")
@@ -148,3 +165,17 @@ async def _cmdConsoleLogStreamRemove(session, params):
         return {"error": "Unknown stream_id"}
     cancel_scope.cancel()
     return "ok"
+
+
+@command("sidebarGetHtmlTag")
+async def _cmdSidebarGetHtmlTag(session, params):
+    """Not admin-gated in the original either (any connected site can open
+    its own sidebar; individual actions inside it, like siteSetOwned/
+    siteSetLimit, are the ones gated on ADMIN) -- render.py itself hides
+    the own-site/controls sections when the connection isn't ADMIN."""
+    site = _requireSite(session)
+    site_manager = getattr(session.app, "site_manager", None)
+    is_admin = "ADMIN" in site.permissions
+    is_own = site_manager.isOwn(site.address) if site_manager else False
+    formatted_info = formatSiteInfo(site, site_manager)
+    return renderSidebarHtml(site, formatted_info, is_own, is_admin)

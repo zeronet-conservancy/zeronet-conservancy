@@ -147,6 +147,24 @@ class SiteManager:
                 address = resolved
         return self.sites.get(address)
 
+    def isOwn(self, address: str) -> bool:
+        return bool(self._site_settings.get(address, {}).get("own", False))
+
+    async def setOwn(self, address: str, own: bool) -> None:
+        self._site_settings.setdefault(address, {"added": int(time.time())})["own"] = own
+        await self.save()
+
+    def getSizeLimitOverride(self, address: str) -> float | None:
+        """An admin-set override of content.json's own declared size_limit
+        (the sidebar's "Set" button) -- kept here rather than on Site
+        itself, same "flat address->settings map" precedent as own/
+        permissions above; formatSiteInfo() prefers this when present."""
+        return self._site_settings.get(address, {}).get("size_limit_override")
+
+    async def setSizeLimitOverride(self, address: str, size_limit: float) -> None:
+        self._site_settings.setdefault(address, {"added": int(time.time())})["size_limit_override"] = size_limit
+        await self.save()
+
     def add(self, address: str, own: bool = False):
         """Returns the new (or already-existing) Site, or False if address
         isn't a valid site address."""
