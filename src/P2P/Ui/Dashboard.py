@@ -14,10 +14,12 @@ TEMPLATE_DIR = pathlib.Path(__file__).parent / "templates"
 _env = jinja2.Environment(loader=jinja2.FileSystemLoader(str(TEMPLATE_DIR)), autoescape=True)
 
 
-def renderDashboard(page: str, websocket_url: str) -> str:
-    template = _env.get_template("dashboard.html")
-    return template.render(
-        page=page,
-        websocket_url=websocket_url,
-        title="Configuration" if page == "config" else "Plugins",
-    )
+def renderDashboard(page: str, websocket_url: str, **context) -> str:
+    template_name = {
+        "config": "dashboard.html",
+        "plugins": "dashboard.html",
+        "files": "file_manager.html",
+        "console": "console.html",
+    }[page]
+    template = _env.get_template(template_name)
+    return template.render(page=page, websocket_url=websocket_url, **context)

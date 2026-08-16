@@ -37,6 +37,27 @@ class TestP2PUiServer:
         assert '"plugins"' in plugins_body
         assert "pluginList" in plugins_body
 
+    def testFileManagerAndConsolePagesExposeNativeBootstrap(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestToolsSite", pathlib.Path(root), permissions=["ADMIN"])
+                await site.storage.write("data/example.txt", b"example")
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        files = await client.get("%s/list/%s/data" % (base_url, site.address))
+                        console = await client.get("%s/Console" % base_url)
+                        return files.status_code, files.text, console.status_code, console.text
+
+        files_status, files_body, console_status, console_body = compat.run(scenario)
+        assert files_status == 200
+        assert "fileList" not in files_body  # directory page uses the narrower dirList API
+        assert "dirList" in files_body
+        assert console_status == 200
+        assert "consoleLogRead" in console_body
+        assert "consoleLogStream" in console_body
+
     def testServesRealSiteFileOverHttp(self):
         content = b'{"hello": "from a real site file served via Hypercorn"}'
 

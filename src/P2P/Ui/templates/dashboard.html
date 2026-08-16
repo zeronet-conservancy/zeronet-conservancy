@@ -26,7 +26,12 @@
 </head>
 <body>
 <main>
-  <nav><a href="/Config">Configuration</a><a href="/Plugins">Plugins</a></nav>
+  <nav>
+    <a href="/Config">Configuration</a>
+    <a href="/Plugins">Plugins</a>
+    {% if address %}<a href="/list/{{ address }}">Files</a>{% endif %}
+    <a href="/Console">Console</a>
+  </nav>
   <h1>{{ title }}</h1>
   <p id="status" class="muted">Loading…</p>
   <section id="content"></section>

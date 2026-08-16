@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Files - ZeroNet</title>
+  <style>
+    body { font: 15px/1.45 system-ui, sans-serif; margin: 2rem; background: #f5f5f5; color: #222; }
+    main { max-width: 1000px; margin: auto; background: white; padding: 1.5rem 2rem; border-radius: 8px; box-shadow: 0 2px 12px #0002; }
+    a { color: #1769aa; } table { width: 100%; border-collapse: collapse; } th, td { text-align: left; padding: .55rem; border-bottom: 1px solid #ddd; }
+    th { background: #eee; } .muted { color: #666; }
+  </style>
+</head>
+<body><main>
+  <nav><a href="/Config">Configuration</a> · <a href="/Plugins">Plugins</a> · <a href="/Console">Console</a></nav>
+  <h1>Files</h1><p id="path" class="muted"></p><p id="status" class="muted">Loading…</p><section id="content"></section>
+</main>
+<script>
+(() => {
+  const address = {{ address | tojson }};
+  const currentPath = {{ inner_path | tojson }};
+  const socket = new WebSocket({{ websocket_url | tojson }});
+  const status = document.getElementById("status"), content = document.getElementById("content");
+  let id = 1, pending = new Map();
+  function call(cmd, params = {}) { return new Promise((resolve, reject) => { const requestId = id++; pending.set(requestId, {resolve, reject}); socket.send(JSON.stringify({cmd, params, id: requestId})); }); }
+  function esc(value) { const node = document.createElement("span"); node.textContent = String(value ?? ""); return node.innerHTML; }
+  function join(name) { return currentPath ? `${currentPath}/${name}` : name; }
+  socket.onmessage = event => { const msg = JSON.parse(event.data), request = pending.get(msg.to); if (!request) return; pending.delete(msg.to); msg.error ? request.reject(new Error(msg.error)) : request.resolve(msg.result); };
+  socket.onopen = async () => {
+    document.getElementById("path").textContent = `/${address}/${currentPath}`;
+    try {
+      const entries = await call("dirList", {inner_path: currentPath, stats: true});
+      const parent = currentPath ? currentPath.split("/").slice(0, -1).join("/") : null;
+      const parentRow = parent === null ? "" : `<tr><td>↩ <a href="/list/${encodeURIComponent(address)}/${parent}">..</a></td><td>directory</td><td></td></tr>`;
+      const rows = entries.sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name)).map(entry => {
+        const path = join(entry.name).split("/").map(encodeURIComponent).join("/");
+        const href = entry.is_dir ? `/list/${encodeURIComponent(address)}/${path}` : `/${encodeURIComponent(address)}/${path}?wrapper=0`;
+        return `<tr><td>${entry.is_dir ? "📁" : "📄"} <a href="${href}">${esc(entry.name)}</a></td><td>${entry.is_dir ? "directory" : "file"}</td><td>${entry.is_dir ? "" : entry.size}</td></tr>`;
+      }).join("");
+      content.innerHTML = `<table><thead><tr><th>Name</th><th>Type</th><th>Size</th></tr></thead><tbody>${parentRow}${rows}</tbody></table>`;
+      status.textContent = `${entries.length} entries`;
+    } catch (error) { status.textContent = error.message; }
+  };
+  socket.onerror = () => { status.textContent = "Could not connect to the native UI websocket."; };
+})();
+</script>
+</body></html>

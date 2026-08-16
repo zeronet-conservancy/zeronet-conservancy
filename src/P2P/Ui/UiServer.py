@@ -215,6 +215,10 @@ class UiApp:
             Route("/Config/", self._handleConfig, methods=["GET"]),
             Route("/Plugins", self._handlePlugins, methods=["GET"]),
             Route("/Plugins/", self._handlePlugins, methods=["GET"]),
+            Route("/Console", self._handleConsole, methods=["GET"]),
+            Route("/Console/", self._handleConsole, methods=["GET"]),
+            Route("/list/{address}/{inner_path:path}", self._handleFileManager, methods=["GET"]),
+            Route("/list/{address}", self._handleFileManager, methods=["GET"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
             Route("/{address}", self._handleSite, methods=["GET"]),
             WebSocketRoute("/ZeroNet-Internal/Websocket", self._handleWebsocket),
@@ -262,13 +266,33 @@ class UiApp:
         websocket_url = "%s://%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (
             scheme, host, site.wrapper_key
         )
-        return Response(renderDashboard(page, websocket_url), media_type="text/html")
+        return Response(renderDashboard(page, websocket_url, address=site.address), media_type="text/html")
 
     async def _handleConfig(self, request: Request) -> Response:
         return await self._handleDashboard(request, "config")
 
     async def _handlePlugins(self, request: Request) -> Response:
         return await self._handleDashboard(request, "plugins")
+
+    async def _handleConsole(self, request: Request) -> Response:
+        return await self._handleDashboard(request, "console")
+
+    async def _handleFileManager(self, request: Request) -> Response:
+        address = request.path_params["address"]
+        site = self.sites.get(address)
+        if site is None and self.site_manager is not None:
+            site = await self.site_manager.get(address)
+        if site is None:
+            return Response(b"Unknown site", status_code=404)
+        scheme = "wss" if request.url.scheme == "https" else "ws"
+        host = request.headers.get("host") or request.url.netloc
+        websocket_url = "%s://%s/ZeroNet-Internal/Websocket?wrapper_key=%s" % (
+            scheme, host, site.wrapper_key
+        )
+        return Response(renderDashboard(
+            "files", websocket_url, address=site.address,
+            inner_path=request.path_params.get("inner_path", "").strip("/"),
+        ), media_type="text/html")
 
     async def _handleUiMediaExtra(self, filename: str) -> bytes:
         """Found live: the legacy Plugin.PluginManager's own UiRequestPlugin
