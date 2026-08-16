@@ -271,7 +271,7 @@ class TestP2PUiServer:
         assert status == 200
         assert body == "<h1>raw content</h1>"
 
-    def testWrapperNonceIsSingleUse(self):
+    def testWrapperNonceAllowsBrowserHistoryReplay(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:
                 site = Site("1TestNonceSite", pathlib.Path(root))
@@ -294,7 +294,7 @@ class TestP2PUiServer:
         status, body, reused_status = compat.run(scenario)
         assert status == 200
         assert body == "<h1>raw content</h1>"
-        assert reused_status == 403
+        assert reused_status == 200
 
     def testInvalidWrapperNonceRejected(self):
         async def scenario():

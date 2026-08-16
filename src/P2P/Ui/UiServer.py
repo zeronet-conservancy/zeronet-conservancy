@@ -206,9 +206,9 @@ class UiApp:
         self.on_missing_site = on_missing_site  # (address) -> Site | None, e.g. App.addSite; adds + wires a new site
         self.auto_download_timeout = auto_download_timeout
         self.allowed_ws_origins = set(allowed_ws_origins or ())
-        # nonce -> monotonic expiry.  The legacy server kept a single-use
-        # list; expiry bounds memory when a wrapper is opened but its iframe
-        # never loads.
+        # nonce -> monotonic expiry. Browser back/forward can replay the
+        # wrapper iframe URL, so a nonce must remain valid for its short
+        # lifetime rather than being consumed by the first raw file request.
         self.wrapper_nonces: dict[str, float] = {}
         self.sessions: set["UiSession"] = set()
 
@@ -427,7 +427,7 @@ class UiApp:
 
     def _consumeWrapperNonce(self, nonce: str) -> bool:
         now = time.monotonic()
-        expiry = self.wrapper_nonces.pop(nonce, None)
+        expiry = self.wrapper_nonces.get(nonce)
         self._pruneWrapperNonces(now)
         return expiry is not None and expiry >= now
 
