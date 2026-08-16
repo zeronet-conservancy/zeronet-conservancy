@@ -7,13 +7,71 @@ import httpx
 import trio_websocket
 
 from P2P.Ui.UiServer import UiServer
+from P2P.Ui.commands import formatSiteInfo
 from P2P.Site import Site
 from P2P.SiteManager import SiteManager
 from P2P.UserManager import UserManager
+from P2P.plugins.Sidebar.render import renderSidebarHtml
 from P2P import compat
 
 
 class TestP2PUiServer:
+    def testSidebarAndSiteInfoHaveDefinedLegacyFields(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                data_dir = pathlib.Path(root)
+                site_manager = SiteManager(data_dir)
+                site = site_manager.add("1TestSidebarFieldsSiteAAAAAAAA1")
+                site.permissions = ["ADMIN"]
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    user_manager=UserManager(data_dir), homepage=site.address,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0].replace("http://", "ws://")
+                    async with trio_websocket.open_websocket_url(
+                        base_url + "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site.wrapper_key
+                    ) as ws:
+                        async def call(cmd, msg_id):
+                            await ws.send_message(json.dumps({"cmd": cmd, "params": {}, "id": msg_id}))
+                            return json.loads(await ws.get_message())
+
+                        site_info = await call("siteInfo", 1)
+                        return site_info, renderSidebarHtml(
+                            site, formatSiteInfo(site, site_manager), False, True
+                        )
+
+        site_info, sidebar = compat.run(scenario)
+        assert site_info["result"]["settings"]["own"] is False
+        assert "undefined" not in sidebar
+        assert "None" not in sidebar
+
+    def testCertificateSelectorPushesNativeAccountDialog(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                data_dir = pathlib.Path(root)
+                site_manager = SiteManager(data_dir)
+                site = site_manager.add("1TestCertSelectorSiteAAAAAAAAAA1")
+                site.permissions = ["ADMIN"]
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    user_manager=UserManager(data_dir), homepage=site.address,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0].replace("http://", "ws://")
+                    async with trio_websocket.open_websocket_url(
+                        base_url + "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site.wrapper_key
+                    ) as ws:
+                        await ws.send_message(json.dumps({"cmd": "certSelect", "params": {}, "id": 1}))
+                        messages = [json.loads(await ws.get_message()) for _ in range(3)]
+                        return messages
+
+        messages = compat.run(scenario)
+        by_cmd = {message["cmd"]: message for message in messages}
+        assert "No certificate" in by_cmd["notification"]["params"][1]
+        assert "certSet" in by_cmd["injectScript"]["params"]
+        assert by_cmd["response"]["result"][0]["selected"] is True
+
     def testNativeDashboardMenuCommands(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:

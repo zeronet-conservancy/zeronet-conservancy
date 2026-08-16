@@ -515,8 +515,14 @@ class UiApp:
                             continue
                         response = await self._handleCommand(session, request)
                         session._send_channel.send_nowait(response)
-                except WebSocketDisconnect:
-                    pass
+                except WebSocketDisconnect as err:
+                    log.info(
+                        "UI websocket disconnected (site=%s, code=%s)",
+                        getattr(site, "address", None), getattr(err, "code", None),
+                    )
+                except Exception:
+                    log.exception("UI websocket session failed (site=%s)", getattr(site, "address", None))
+                    raise
                 finally:
                     # Tear down the write loop and any background push tasks
                     # a command spawned on session.nursery (e.g. Sidebar's
@@ -526,8 +532,18 @@ class UiApp:
             self.sessions.discard(session)
 
     async def _writeLoop(self, websocket: WebSocket, session: "UiSession") -> None:
-        async for message in session._recv_channel:
-            await websocket.send_text(json.dumps(message))
+        try:
+            async for message in session._recv_channel:
+                await websocket.send_text(json.dumps(message))
+        except WebSocketDisconnect as err:
+            log.info(
+                "UI websocket send failed (site=%s, code=%s)",
+                getattr(session.site, "address", None), getattr(err, "code", None),
+            )
+            raise
+        except Exception:
+            log.exception("UI websocket writer failed (site=%s)", getattr(session.site, "address", None))
+            raise
 
     def _resolveSiteByWrapperKey(self, wrapper_key: str):
         for site in self.sites.values():

@@ -52,12 +52,9 @@ original, so this stays cheap for the sizes this stack deals with.
 
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
-  - certSelect -- the original builds an HTML "select account" dialog and
-    round-trips it through the client via cmd("notification")/cmd(
-    "injectScript"); that's UI-rendering logic entangled with a specific
-    client-side notification widget, not a good match for a headless
-    command handler. certAdd/certSet/certList (the actual cert data
-    operations certSelect wraps) are ported.
+  - certSelect now uses the wrapper's existing notification/injected-script
+    channel to provide the account selector; provider registration links and
+    the full certificate trust-chain UI remain outside this native surface.
   - siteClone, siteFavourite/siteUnfavourite (needs a "dashboard" site
     concept not modeled here), announcerStats (the ALL-sites admin
     aggregation, as opposed to announcerInfo's per-site report -- the
@@ -88,6 +85,7 @@ paragraph describes P2P/actions.py's siteVerify, not a websocket command
 in the original too.)
 """
 import base64
+import html
 import os
 import stat
 import sys
@@ -95,6 +93,7 @@ from pathlib import Path
 
 from Config import config
 from Crypt import CryptBitcoin
+from util import SafeRe
 
 from ..ContentManager import _getDirname
 from ..PluginManager import plugin_manager
@@ -239,6 +238,11 @@ def formatSiteInfo(site, site_manager=None, user=None):
     per-site bad-file lists or expose a per-site WorkerManager instance
     the way the original's Site.worker_manager does.
 
+    Legacy UI state fields such as ``settings.own`` and ``settings.modified``
+    are included even when no account is available. ZeroMe/ZeroTalk read
+    these fields while refreshing their page state, and an omitted field is
+    exposed to the browser as ``undefined``.
+
     When a user is supplied, the legacy identity fields are included too:
     auth_address, cert_user_id, and privatekey (a boolean indicating that
     the server has the site's signing key). The private key itself is never
@@ -246,9 +250,11 @@ def formatSiteInfo(site, site_manager=None, user=None):
     """
     raw_content = site.content_manager.contents.get("content.json")
     size = 0
+    size_optional = 0
     if raw_content:
         size += sum(f.get("size", 0) for f in raw_content.get("files", {}).values())
-        size += sum(f.get("size", 0) for f in raw_content.get("files_optional", {}).values())
+        size_optional = sum(f.get("size", 0) for f in raw_content.get("files_optional", {}).values())
+        size += size_optional
 
     content = dict(raw_content) if raw_content else None
     if content:
@@ -269,6 +275,7 @@ def formatSiteInfo(site, site_manager=None, user=None):
         site_manager.getSiteSetting(site.address, "modified_files_notification", True)
         if site_manager is not None else True
     )
+    is_own = site_manager.isOwn(site.address) if site_manager is not None else False
     info = {
         "address": site.address,
         "address_hash": site.address_sha1.hex(),
@@ -278,6 +285,9 @@ def formatSiteInfo(site, site_manager=None, user=None):
         "content": content,
         "settings": {
             "size": size,
+            "size_optional": size_optional,
+            "own": is_own,
+            "modified": (raw_content or {}).get("modified", 0),
             "permissions": list(site.permissions),
             "modified_files_notification": modified_files_notification,
         },
@@ -482,6 +492,65 @@ async def _cmdCertList(session, params):
             "selected": cert["auth_address"] == auth_address,
         })
     return back
+
+
+@command("certSelect")
+async def _cmdCertSelect(session, params):
+    """Show the existing wrapper's account selector for ZeroMe/ZeroTalk.
+
+    The legacy implementation rendered a notification and injected a click
+    handler. Native websocket pushes provide the same two primitives, while
+    certSet remains the authoritative, admin-gated mutation.
+    """
+    site = _requireSite(session)
+    user = await _requireUser(session)
+    accepted_domains = _param(params, "accepted_domains", 0, []) or []
+    accepted_pattern = _param(params, "accepted_pattern", 2)
+    accept_any = _param(params, "accept_any", 1, False)
+    if not accepted_domains and not accepted_pattern:
+        accept_any = True
+
+    site_data = user.getSiteData(site.address)
+    auth_address = site_data.get("auth_address")
+    active = site_data.get("cert", "")
+    accounts = [("", "No certificate", active == "")]
+    for domain, cert in user.certs.items():
+        allowed = accept_any or domain in accepted_domains or (
+            accepted_pattern and SafeRe.match(accepted_pattern, domain)
+        )
+        if not allowed:
+            continue
+        if cert.get("auth_address") != auth_address:
+            continue
+        accounts.append((domain, "%s@%s" % (cert.get("auth_user_name", ""), domain), domain == active))
+
+    body = "<span style='padding-bottom:5px;display:inline-block'>Select account you want to use in this site:</span>"
+    for domain, title, selected in accounts:
+        css = " active" if selected else ""
+        body += (
+            "<a href='#Select+account' data-domain='%s' class='select select-close cert%s'>"
+            "<b>%s</b>%s</a>"
+        ) % (
+            html.escape(domain, quote=True), css, html.escape(title),
+            " <small>(currently selected)</small>" if selected else "",
+        )
+
+    session.push("notification", ["ask", body])
+    session.push("injectScript", """
+      (function() {
+        document.querySelectorAll('.notification .select.cert').forEach(function(item) {
+          item.addEventListener('click', function(event) {
+            event.preventDefault();
+            var domain = item.getAttribute('data-domain') || '';
+            zeroframe.cmd('certSet', {domain: domain}, function() {
+              var notification = item.closest('.notification');
+              if (notification) notification.remove();
+            });
+          });
+        });
+      })();
+    """)
+    return [{"domain": domain, "title": title, "selected": selected} for domain, title, selected in accounts]
 
 
 # -- Site management (admin, via SiteManager) --
