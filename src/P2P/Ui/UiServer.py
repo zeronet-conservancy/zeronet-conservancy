@@ -104,6 +104,7 @@ from urllib.parse import urlsplit
 
 import trio
 from Crypt import CryptHash
+from Translate import translate
 from hypercorn.config import Config
 from hypercorn.trio import serve
 from starlette.applications import Starlette
@@ -648,7 +649,61 @@ class UiApp:
         except AccessError:
             return Response(b"Invalid path", status_code=403)
 
+        data = await self._maybeTranslate(site, target_path, data)
+
         return Response(data, media_type=_guessContentType(target_path))
+
+    async def _maybeTranslate(self, site, inner_path: str, data: bytes) -> bytes:
+        """Real port of plugins/TranslateSite/TranslateSitePlugin.py's own
+        actionSiteMedia()/actionPatchFile(). Reuses src/Translate/
+        Translate.py directly rather than reimplementing it -- found,
+        while scoping this, to have zero gevent dependency at all: pure
+        regex-based string substitution driven by config.language, and
+        `from Translate import translate` is already the exact
+        module-level singleton the original itself imports and shares
+        across every site request, not a new instance to keep in sync.
+
+        Every .html response gets the harmless part unconditionally, even
+        when config.language is "en" (the default): translateData()'s own
+        html branch replaces the literal token "lang={lang}" in the
+        source with the real configured language, the same GET-parameter
+        cache-buster trick the original always applies so a browser
+        doesn't keep serving a stale non-English all.js after a language
+        switch. A .js response only gets touched at all when
+        config.language isn't English, matching the original's own
+        `elif extension == "js" and translate.lang != "en"` condition
+        exactly -- no reason to touch every JS response by default.
+
+        Real per-string translation (not just the lang= tag) only kicks
+        in when the site itself opts in: content.json's own "translate"
+        list names inner_path AND the site actually has (i.e. has
+        downloaded) its own data/languages/<lang>.json. Neither existing
+        without the other means "not translatable this way" -- same
+        original semantics -- and this stays honest about what's
+        genuinely available locally rather than guessing."""
+        lower = inner_path.lower()
+        if lower.endswith(".html"):
+            mode = "html"
+        elif lower.endswith(".js") and translate.lang != "en":
+            mode = "js"
+        else:
+            return data
+
+        content = site.content_manager.contents.get("content.json") or {}
+        lang_file = "languages/%s.json" % translate.lang
+        eligible = site.storage.isFile(lang_file) and inner_path in (content.get("translate") or [])
+
+        text = data.decode("utf8", errors="replace")
+        if not eligible:
+            if mode == "html":
+                text = text.replace("lang={lang}", "lang=%s" % translate.lang)
+            return text.encode("utf8")
+
+        try:
+            lang_table = await site.storage.loadJson(lang_file)
+        except Exception:
+            return data
+        return translate.translateData(text, lang_table, mode).encode("utf8")
 
     def _issueWrapperNonce(self) -> str:
         nonce = CryptHash.random()
