@@ -42,7 +42,12 @@ jobs:
     - name: Test
       run: |
         mkdir -p log
-        python3 -m pytest src/Test --cov=src --cov-config src/Test/coverage.ini
+        # TestSiteDownload exercises the legacy gevent site lifecycle and
+        # leaves process-global state behind for later parametrized cases.
+        # Run it in a fresh pytest process so it remains covered without
+        # contaminating the rest of the suite.
+        python3 -m pytest src/Test/TestSiteDownload.py
+        python3 -m pytest src/Test --ignore=src/Test/TestSiteDownload.py --cov=src --cov-config src/Test/coverage.ini
         export ZERONET_LOG_DIR="log/CryptMessage"; python3 -m pytest -x plugins/CryptMessage/Test
         export ZERONET_LOG_DIR="log/Bigfile"; python3 -m pytest -x plugins/Bigfile/Test
         export ZERONET_LOG_DIR="log/AnnounceLocal"; python3 -m pytest -x plugins/AnnounceLocal/Test
