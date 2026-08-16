@@ -106,9 +106,10 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           appdir="$PWD/dist/appimage/ZeroNet.AppDir"
-          mkdir -p "$appdir/usr/bin"
-          cp -a dist/ZeroNet "$appdir/usr/bin/"
-          cp packaging/linux/org.zeronetconservancy.ZeroNet.desktop "$appdir/"
+            mkdir -p "$appdir/usr/bin"
+            cp -a dist/ZeroNet "$appdir/usr/bin/"
+            cp packaging/linux/org.zeronetconservancy.ZeroNet.desktop "$appdir/"
+            cp src/Ui/media/img/logo.png "$appdir/zeronet.png"
           cat > "$appdir/AppRun" <<'EOF'
           #!/bin/sh
           HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
