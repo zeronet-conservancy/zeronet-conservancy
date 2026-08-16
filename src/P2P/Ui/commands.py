@@ -58,6 +58,18 @@ despite older notes in this file once listing them as gaps -- checked
 against the actual @command(...) registrations, not just this docstring,
 before writing this.
 
+A later pass adds the Multiuser plugin's own account-switching/master-seed
+commands (userShowMasterSeed, userLogout, userSelectForm, userSet,
+userLoginForm, userLogin) -- the "log into a DIFFERENT existing account"
+half of multiuser support, on top of the account-isolation primitive
+UserManager.multiuser already provided. Restructured the same way
+certSelect/corsPermission already were: the original drives its account
+picker and login prompt via a server-held response continuation
+(self.cmd(..., callback)), which this stack's fire-and-forget
+UiSession.push() has no equivalent of, so the client-side injected script
+calls the follow-up command (userSet/userLogin) directly instead of
+round-tripping through a callback the server would have to keep state for.
+
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
   - announcerStats (the ALL-sites admin aggregation, as opposed to
@@ -1286,6 +1298,174 @@ async def _cmdUserSetGlobalSettings(session, params):
     return "ok"
 
 
+@command("userShowMasterSeed")
+async def _cmdUserShowMasterSeed(session, params):
+    """Port of the Multiuser plugin's actionUserShowMasterSeed(): reveal the
+    connected user's master seed via the same notification channel
+    certSelect already uses. Not multiuser-specific -- a single-user
+    install has exactly as much need to back up its one identity's seed,
+    so this is available in both modes (unlike userSet/userSelectForm/
+    userLogin below, which are genuinely about switching BETWEEN accounts
+    and only make sense once UserManager.multiuser is on)."""
+    _requireAdmin(session)
+    user = await _requireUser(session)
+    message = (
+        "<b style='padding-top:5px;display:inline-block'>Your unique private key:</b>"
+        "<div style='font-size:84%; background-color:#FFF0AD; padding:5px 8px; margin:9px 0px'>"
+        + html.escape(user.master_seed) +
+        "</div><small>(Save it, you can access your account using this information)</small>"
+    )
+    session.push("notification", ["info", message])
+    return "ok"
+
+
+@command("userLogout")
+async def _cmdUserLogout(session, params):
+    """Port of actionUserLogout(): clears the master_address cookie client-
+    side and, in multiuser mode, drops the user from UserManager so the
+    next page load mints (or the next userLogin/userSet picks) a different
+    identity. In single-user mode UserManager.get() always returns the
+    first loaded user regardless of cookie, so deleting it here would just
+    make _requireUser() silently recreate an empty one on the next command
+    -- clearing the cookie is still meaningful (drives the client back to
+    a logged-out UI state) even though there's nothing to delete."""
+    _requireAdmin(session)
+    user_manager = getattr(session.app, "user_manager", None)
+    if user_manager is None:
+        raise CommandError("This server has no user manager configured")
+    user = await _requireUser(session)
+    message = (
+        "<b>You have been logged out.</b> "
+        "<a href='#Login' class='button' id='button_notification'>Login to another account</a>"
+    )
+    session.push("notification", ["done", message, 1000000])
+    session.push("injectScript", """
+      document.cookie = 'master_address=; expires=Thu, 01 Jan 1970 00:00:00 UTC; path=/';
+      var button = document.getElementById('button_notification');
+      if (button) button.addEventListener('click', function() { zeroframe.cmd('userLoginForm', []); });
+    """)
+    if user_manager.multiuser and user.master_address in user_manager.users:
+        del user_manager.users[user.master_address]
+    return "ok"
+
+
+@command("userSelectForm")
+async def _cmdUserSelectForm(session, params):
+    """Port of actionUserSelectForm(): list every account this server
+    already knows (from users.json) so the connected browser can switch to
+    one of them. The original drives this via a server-side response
+    continuation (self.cmd(..., callback)); this stack's session.push() is
+    fire-and-forget (see certSelect's own docstring above), so the click
+    handler calls userSet directly client-side instead of round-tripping
+    through a server-held callback -- same restructuring certSelect and
+    corsPermission already used for the same reason."""
+    _requireAdmin(session)
+    user_manager = getattr(session.app, "user_manager", None)
+    if user_manager is None or not user_manager.multiuser:
+        raise CommandError("Only allowed in multiuser mode")
+    user = await _requireUser(session)
+    users = await user_manager.list()
+
+    body = "<span style='padding-bottom:5px;display:inline-block'>Change account:</span>"
+    for master_address, other in users.items():
+        is_active = master_address == user.master_address
+        if other.certs:
+            first_cert = next(iter(other.certs.keys()))
+            title = "%s@%s" % (other.certs[first_cert].get("auth_user_name", ""), first_cert)
+        else:
+            title = master_address
+            if len(other.sites) < 2 and not is_active:
+                continue  # Skip ad-hoc, barely-used accounts -- same filter as the original
+        css = " active" if is_active else ""
+        body += "<a href='#Select+user' data-master-address='%s' class='select select-close user%s'>%s</a>" % (
+            html.escape(master_address, quote=True), css, html.escape(title),
+        )
+
+    session.push("notification", ["ask", body])
+    session.push("injectScript", """
+      (function() {
+        document.querySelectorAll('.notification .select.user').forEach(function(item) {
+          item.addEventListener('click', function(event) {
+            event.preventDefault();
+            var masterAddress = item.getAttribute('data-master-address') || '';
+            zeroframe.cmd('userSet', {master_address: masterAddress}, function() {});
+          });
+        });
+      })();
+    """)
+    return "ok"
+
+
+@command("userSet")
+async def _cmdUserSet(session, params):
+    """Port of actionUserSet(): switch this browser's cookie to a DIFFERENT
+    account this server already knows, then reload. Admin-gated and
+    multiuser-only, same reasoning as userSelectForm above."""
+    _requireAdmin(session)
+    user_manager = getattr(session.app, "user_manager", None)
+    if user_manager is None or not user_manager.multiuser:
+        raise CommandError("Only allowed in multiuser mode")
+    master_address = _param(params, "master_address", 0)
+    user = await user_manager.get(master_address)
+    if user is None:
+        raise CommandError("No user found")
+    session.push("notification", ["done", "Successful login, reloading page..."])
+    session.push("injectScript", (
+        "document.cookie = 'master_address=%s;path=/;max-age=2592000;';"
+        "zeroframe.cmd('wrapperReload', ['login=done']);"
+    ) % user.master_address)
+    return "ok"
+
+
+@command("userLoginForm")
+async def _cmdUserLoginForm(session, params):
+    """Port of actionUserLoginForm(): prompt for a master seed to log into
+    an account this server may never have seen before. The original shows
+    its prompt via a server-continuation self.cmd("prompt", ..., callback);
+    same fire-and-forget constraint as userSelectForm above, so this uses a
+    plain client-side window.prompt() and hands the typed seed to the new
+    userLogin command instead. Deliberately NOT admin-gated, matching the
+    original -- logging in is how a connection acquires an identity in the
+    first place, so it can't require the permission that identity grants."""
+    session.push("injectScript", """
+      (function() {
+        var seed = window.prompt('Login\\nYour private key:');
+        if (seed) zeroframe.cmd('userLogin', {master_seed: seed}, function() {});
+      })();
+    """)
+    return "ok"
+
+
+@command("userLogin")
+async def _cmdUserLogin(session, params):
+    """Port of responseUserLogin(): resolve (or, in multiuser mode, create)
+    the account for a submitted master seed, then set the cookie and
+    reload. Same access as userLoginForm -- not admin-gated."""
+    user_manager = getattr(session.app, "user_manager", None)
+    if user_manager is None:
+        raise CommandError("This server has no user manager configured")
+    master_seed = _param(params, "master_seed", 0)
+    if not master_seed:
+        raise CommandError("No master seed given")
+    try:
+        master_address = CryptBitcoin.privatekeyToAddress(master_seed)
+    except Exception:
+        master_address = None
+    if not master_address:
+        session.push("notification", ["error", "Error: Invalid master seed"])
+        raise CommandError("Invalid master seed")
+
+    user = await user_manager.get(master_address) if user_manager.multiuser else None
+    if user is None:
+        user = user_manager.create(master_seed=master_seed)
+    session.push("notification", ["done", "Successful login, reloading page..."])
+    session.push("injectScript", (
+        "document.cookie = 'master_address=%s;path=/;max-age=2592000;';"
+        "zeroframe.cmd('wrapperReload', ['login=done']);"
+    ) % user.master_address)
+    return "ok"
+
+
 @command("serverShowdirectory")
 async def _cmdServerShowdirectory(session, params):
     """Return a directory for the native UI to display/copy.
@@ -1356,6 +1536,16 @@ def formatServerInfo(session):
     code relies on this being an integer" comment -- not a simplification
     here, that's genuinely what the original does too.
 
+    multiuser/master_address are now included too, matching the original
+    Multiuser plugin's own formatServerInfo() override -- "multiuser": True
+    whenever UserManager.multiuser is set, "master_address" additionally
+    when the connection is ADMIN (so a site can't fingerprint another
+    account's address just by asking). Not ported: "multiuser_admin", the
+    original's distinction between the proxy operator's own local accounts
+    (config.private_dir/users.json at plugin-load time) and a stranger's --
+    this stack has no equivalent of the --multiuser-local operator-owned-
+    accounts concept, only a flat --multiuser on/off.
+
     user_settings was missing entirely -- found live, clicking the real
     ZeroHello's theme menu: Head.renderMenuTheme() unconditionally reads
     Page.server_info.user_settings.use_system_theme, and with no
@@ -1373,7 +1563,10 @@ def formatServerInfo(session):
     site = getattr(session, "site", None)
     is_admin = bool(site is not None and "ADMIN" in site.permissions)
     user_manager = getattr(session.app, "user_manager", None)
-    user = next(iter(user_manager.users.values()), None) if user_manager else None
+    if user_manager is not None and user_manager.multiuser and session.master_address:
+        user = user_manager.users.get(session.master_address)
+    else:
+        user = next(iter(user_manager.users.values()), None) if user_manager else None
     info = {
         "platform": sys.platform,
         "version": config.version if is_admin else config.user_agent,
@@ -1381,6 +1574,10 @@ def formatServerInfo(session):
         "plugins": list(plugin_manager.plugin_names) if is_admin else [],
         "user_settings": user.settings if user else {},
     }
+    if user_manager is not None and user_manager.multiuser:
+        info["multiuser"] = True
+        if is_admin and user is not None:
+            info["master_address"] = user.master_address
     file_server = getattr(session.app, "file_server", None)
     if file_server is not None:
         info["peer_id"] = file_server.host.peer_id.to_base58()

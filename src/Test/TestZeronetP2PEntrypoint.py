@@ -88,10 +88,10 @@ class TestZeronetP2PDefaultFlip:
     runs the trio-native stack (Config.py's --p2p defaults to True as of
     this change), and --no-p2p is the escape hatch back to the exact
     previous default behavior. See Actions.mainP2P()'s own docstring for
-    what --no-p2p is still needed for (repo-root plugins/, Multiuser's
-    account-switching UI -- UiPassword, Tor SOCKS5 dial-out, and
-    Multiuser's own core account isolation, all once listed here too,
-    are closed now)."""
+    what --no-p2p is still needed for (repo-root plugins/ -- UiPassword,
+    Tor SOCKS5 dial-out, Multiuser's core account isolation, and
+    Multiuser's account-switching/master-seed UI, all once listed here
+    too, are closed now)."""
 
     def testMainWithNoFlagsDefaultsToP2P(self):
         with tempfile.TemporaryDirectory() as d:

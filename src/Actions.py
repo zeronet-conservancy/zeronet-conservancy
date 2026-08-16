@@ -95,11 +95,12 @@ class Actions:
         docstring), and Multiuser's core account isolation (--multiuser,
         each browser cookie-identified to its own persisted account, see
         P2P.UserManager's own docstring) are all closed now -- stale gaps
-        corrected here, not still open. Multiuser's account-switching/
-        master-seed-backup UI (letting one browser log into a DIFFERENT
-        existing account, or view/export its own seed) is still not
-        ported -- a real, separate gap from the account-isolation
-        primitive itself.
+        corrected here, not still open. Multiuser's account-switching and
+        master-seed backup/reveal UI (userSet/userSelectForm/userLogin/
+        userLoginForm/userLogout/userShowMasterSeed, see P2P/Ui/commands.py)
+        is also closed now -- a browser can log into a DIFFERENT existing
+        account, or view/export its own seed, not just the one its cookie
+        already points at.
         --no-p2p remains a full, unchanged escape hatch to the exact
         previous default behavior -- nothing about the legacy path
         itself changed, only which one runs when no flag is given.
