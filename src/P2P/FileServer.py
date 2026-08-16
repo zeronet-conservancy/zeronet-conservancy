@@ -26,10 +26,11 @@ from .Bigfile import piece_count
 class FileServer:
     def __init__(self, data_dir: pathlib.Path, tcp_port: int = 0, ws_port: int | None = 0,
                  enable_relay_hop: bool = False, enable_relay_client: bool = False,
-                 enable_relay_discovery: bool = False):
+                 enable_relay_discovery: bool = False, tor_socks_proxy: tuple[str, int] | None = None):
         self.host = Host(
             data_dir, tcp_port=tcp_port, ws_port=ws_port, enable_relay_hop=enable_relay_hop,
             enable_relay_client=enable_relay_client, enable_relay_discovery=enable_relay_discovery,
+            tor_socks_proxy=tor_socks_proxy,
         )
         self.connection_policy = ConnectionPolicy(self.host)
         self.router = ProtocolRouter(self.host)

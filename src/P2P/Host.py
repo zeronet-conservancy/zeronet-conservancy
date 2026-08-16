@@ -10,6 +10,7 @@ from libp2p.tools.anyio_service import background_trio_service
 from multiaddr import Multiaddr
 
 from . import identity
+from .Tor import TorSocksTransport
 
 
 class Host:
@@ -59,7 +60,7 @@ class Host:
 
     def __init__(self, data_dir: pathlib.Path, tcp_port: int = 0, ws_port: int | None = 0,
                  enable_relay_hop: bool = False, enable_relay_client: bool = False,
-                 enable_relay_discovery: bool = False):
+                 enable_relay_discovery: bool = False, tor_socks_proxy: tuple[str, int] | None = None):
         if enable_relay_discovery and not enable_relay_client:
             raise ValueError("enable_relay_discovery requires enable_relay_client")
         self.key_pair = identity.load_or_create(data_dir)
@@ -68,7 +69,12 @@ class Host:
         self._enable_relay_hop = enable_relay_hop
         self._enable_relay_client = enable_relay_client
         self._enable_relay_discovery = enable_relay_discovery
+        self._tor_socks_proxy = tor_socks_proxy
         self._host = new_host(key_pair=self.key_pair, enable_websocket=ws_port is not None)
+        if tor_socks_proxy is not None:
+            self._host.get_network().transport_manager.add_transport(
+                TorSocksTransport(*tor_socks_proxy)
+            )
         self.peer_id = self._host.get_id()
         self.relay_protocol: CircuitV2Protocol | None = None
         self.relay_transport: CircuitV2Transport | None = None

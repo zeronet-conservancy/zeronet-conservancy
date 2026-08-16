@@ -65,8 +65,84 @@ import random
 import re
 
 import trio
+from multiaddr import Multiaddr
+from libp2p.io.trio import TrioTCPStream
+from libp2p.network.connection.raw_connection import RawConnection
+from libp2p.transport.exceptions import OpenConnectionError
+from libp2p.transport.tcp.tcp import TCP
 
 _FINAL_LINE_RE = re.compile(r"\d{3} [^\r\n]*\r\n$")  # "250 OK", "515 Authentication failed", etc. -- not "250-..." continuations
+
+
+class TorSocksTransport(TCP):
+    """libp2p transport for /onion and /onion3 addresses via SOCKS5.
+
+    The destination is sent as a domain name so Tor resolves the onion
+    address inside the proxy.  Normal IP/DNS TCP addresses remain owned by
+    libp2p's regular TCP transport.
+    """
+
+    def __init__(self, proxy_ip: str = "127.0.0.1", proxy_port: int = 9050):
+        super().__init__()
+        self.proxy_ip = proxy_ip
+        self.proxy_port = proxy_port
+
+    def can_dial(self, maddr: Multiaddr) -> bool:
+        return any(protocol.name in {"onion", "onion3"} for protocol in maddr.protocols())
+
+    def can_listen(self, maddr: Multiaddr) -> bool:
+        return False
+
+    def protocols(self) -> list[str]:
+        return ["onion", "onion3"]
+
+    async def dial(self, maddr: Multiaddr):
+        protocols = {protocol.name for protocol in maddr.protocols()}
+        protocol = "onion3" if "onion3" in protocols else "onion"
+        target = maddr.value_for_protocol(protocol)
+        if not target or ":" not in target:
+            raise OpenConnectionError("Invalid Tor onion multiaddr: %s" % maddr)
+        target_host, target_port = target.rsplit(":", 1)
+        try:
+            target_port = int(target_port)
+            if not 1 <= target_port <= 65535:
+                raise ValueError
+        except ValueError as err:
+            raise OpenConnectionError("Invalid Tor onion port: %s" % target) from err
+        if len(target_host) > 255:
+            raise OpenConnectionError("Invalid Tor onion hostname: %s" % target_host)
+
+        try:
+            stream = await trio.open_tcp_stream(self.proxy_ip, self.proxy_port)
+            await stream.send_all(b"\x05\x01\x00")  # SOCKS5, one method, no auth
+            greeting = await self._receive_exactly(stream, 2)
+            if greeting != b"\x05\x00":
+                raise OpenConnectionError("Tor SOCKS5 proxy requires unsupported authentication")
+            host_bytes = target_host.encode("idna")
+            request = b"\x05\x01\x00\x03" + bytes([len(host_bytes)]) + host_bytes + target_port.to_bytes(2, "big")
+            await stream.send_all(request)
+            header = await self._receive_exactly(stream, 4)
+            if header[0] != 5 or header[1] != 0:
+                raise OpenConnectionError("Tor SOCKS5 CONNECT failed (reply=%d)" % header[1])
+            address_length = {1: 4, 4: 16}.get(header[3])
+            if address_length is None:
+                address_length = (await self._receive_exactly(stream, 1))[0]
+            await self._receive_exactly(stream, address_length + 2)
+            return RawConnection(TrioTCPStream(stream), True)
+        except OpenConnectionError:
+            raise
+        except (OSError, trio.TooSlowError, trio.BrokenResourceError, trio.ClosedResourceError) as err:
+            raise OpenConnectionError("Tor SOCKS5 connection failed: %s" % err) from err
+
+    @staticmethod
+    async def _receive_exactly(stream: trio.SocketStream, count: int) -> bytes:
+        data = bytearray()
+        while len(data) < count:
+            chunk = await stream.receive_some(count - len(data))
+            if not chunk:
+                raise OpenConnectionError("Tor SOCKS5 proxy closed the connection")
+            data.extend(chunk)
+        return bytes(data)
 
 
 class TorManager:

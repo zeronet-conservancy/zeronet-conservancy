@@ -77,6 +77,7 @@ class App:
         enable_tor: bool = False,
         tor_control_ip: str = "127.0.0.1",
         tor_control_port: int = 9051,
+        tor_socks_port: int = 9050,
         tor_password: str | None = None,
         homepage: str | None = None,
         auto_download_timeout: float = 15.0,
@@ -89,11 +90,13 @@ class App:
         self._tor_control_ip = tor_control_ip
         self._tor_control_port = tor_control_port
         self._tor_password = tor_password
+        self._tor_socks_port = tor_socks_port
         self.tor_manager: TorManager | None = None
 
         p2p_dir = data_dir / ".p2p"
         p2p_dir.mkdir(parents=True, exist_ok=True)
-        self.file_server = FileServer(p2p_dir, tcp_port=tcp_port, ws_port=ws_port)
+        tor_proxy = (tor_control_ip, tor_socks_port) if enable_tor else None
+        self.file_server = FileServer(p2p_dir, tcp_port=tcp_port, ws_port=ws_port, tor_socks_proxy=tor_proxy)
         self.site_manager = SiteManager(data_dir)
         self.user_manager = UserManager(data_dir)
         # UiServer shares SiteManager's own sites dict by reference, so
@@ -239,6 +242,7 @@ def main() -> None:
     parser.add_argument("--no-dht", action="store_true")
     parser.add_argument("--tor", action="store_true", help="Connect to a local Tor control port and run an onion service")
     parser.add_argument("--tor-control-port", type=int, default=9051)
+    parser.add_argument("--tor-socks-port", type=int, default=9050)
     parser.add_argument("--tor-password", default=None)
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()

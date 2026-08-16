@@ -9,7 +9,9 @@ import tempfile
 
 import trio
 
-from P2P.Tor import TorManager
+from P2P.Tor import TorManager, TorSocksTransport
+from multiaddr import Multiaddr
+from libp2p.network.connection.raw_connection import RawConnection
 from P2P import compat
 
 
@@ -76,6 +78,42 @@ async def _startFakeServer(nursery, **server_kwargs):
 
 
 class TestP2PTor:
+    def testSocksTransportConnectsOnionByHostname(self):
+        async def scenario():
+            async def proxy(stream):
+                async def receive_exactly(count):
+                    data = bytearray()
+                    while len(data) < count:
+                        data.extend(await stream.receive_some(count - len(data)))
+                    return bytes(data)
+
+                assert await receive_exactly(3) == b"\x05\x01\x00"
+                await stream.send_all(b"\x05\x00")
+                request = await receive_exactly(5)
+                assert request[:4] == b"\x05\x01\x00\x03"
+                host_length = request[4]
+                request += await receive_exactly(host_length + 2)
+                assert int.from_bytes(request[5 + host_length:7 + host_length], "big") == 15441
+                await stream.send_all(b"\x05\x00\x00\x01\x7f\x00\x00\x01\x3c\x39")
+                assert await stream.receive_some(4) == b"ping"
+                await stream.send_all(b"pong")
+                await stream.aclose()
+
+            listeners = await trio.open_tcp_listeners(0, host="127.0.0.1")
+            async with trio.open_nursery() as nursery:
+                nursery.start_soon(trio.serve_listeners, proxy, listeners)
+                port = listeners[0].socket.getsockname()[1]
+                transport = TorSocksTransport(proxy_port=port)
+                conn = await transport.dial(Multiaddr("/onion/abcdefghijklmnop.onion:15441"))
+                assert isinstance(conn, RawConnection)
+                await conn.write(b"ping")
+                result = await conn.read(4)
+                await conn.close()
+                nursery.cancel_scope.cancel()
+                return result
+
+        assert compat.run(scenario) == b"pong"
+
     def testConnectWithNoCookieOrPassword(self):
         async def scenario():
             async with trio.open_nursery() as nursery:
