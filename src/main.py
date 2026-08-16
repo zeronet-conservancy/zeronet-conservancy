@@ -82,7 +82,12 @@ def importBundle(bundle):
 def init_dirs():
     data_dir = Path(config.data_dir)
     private_dir = Path(config.private_dir)
+    # The native P2P stack has its own site/data lifecycle and does not use
+    # the legacy bootstrap bundle. Skipping this request is also important
+    # because it would import requests after gevent has patched SSL, which
+    # recurses on current Python versions in native --p2p subprocesses.
     need_bootstrap = (config.bootstrap
+                      and not config.p2p
                       and not config.offline
                       and (not data_dir.is_dir() or not (private_dir / 'sites.json').is_file()))
 
