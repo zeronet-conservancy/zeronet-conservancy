@@ -217,6 +217,59 @@ class TestP2PUiCommandsSiteSignPublish:
 
 
 class TestP2PUiCommandsCerts:
+    def testProviderCreateBuildsSignedSite(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                admin_address = "1TestProviderAdminAAAAAAAAAAAA"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+                site_manager.loaded = True
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    user_manager=user_manager,
+                )
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        reply = await _call(ws, "providerCreate", {"domain": "localid.bit"}, msg_id=1)
+                provider = site_manager.sites[reply["result"]["address"]]
+                content = await provider.storage.loadJson("content.json")
+                manifest = await provider.storage.loadJson("provider.json")
+                return reply, provider, content, manifest
+
+        reply, provider, content, manifest = compat.run(scenario)
+        assert reply["result"]["announced"] is False
+        assert reply["result"]["address"] == provider.address
+        assert manifest["domain"] == "localid.bit"
+        assert manifest["provider_address"] == provider.address
+        assert content["provider_domain"] == "localid.bit"
+        assert content["signs"]
+
+    def testCertIssueLocalSignsAndSelectsCertificate(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                address = "1TestLocalIssuerSiteAAAAAAAAAAAA"
+                site = Site(address, data_dir / address)
+                site.permissions = ["ADMIN"]
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        issued = await _call(ws, "certIssueLocal", {
+                            "domain": "zeronet.local", "auth_type": "web", "auth_user_name": "alice",
+                        }, msg_id=1)
+                        info = await _call(ws, "siteInfo", msg_id=2)
+                        return issued, info, user.settings["local_provider_address"]
+
+        issued, info, provider_address = compat.run(scenario)
+        assert issued["result"]["provider_address"] == provider_address
+        assert info["result"]["cert_user_id"] == "alice@zeronet.local"
+
     def testCertAddThenCertListShowsSelected(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:
@@ -236,10 +289,9 @@ class TestP2PUiCommandsCerts:
                 server = UiServer(sites={address: site}, user_manager=user_manager)
                 async with server.run():
                     async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
-                        add_reply = await _call(ws, "certAdd", {
-                            "auth_address": auth_address, "domain": "example.bit",
-                            "auth_type": "web", "auth_user_name": "alice", "cert_sign": cert_sign,
-                        }, msg_id=1)
+                        add_reply = await _call(ws, "certAdd", [
+                            "example.bit", "web", "alice", cert_sign,
+                        ], msg_id=1)
                         set_reply = await _call(ws, "certSet", {"domain": "example.bit"}, msg_id=2)
                         list_reply = await _call(ws, "certList", msg_id=3)
                         return add_reply, set_reply, list_reply

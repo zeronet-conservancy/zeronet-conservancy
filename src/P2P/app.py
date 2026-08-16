@@ -116,6 +116,7 @@ class App:
         if enable_dht:
             kwargs = {} if dht_protocol_prefix is None else {"protocol_prefix": dht_protocol_prefix}
             self.dht_discovery = KadDHTDiscovery(self.file_server.host, **kwargs)
+        self.ui_server.dht_discovery = self.dht_discovery
 
     @property
     def sites(self) -> dict[str, Site]:

@@ -191,6 +191,46 @@ class User:
             await self.save()
             return True
 
+    async def issueCert(self, address: str, domain: str, auth_type: str, auth_user_name: str) -> dict:
+        """Issue and install a certificate signed by this local identity.
+
+        A separate provider key is persisted in user settings. Sites must
+        still explicitly trust ``provider_address`` in their cert_signers rules;
+        this method only creates a valid ZeroNet certificate and does not
+        broaden any site's trust policy.
+        """
+        auth_address = self.getAuthAddress(address)
+        cert = await self.issueCertForAuth(auth_address, domain, auth_type, auth_user_name)
+        result = await self.addCert(auth_address, domain, auth_type, auth_user_name, cert["cert_sign"])
+        if result is False:
+            raise ValueError("Certificate already exists with different data for %s" % domain)
+        self.setCert(address, domain)
+        await self.save()
+        return cert
+
+    async def issueCertForAuth(self, auth_address: str, domain: str, auth_type: str, auth_user_name: str) -> dict:
+        """Sign a certificate for a requester without importing its private key."""
+        provider_privatekey = self.settings.get("local_provider_privatekey")
+        provider_address = self.settings.get("local_provider_address")
+        if not provider_privatekey or not provider_address:
+            provider_privatekey = CryptBitcoin.newPrivatekey()
+            provider_address = CryptBitcoin.privatekeyToAddress(provider_privatekey)
+            self.settings["local_provider_privatekey"] = provider_privatekey
+            self.settings["local_provider_address"] = provider_address
+            self.markDirty()
+
+        cert_subject = "%s#%s/%s" % (auth_address, auth_type, auth_user_name)
+        cert_sign = CryptBitcoin.sign(cert_subject, provider_privatekey)
+        await self.save()
+        return {
+            "auth_address": auth_address,
+            "auth_type": auth_type,
+            "auth_user_name": auth_user_name,
+            "cert_sign": cert_sign,
+            "domain": domain,
+            "provider_address": provider_address,
+        }
+
     def deleteCert(self, domain: str) -> None:
         del self.certs[domain]
 

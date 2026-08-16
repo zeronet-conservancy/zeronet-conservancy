@@ -453,17 +453,35 @@ async def _cmdSitePublish(session, params):
 
 @command("certAdd")
 async def _cmdCertAdd(session, params):
+    site = _requireSite(session)
     user = await _requireUser(session)
-    auth_address = _param(params, "auth_address", 0)
-    domain = _param(params, "domain", 1)
-    auth_type = _param(params, "auth_type", 2)
-    auth_user_name = _param(params, "auth_user_name", 3)
-    cert_sign = _param(params, "cert_sign", 4) or _param(params, "cert", 4)
-    result = await user.addCert(auth_address, domain, auth_type, auth_user_name, cert_sign)
+    if isinstance(params, dict):
+        auth_address = params.get("auth_address") or user.getAuthAddress(site.address)
+        domain = params.get("domain")
+        auth_type = params.get("auth_type")
+        auth_user_name = params.get("auth_user_name")
+        cert_sign = params.get("cert_sign") or params.get("cert")
+    elif isinstance(params, list) and len(params) >= 5:
+        # Compatibility with the internal form used by older native callers.
+        auth_address, domain, auth_type, auth_user_name, cert_sign = params[:5]
+    else:
+        # ZeroFrame's documented/public form omits auth_address; the current
+        # site's local auth identity is the certificate subject.
+        auth_address = user.getAuthAddress(site.address)
+        domain = _param(params, "domain", 0)
+        auth_type = _param(params, "auth_type", 1)
+        auth_user_name = _param(params, "auth_user_name", 2)
+        cert_sign = _param(params, "cert_sign", 3) or _param(params, "cert", 3)
+    try:
+        result = await user.addCert(auth_address, domain, auth_type, auth_user_name, cert_sign)
+    except Exception as err:
+        return {"error": str(err)}
     if result is True:
-        site = _requireSite(session)
         user.setCert(site.address, domain)
         await user.save()
+        info = formatSiteInfo(site, getattr(session.app, "site_manager", None), user)
+        info["cert_changed"] = domain
+        session.pushAfterResponse("setSiteInfo", info)
         return "ok"
     elif result is None:
         return "Not changed"
@@ -482,6 +500,147 @@ async def _cmdCertSet(session, params):
     info["cert_changed"] = domain
     session.pushAfterResponse("setSiteInfo", info)
     return "ok"
+
+
+@command("certIssueLocal")
+async def _cmdCertIssueLocal(session, params):
+    """Issue a certificate from this node's local provider identity.
+
+    This is intentionally separate from certAdd: certAdd imports a provider
+    certificate, while this command creates one locally. The returned
+    provider_address must be added to a site's cert_signers policy before
+    content signed with the certificate will be accepted there.
+    """
+    site = _requireSite(session)
+    user = await _requireUser(session)
+    domain = _param(params, "domain", 0)
+    auth_type = _param(params, "auth_type", 1, "web")
+    auth_user_name = _param(params, "auth_user_name", 2)
+    if not domain or not auth_user_name:
+        return {"error": "domain and auth_user_name are required"}
+    try:
+        cert = await user.issueCert(site.address, domain, auth_type, auth_user_name)
+    except Exception as err:
+        return {"error": str(err)}
+    info = formatSiteInfo(site, getattr(session.app, "site_manager", None), user)
+    info["cert_changed"] = domain
+    session.pushAfterResponse("setSiteInfo", info)
+    return cert
+
+
+@command("providerCreate")
+async def _cmdProviderCreate(session, params):
+    """Create a local ZeroNet identity-provider site and announce its domain."""
+    _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    user = await _requireUser(session)
+    domain = (_param(params, "domain", 0) or "").strip().lower()
+    if not domain or not domain.endswith(".bit"):
+        return {"error": "provider domain must end with .bit"}
+    if not site_manager.loaded:
+        await site_manager.load()
+
+    provider_privatekey = CryptBitcoin.newPrivatekey()
+    provider_address = CryptBitcoin.privatekeyToAddress(provider_privatekey)
+    add_site = getattr(session.app, "on_missing_site", None)
+    site = add_site(provider_address, own=True) if add_site is not None else site_manager.add(provider_address, own=True)
+    if not site:
+        return {"error": "Unable to create provider site"}
+    site.permissions = ["ADMIN"]
+    await site.storage.write("index.html", ("""<!doctype html>
+<meta charset="utf-8">
+<title>%s identity provider</title>
+<h1>%s</h1>
+<p>This ZeroNet site is an identity provider for <b>%s</b>.</p>
+<p>Provider address: <code>%s</code></p>
+<p>Registration and certificate issuance are handled by the local ZeroNet provider API.</p>
+""" % (html.escape(domain), html.escape(domain), html.escape(domain), provider_address)).encode("utf-8"))
+    await site.storage.write("provider.json", ("%s\n" % (
+        '{"domain": "%s", "provider_address": "%s", "protocol": "zeronet-identity-v1"}'
+        % (domain, provider_address)
+    )).encode("utf-8"))
+    await site.content_manager.sign(provider_privatekey, extend={
+        "title": "%s identity provider" % domain,
+        "description": "Local ZeroNet identity provider for %s" % domain,
+        "provider_domain": domain,
+        "provider_address": provider_address,
+    })
+
+    user.settings["local_provider_privatekey"] = provider_privatekey
+    user.settings["local_provider_address"] = provider_address
+    await user.save()
+    await site_manager.save()
+
+    dht = getattr(session.app, "dht_discovery", None)
+    announced = False
+    if dht is not None:
+        await dht.announce_provider(domain)
+        announced = True
+    return {
+        "domain": domain,
+        "address": provider_address,
+        "provider_address": provider_address,
+        "privatekey": provider_privatekey,
+        "announced": announced,
+    }
+
+
+@command("certProviderIssue")
+async def _cmdCertProviderIssue(session, params):
+    """Sign a certificate for a requester from an owned provider site."""
+    _requireAdmin(session)
+    user = await _requireUser(session)
+    auth_address = _param(params, "auth_address", 0)
+    domain = _param(params, "domain", 1)
+    auth_type = _param(params, "auth_type", 2, "web")
+    auth_user_name = _param(params, "auth_user_name", 3)
+    if not auth_address or not domain or not auth_user_name:
+        return {"error": "auth_address, domain and auth_user_name are required"}
+    try:
+        return await user.issueCertForAuth(auth_address, domain, auth_type, auth_user_name)
+    except Exception as err:
+        return {"error": str(err)}
+
+
+@command("certProviderAnnounce")
+async def _cmdCertProviderAnnounce(session, params):
+    """Issue a local certificate and announce its opaque identity key."""
+    dht = getattr(session.app, "dht_discovery", None)
+    if dht is None:
+        return {"error": "ZeroNet DHT is disabled"}
+    site = _requireSite(session)
+    user = await _requireUser(session)
+    domain = _param(params, "domain", 0)
+    auth_type = _param(params, "auth_type", 1, "web")
+    auth_user_name = _param(params, "auth_user_name", 2)
+    if not domain or not auth_user_name:
+        return {"error": "domain and auth_user_name are required"}
+    try:
+        cert = await user.issueCert(site.address, domain, auth_type, auth_user_name)
+        key = await dht.announce_identity(domain, auth_type, auth_user_name)
+    except Exception as err:
+        return {"error": str(err)}
+    cert["identity_key"] = key.hex()
+    cert["announced"] = True
+    return cert
+
+
+@command("certProviderFind")
+async def _cmdCertProviderFind(session, params):
+    """Discover providers for an identity without exposing its plaintext key."""
+    dht = getattr(session.app, "dht_discovery", None)
+    if dht is None:
+        return {"error": "ZeroNet DHT is disabled"}
+    domain = _param(params, "domain", 0)
+    auth_type = _param(params, "auth_type", 1, "web")
+    auth_user_name = _param(params, "auth_user_name", 2)
+    if not domain or not auth_user_name:
+        return {"error": "domain and auth_user_name are required"}
+    try:
+        peers = await dht.find_identity_providers(domain, auth_type, auth_user_name)
+    except Exception as err:
+        return {"error": str(err)}
+    return {"peers": [peer.peer_id.to_base58() for peer in peers]}
 
 
 @command("certList")

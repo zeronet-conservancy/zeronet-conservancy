@@ -151,6 +151,20 @@ class TestP2PUser:
         assert same is None
         assert conflict is False
 
+    def testIssueCertUsesPersistentLocalProviderIdentity(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                user = User(pathlib.Path(d) / "users.json")
+                cert = await user.issueCert(SITE_ADDRESS, "zeronet.local", "web", "alice")
+                return cert, user.getCertUserId(SITE_ADDRESS), user.settings["local_provider_address"]
+
+        cert, cert_user_id, provider_address = compat.run(scenario)
+        assert cert["provider_address"] == provider_address
+        assert cert_user_id == "alice@zeronet.local"
+        assert CryptBitcoin.verify(
+            "%s#web/alice" % cert["auth_address"], cert["provider_address"], cert["cert_sign"]
+        ) is True
+
 
 class TestP2PUserManager:
     def testLoadWithNoUsersJsonLeavesEmpty(self):

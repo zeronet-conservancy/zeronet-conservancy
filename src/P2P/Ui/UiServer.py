@@ -200,7 +200,7 @@ class UiApp:
     def __init__(self, sites: dict, allowed_hosts: list | None = None, site_manager=None, user_manager=None,
                  file_server=None, announcers: dict | None = None, tor_manager=None,
                  homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0,
-                 data_dir=None, shutdown_callback=None,
+                 data_dir=None, shutdown_callback=None, dht_discovery=None,
                  allowed_ws_origins: set[str] | None = None):
         self.sites = sites  # site address -> P2P.Site
         self.site_manager = site_manager  # P2P.SiteManager, for siteAdd/siteDelete/sitePause/siteResume/siteList
@@ -211,6 +211,7 @@ class UiApp:
         self.homepage = homepage  # Site address `/` redirects to, e.g. config.homepage
         self.data_dir = data_dir
         self.shutdown_callback = shutdown_callback
+        self.dht_discovery = dht_discovery
         self.on_missing_site = on_missing_site  # (address) -> Site | None, e.g. App.addSite; adds + wires a new site
         self.auto_download_timeout = auto_download_timeout
         self.allowed_ws_origins = set(allowed_ws_origins or ())
@@ -636,11 +637,19 @@ class UiApp:
         cmd = request.get("cmd")
         handler = COMMAND_HANDLERS.get(cmd)
         if handler is None:
-            return {"cmd": "response", "to": request.get("id"), "error": "Unknown command: %s" % cmd}
+            error = "Unknown command: %s" % cmd
+            return {
+                "cmd": "response", "to": request.get("id"),
+                "error": error, "result": {"error": error},
+            }
         try:
             result = await handler(session, request.get("params", {}))
         except Exception as err:
-            return {"cmd": "response", "to": request.get("id"), "error": str(err)}
+            error = str(err)
+            return {
+                "cmd": "response", "to": request.get("id"),
+                "error": error, "result": {"error": error},
+            }
         return {"cmd": "response", "to": request.get("id"), "result": result}
 
 

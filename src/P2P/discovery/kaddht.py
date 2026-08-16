@@ -9,12 +9,15 @@ Site addresses are keyed by their raw hash bytes (site.address_sha1 today);
 kad-dht's provide()/find_providers() take str keys, so they're hex-encoded
 at the boundary here rather than pushing that detail on every caller.
 """
+import hashlib
+
 from libp2p.kad_dht.kad_dht import KadDHT, DHTMode
 from libp2p.peer.id import ID
 from libp2p.peer.peerinfo import PeerInfo
 from libp2p.tools.anyio_service import background_trio_service
 
 DEFAULT_PROTOCOL_PREFIX = "/zeronet"
+IDENTITY_NAMESPACE = b"zeronet:identity:v1:"
 
 
 class KadDHTDiscovery:
@@ -35,3 +38,32 @@ class KadDHTDiscovery:
 
     async def find_peers(self, site_hash: bytes) -> list[PeerInfo]:
         return await self._dht.find_providers(site_hash.hex())
+
+    @staticmethod
+    def identity_key(domain: str, auth_type: str, username: str) -> bytes:
+        """Return the opaque DHT key for a ZeroNet identity record.
+
+        The DHT never receives the plaintext username. The provider still
+        owns the signed certificate and is responsible for uniqueness and
+        revocation; this key only discovers provider peers.
+        """
+        identity = "%s\x00%s\x00%s" % (domain.strip().lower(), auth_type.strip().lower(), username.strip())
+        return hashlib.sha256(IDENTITY_NAMESPACE + identity.encode("utf-8")).digest()
+
+    async def announce_identity(self, domain: str, auth_type: str, username: str) -> bytes:
+        key = self.identity_key(domain, auth_type, username)
+        await self._dht.provide(key.hex())
+        return key
+
+    async def find_identity_providers(self, domain: str, auth_type: str, username: str) -> list[PeerInfo]:
+        key = self.identity_key(domain, auth_type, username)
+        return await self._dht.find_providers(key.hex())
+
+    async def announce_provider(self, domain: str) -> bytes:
+        key = self.identity_key(domain, "provider", "*")
+        await self._dht.provide(key.hex())
+        return key
+
+    async def find_providers(self, domain: str) -> list[PeerInfo]:
+        key = self.identity_key(domain, "provider", "*")
+        return await self._dht.find_providers(key.hex())
