@@ -37,9 +37,8 @@ _handleUiMediaExtra for that half of the fix.
 Still NOT ported: privatekey management (siteRecoverPrivatekey/
 userSetSitePrivatekey -- bip32 per-site key derivation, a separate
 concern from just displaying the sidebar), fileRules, certSelect,
-serverShowdirectory (opens a native OS file manager -- not meaningful
-for a headless server), and dbReload/dbRebuild as sidebar-triggerable
-actions (dbRebuild exists as a CLI-only action in P2P/actions.py, same
+and dbReload/dbRebuild as sidebar-triggerable actions (dbRebuild exists
+as a CLI-only action in P2P/actions.py, same
 "destructive, not a great fit for an unauthenticated-beyond-wrapper_key
 websocket command" reasoning P2P/Ui/commands.py's own module docstring
 already gives for it).

@@ -54,6 +54,29 @@ async def _cmdSiteblockGet(session, params):
     return details
 
 
+@command("muteAdd")
+async def _cmdMuteAdd(session, params):
+    _requireAdmin(session)
+    storage = _requireFilterStorage()
+    auth_address = _param(params, "auth_address", 0)
+    storage.muteAdd(auth_address, _param(params, "cert_user_id", 1), _param(params, "reason", 2))
+    return "ok"
+
+
+@command("muteRemove")
+async def _cmdMuteRemove(session, params):
+    _requireAdmin(session)
+    storage = _requireFilterStorage()
+    storage.muteRemove(_param(params, "auth_address", 0))
+    return "ok"
+
+
+@command("muteList")
+async def _cmdMuteList(session, params):
+    _requireAdmin(session)
+    return _requireFilterStorage().file_content["mutes"]
+
+
 @command("FilterIncludeList")
 async def _cmdFilterIncludeList(session, params):
     """The "filter includes" feature itself (subscribing to another

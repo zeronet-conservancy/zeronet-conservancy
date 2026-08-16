@@ -6,7 +6,9 @@ relative import beyond this package's own top level fails; see
 P2P/plugins/CryptMessage/commands.py's own docstring, which hit and
 documented this same gotcha first.
 
-Deliberately NOT ported: mutes (per-user content muting, requires
+Mutes are now stored and manageable through muteAdd/muteRemove/muteList;
+the native download/content pipeline does not yet enforce them. Deliberately
+not ported: mutes' full per-user content enforcement (requires
 SiteStorage.updateDbFile()/Site.needFile()/FileRequest.actionUpdate()
 hooks -- none of P2P.SiteStorage/P2P.Site/the update protocol handler
 are @acceptPlugins yet, and wiring three separate cross-cutting

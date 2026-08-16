@@ -91,8 +91,10 @@ import base64
 import os
 import stat
 import sys
+from pathlib import Path
 
 from Config import config
+from Crypt import CryptBitcoin
 
 from ..ContentManager import _getDirname
 from ..PluginManager import plugin_manager
@@ -210,6 +212,15 @@ async def _cmdChannelJoin(session, params):
     return "ok"
 
 
+@command("channelJoinAllsite")
+async def _cmdChannelJoinAllsite(session, params):
+    _requireAdmin(session)
+    channel = _param(params, "channel", 0)
+    if channel not in session.channels:
+        session.channels.append(channel)
+    return "ok"
+
+
 def formatSiteInfo(site, site_manager=None, user=None):
     """`settings`/`size_limit`/`next_size_limit`/`bad_files`/
     `started_task_num`/`tasks` were added after a real crash found live:
@@ -254,6 +265,10 @@ def formatSiteInfo(site, site_manager=None, user=None):
         if override is not None:
             size_limit_mb = override
 
+    modified_files_notification = (
+        site_manager.getSiteSetting(site.address, "modified_files_notification", True)
+        if site_manager is not None else True
+    )
     info = {
         "address": site.address,
         "address_hash": site.address_sha1.hex(),
@@ -264,7 +279,7 @@ def formatSiteInfo(site, site_manager=None, user=None):
         "settings": {
             "size": size,
             "permissions": list(site.permissions),
-            "modified_files_notification": True,
+            "modified_files_notification": modified_files_notification,
         },
         "size_limit": size_limit_mb,
         "next_size_limit": size_limit_mb,
@@ -491,6 +506,36 @@ async def _cmdSiteAdd(session, params):
     return "ok"
 
 
+@command("siteCreate")
+async def _cmdSiteCreate(session, params):
+    """Create the same minimal, signed site as the native CLI action."""
+    _requireAdmin(session)
+    use_master_seed = _param(params, "use_master_seed", 0, True)
+    if use_master_seed:
+        user = await _requireUser(session)
+        address, address_index, site_data = await user.getNewSiteData()
+        privatekey = site_data["privatekey"]
+    else:
+        privatekey = CryptBitcoin.newPrivatekey()
+        address = CryptBitcoin.privatekeyToAddress(privatekey)
+        address_index = None
+    add_site = getattr(session.app, "addSite", None)
+    if add_site is None:
+        site_manager = _requireSiteManager(session)
+        site = site_manager.add(address, own=True)
+    else:
+        site = add_site(address, own=True)
+    if site is None:
+        raise CommandError("Unable to create site")
+    await site.storage.write("index.html", ("Hello %s!" % address).encode("utf8"))
+    extend = {"postmessage_nonce_security": True}
+    if address_index is not None:
+        extend["address_index"] = address_index
+    await site.content_manager.sign(privatekey, extend=extend)
+    await _requireSiteManager(session).save()
+    return {"address": address}
+
+
 @command("siteDelete")
 async def _cmdSiteDelete(session, params):
     _requireAdmin(session)
@@ -532,6 +577,66 @@ async def _cmdSiteResume(session, params):
     return "Resumed"
 
 
+@command("siteUpdate")
+async def _cmdSiteUpdate(session, params):
+    """Refresh locally available content metadata.
+
+    Native download scheduling is not yet a WorkerManager feature, but the
+    existing dashboard button must still re-enable a paused site and reload
+    content.json when it is already on disk.
+    """
+    site_manager = _requireSiteManager(session)
+    address = _param(params, "address", 0, _requireSite(session).address)
+    site = site_manager.sites.get(address)
+    if site is None:
+        raise CommandError("Unknown site: %s" % address)
+    if site is not session.site:
+        _requireAdmin(session)
+    site.serving = True
+    if site.storage.isFile("content.json"):
+        await site.content_manager.loadContent()
+    session.app.broadcast("siteChanged", site, {"event": "updated"})
+    return "Updated"
+
+
+@command("siteReload")
+async def _cmdSiteReload(session, params):
+    site = _requireSite(session)
+    inner_path = _param(params, "inner_path", 0, "content.json")
+    if not site.storage.isFile(inner_path):
+        raise CommandError("Content file not found: %s" % inner_path)
+    await site.content_manager.loadContent(inner_path)
+    return "ok"
+
+
+@command("siteFavourite")
+async def _cmdSiteFavourite(session, params):
+    _requireAdmin(session)
+    user = await _requireUser(session)
+    dashboard = getattr(session.app, "homepage", None)
+    if not dashboard:
+        raise CommandError("No dashboard site configured")
+    settings = user.getSiteData(dashboard).get("settings", {})
+    settings.setdefault("favorite_sites", {})[_param(params, "address", 0)] = True
+    user.setSiteSettings(dashboard, settings)
+    await user.save()
+    return "Added to favourites"
+
+
+@command("siteUnfavourite")
+async def _cmdSiteUnfavourite(session, params):
+    _requireAdmin(session)
+    user = await _requireUser(session)
+    dashboard = getattr(session.app, "homepage", None)
+    if not dashboard:
+        raise CommandError("No dashboard site configured")
+    settings = user.getSiteData(dashboard).get("settings", {})
+    settings.setdefault("favorite_sites", {}).pop(_param(params, "address", 0), None)
+    user.setSiteSettings(dashboard, settings)
+    await user.save()
+    return "Removed from favourites"
+
+
 @command("siteList")
 async def _cmdSiteList(session, params):
     _requireAdmin(session)
@@ -554,6 +659,18 @@ async def _cmdSiteSetOwned(session, params):
     site_manager = _requireSiteManager(session)
     owned = bool(_param(params, "owned", 0))
     await site_manager.setOwn(site.address, owned)
+    return "ok"
+
+
+@command("siteSetSettingsValue")
+async def _cmdSiteSetSettingsValue(session, params):
+    site = _requireSite(session)
+    key = _param(params, "key", 0)
+    value = _param(params, "value", 1)
+    if key != "modified_files_notification":
+        raise CommandError("Unsupported site setting: %s" % key)
+    site_manager = _requireSiteManager(session)
+    await site_manager.setSiteSetting(site.address, key, value)
     return "ok"
 
 
@@ -643,6 +760,41 @@ async def _cmdUserSetGlobalSettings(session, params):
     settings = _param(params, "settings", 0)
     user.settings = settings
     await user.save()
+    return "ok"
+
+
+@command("serverShowdirectory")
+async def _cmdServerShowdirectory(session, params):
+    """Return a directory for the native UI to display/copy.
+
+    The legacy command opens a local desktop file manager, which is unsafe
+    and meaningless for a headless native server. Returning the validated
+    path preserves the useful part of the menu action.
+    """
+    _requireAdmin(session)
+    directory = _param(params, "directory", 0, "backup")
+    inner_path = _param(params, "inner_path", 1, "")
+    if directory == "backup":
+        path = Path(getattr(session.app, "data_dir", config.data_dir)).resolve()
+    elif directory == "log":
+        path = Path(config.log_dir).resolve()
+    elif directory == "site":
+        site = _requireSite(session)
+        path = site.storage.getPath(inner_path).resolve()
+    else:
+        raise CommandError("Unknown directory: %s" % directory)
+    if not path.is_dir():
+        raise CommandError("Not a directory")
+    return {"directory": directory, "path": str(path)}
+
+
+@command("serverShutdown")
+async def _cmdServerShutdown(session, params):
+    _requireAdmin(session)
+    callback = getattr(session.app, "shutdown_callback", None)
+    if callback is None:
+        raise CommandError("Shutdown is not available")
+    callback()
     return "ok"
 
 

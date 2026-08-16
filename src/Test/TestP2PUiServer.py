@@ -8,10 +8,51 @@ import trio_websocket
 
 from P2P.Ui.UiServer import UiServer
 from P2P.Site import Site
+from P2P.SiteManager import SiteManager
+from P2P.UserManager import UserManager
 from P2P import compat
 
 
 class TestP2PUiServer:
+    def testNativeDashboardMenuCommands(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                data_dir = pathlib.Path(root)
+                site_manager = SiteManager(data_dir)
+                admin = site_manager.add("1TestMenuAdminSiteAAAAAAAAAAAA1")
+                admin.permissions = ["ADMIN"]
+                shutdown_requested = []
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    user_manager=UserManager(data_dir), data_dir=data_dir,
+                    homepage=admin.address,
+                    shutdown_callback=lambda: shutdown_requested.append(True),
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with trio_websocket.open_websocket_url(
+                        base_url.replace("http://", "ws://") +
+                        "/ZeroNet-Internal/Websocket?wrapper_key=%s" % admin.wrapper_key
+                    ) as ws:
+                        async def call(cmd, params, msg_id):
+                            await ws.send_message(json.dumps({"cmd": cmd, "params": params, "id": msg_id}))
+                            return json.loads(await ws.get_message())
+
+                        created = await call("siteCreate", {"use_master_seed": False}, 1)
+                        favourite = await call("siteFavourite", {"address": created["result"]["address"]}, 2)
+                        unfavourite = await call("siteUnfavourite", {"address": created["result"]["address"]}, 3)
+                        directory = await call("serverShowdirectory", {"directory": "backup"}, 4)
+                        shutdown = await call("serverShutdown", {}, 5)
+                        return created, favourite, unfavourite, directory, shutdown, shutdown_requested, data_dir
+
+        created, favourite, unfavourite, directory, shutdown, shutdown_requested, data_dir = compat.run(scenario)
+        assert "address" in created["result"]
+        assert favourite["result"] == "Added to favourites"
+        assert unfavourite["result"] == "Removed from favourites"
+        assert pathlib.Path(directory["result"]["path"]) == data_dir.resolve()
+        assert shutdown["result"] == "ok"
+        assert shutdown_requested == [True]
+
     def testDashboardPagesExposeNativeWebsocketBootstrap(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:

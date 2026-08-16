@@ -117,3 +117,29 @@ class TestP2PPluginsContentFilterCommands:
 
         reply = compat.run(scenario)
         assert "error" in reply
+
+    def testMuteAddListRemoveRoundTrip(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                admin_site = site_manager.add("1TestCfMuteAdminSiteAAAAAAAAAA1")
+                admin_site.permissions = ["ADMIN"]
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        add_reply = await _call(ws, "muteAdd", {
+                            "auth_address": "1AuthAddressAAAAAAAAAAAAAAAA",
+                            "cert_user_id": "alice@example",
+                            "reason": "spam",
+                        }, msg_id=1)
+                        list_reply = await _call(ws, "muteList", msg_id=2)
+                        remove_reply = await _call(ws, "muteRemove", {
+                            "auth_address": "1AuthAddressAAAAAAAAAAAAAAAA",
+                        }, msg_id=3)
+                        return add_reply, list_reply, remove_reply
+
+        add_reply, list_reply, remove_reply = compat.run(scenario)
+        assert add_reply["result"] == "ok"
+        assert list_reply["result"]["1AuthAddressAAAAAAAAAAAAAAAA"]["cert_user_id"] == "alice@example"
+        assert remove_reply["result"] == "ok"

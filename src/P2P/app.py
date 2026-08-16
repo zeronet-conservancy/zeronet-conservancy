@@ -93,6 +93,7 @@ class App:
         self._tor_password = tor_password
         self._tor_socks_port = tor_socks_port
         self.tor_manager: TorManager | None = None
+        self._shutdown_event = None
 
         p2p_dir = data_dir / ".p2p"
         p2p_dir.mkdir(parents=True, exist_ok=True)
@@ -108,7 +109,8 @@ class App:
             self.site_manager.sites, host=ui_host, port=ui_port, allowed_hosts=ui_allowed_hosts,
             site_manager=self.site_manager, user_manager=self.user_manager, file_server=self.file_server,
             announcers=self.announcers, homepage=homepage, on_missing_site=self.addSite,
-            auto_download_timeout=auto_download_timeout,
+            auto_download_timeout=auto_download_timeout, data_dir=data_dir,
+            shutdown_callback=self.requestShutdown,
         )
         self.dht_discovery = None
         if enable_dht:
@@ -174,6 +176,11 @@ class App:
         except Exception:
             log.exception("Initial announce failed for %s", address)
 
+    def requestShutdown(self) -> None:
+        """Request a graceful exit from the native app run loop."""
+        if self._shutdown_event is not None:
+            self._shutdown_event.set()
+
     async def _saveLoop(self) -> None:
         while True:
             await trio.sleep(self.save_interval)
@@ -205,6 +212,7 @@ class App:
         """Runs forever (until cancelled) -- boots the host, UI server, and
         (if enabled) DHT discovery and Tor, then keeps one announce loop
         alive per loaded site plus a periodic sites.json save loop."""
+        self._shutdown_event = trio.Event()
         async with AsyncExitStack() as stack:
             await stack.enter_async_context(self.file_server.run())
             await stack.enter_async_context(self.ui_server.run())
@@ -222,7 +230,8 @@ class App:
                 nursery.start_soon(self._saveLoop)
                 for address in list(self.sites):
                     nursery.start_soon(self._announceLoop, address)
-                await trio.sleep_forever()
+                await self._shutdown_event.wait()
+        self._shutdown_event = None
 
 
 async def _main(args) -> None:

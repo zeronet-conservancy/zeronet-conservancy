@@ -150,6 +150,13 @@ class SiteManager:
     def isOwn(self, address: str) -> bool:
         return bool(self._site_settings.get(address, {}).get("own", False))
 
+    def getSiteSetting(self, address: str, key: str, default=None):
+        return self._site_settings.get(address, {}).get(key, default)
+
+    async def setSiteSetting(self, address: str, key: str, value) -> None:
+        self._site_settings.setdefault(address, {"added": int(time.time())})[key] = value
+        await self.save()
+
     async def setOwn(self, address: str, own: bool) -> None:
         self._site_settings.setdefault(address, {"added": int(time.time())})["own"] = own
         await self.save()

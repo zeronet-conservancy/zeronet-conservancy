@@ -1,6 +1,4 @@
-"""Trio-native, much-simplified stand-in for plugins/ContentFilter's own
-ContentFilterStorage -- just the siteblocks half. See SiteManagerPlugin.py's
-module docstring for why mutes/filter-includes aren't ported here.
+"""Trio-native stand-in for plugins/ContentFilter's storage.
 
 Deliberate simplifications vs. the original: no address-hashing
 ("ignore_block hashed address") matching trick for privacy-preserving
@@ -17,7 +15,7 @@ from pathlib import Path
 class ContentFilterStorage:
     def __init__(self, data_dir: Path, filename: str = "content_filters.json"):
         self.file_path = data_dir / filename
-        self.file_content: dict = {"siteblocks": {}}
+        self.file_content: dict = {"mutes": {}, "siteblocks": {}}
         self.load()
 
     def load(self) -> None:
@@ -25,7 +23,8 @@ class ContentFilterStorage:
             try:
                 self.file_content = json.loads(self.file_path.read_text(encoding="utf8"))
             except (OSError, ValueError):
-                self.file_content = {"siteblocks": {}}
+                self.file_content = {"mutes": {}, "siteblocks": {}}
+        self.file_content.setdefault("mutes", {})
         self.file_content.setdefault("siteblocks", {})
 
     def save(self) -> None:
@@ -44,4 +43,20 @@ class ContentFilterStorage:
 
     def siteblockRemove(self, address: str) -> None:
         self.file_content["siteblocks"].pop(address, None)
+        self.save()
+
+    def isMuted(self, auth_address: str) -> bool:
+        return auth_address in self.file_content["mutes"]
+
+    def muteAdd(self, auth_address: str, cert_user_id: str | None = None,
+                reason: str | None = None) -> None:
+        self.file_content["mutes"][auth_address] = {
+            "cert_user_id": cert_user_id,
+            "reason": reason,
+            "date_added": time.time(),
+        }
+        self.save()
+
+    def muteRemove(self, auth_address: str) -> None:
+        self.file_content["mutes"].pop(auth_address, None)
         self.save()
