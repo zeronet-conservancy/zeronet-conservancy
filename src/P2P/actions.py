@@ -61,6 +61,7 @@ import json
 import logging
 import pathlib
 import time
+from zipfile import ZipFile
 from contextlib import AsyncExitStack, asynccontextmanager
 
 import trio
@@ -185,6 +186,42 @@ class Actions:
 
         log.info("Site created!")
         return {"address": address, "privatekey": privatekey}
+
+    async def importBundle(self, bundle: str) -> dict:
+        """Import one or more native sites from a ZeroNet bundle.
+
+        The legacy importer accepts an optional single top-level directory
+        around the site directories. Preserve that format, but write through
+        SiteStorage so archive paths cannot escape a site's root.
+        """
+        if not self.site_manager.loaded:
+            await self.site_manager.load()
+
+        imported = set()
+        with ZipFile(bundle) as archive:
+            names = [name.replace("\\", "/") for name in archive.namelist() if name and not name.endswith("/")]
+            top_levels = {name.split("/", 1)[0] for name in names}
+            prefix = ""
+            if len(top_levels) == 1 and not self.site_manager.isAddress(next(iter(top_levels))):
+                prefix = next(iter(top_levels)) + "/"
+
+            for name in names:
+                if prefix and not name.startswith(prefix):
+                    continue
+                relative = name[len(prefix):] if prefix else name
+                parts = relative.split("/")
+                if len(parts) < 2 or not self.site_manager.isAddress(parts[0]):
+                    continue
+                address = parts[0]
+                inner_path = "/".join(parts[1:])
+                if not inner_path or ".." in pathlib.PurePosixPath(inner_path).parts:
+                    raise ValueError("Unsafe bundle path: %s" % name)
+                site = self.site_manager.sites.get(address) or self.site_manager.add(address)
+                await site.storage.write(inner_path, archive.read(name))
+                imported.add(address)
+
+        await self.site_manager.save()
+        return {"imported": sorted(imported)}
 
     async def siteSign(self, address: str, privatekey: str | None = None, publish: bool = False) -> bool:
         site = await self._getSite(address)
@@ -368,14 +405,22 @@ class Actions:
                 results.append({"ok": ok, "elapsed": elapsed})
         return {"results": results}
 
-    async def peerGetFile(self, peer_id: str, multiaddr: str, site: str, inner_path: str) -> dict:
+    async def peerGetFile(
+        self, peer_id: str, multiaddr: str, site: str, inner_path: str, benchmark: bool = False,
+    ) -> dict:
         target_id = ID.from_base58(peer_id)
         log.info("Getting %s/%s from peer: %s...", site, inner_path, peer_id)
         async with self._ephemeralHost() as host:
             await host.connect(PeerInfo(target_id, [Multiaddr(multiaddr)]))
             peer = Peer(target_id, host, ConnectionPolicy(host))
-            buff = await peer.getFile(site, inner_path)
-            data = buff.read()
+            started = time.time()
+            data = b""
+            count = 10 if benchmark else 1
+            for _ in range(count):
+                buff = await peer.getFile(site, inner_path)
+                data = buff.read()
+        if benchmark:
+            return {"requests": count, "elapsed": time.time() - started}
         return {"size": len(data), "content": data.decode("utf8", errors="replace")}
 
     async def peerCmd(self, peer_id: str, multiaddr: str, cmd: str, params: dict | None = None) -> dict:

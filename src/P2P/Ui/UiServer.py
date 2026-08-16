@@ -91,6 +91,7 @@ own small, separate addition as the corresponding Site.py machinery
 lands, not something to force in one pass.
 """
 import json
+import logging
 import pathlib
 from contextlib import asynccontextmanager
 
@@ -123,6 +124,8 @@ LEGACY_PLUGINS_DIR = pathlib.Path(__file__).resolve().parents[3] / "plugins"
 # gevent-free client JS/CSS worth reusing verbatim belong here -- see
 # _handleUiMediaExtra's docstring.
 _UIMEDIA_EXTRA_PLUGINS = ["Sidebar"]
+
+log = logging.getLogger(__name__)
 
 COMMAND_HANDLERS = {}
 
@@ -299,7 +302,11 @@ class UiApp:
                 try:
                     await site.content_manager.loadContent()
                 except Exception:
-                    pass
+                    log.exception("Failed to load content.json for auto-added site %s", address)
+                    return Response(
+                        b"Site content could not be loaded; try reloading shortly.",
+                        status_code=503,
+                    )
 
         if not site.isServing():
             return Response(b"Unknown site", status_code=404)

@@ -1,7 +1,8 @@
 """Transition-period helper for running trio inside a still-gevent process.
 
 gevent.monkey.patch_all() deletes select.epoll and replaces socket.socket
-process-wide; trio's IO manager needs the real versions to run at all. But
+and socket.socketpair process-wide; trio's IO manager needs the real
+versions to run at all. But
 restoring them process-wide and leaving them restored breaks gevent's own
 cooperative networking permanently, for the rest of the process -- this is
 not about a live trio thread or GIL contention (that was an earlier,
@@ -32,11 +33,14 @@ def run(async_fn, *args):
 
     gevent_epoll = getattr(select, "epoll", None)
     gevent_socket = socket.socket
+    gevent_socketpair = socket.socketpair
     real_epoll = _gevent_monkey.get_original("select", "epoll")
     real_socket = _gevent_monkey.get_original("socket", "socket")
+    real_socketpair = _gevent_monkey.get_original("socket", "socketpair")
 
     select.epoll = real_epoll
     socket.socket = real_socket
+    socket.socketpair = real_socketpair
     try:
         return trio.run(async_fn, *args)
     finally:
@@ -45,3 +49,4 @@ def run(async_fn, *args):
         else:
             del select.epoll
         socket.socket = gevent_socket
+        socket.socketpair = gevent_socketpair

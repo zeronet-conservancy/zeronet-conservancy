@@ -435,7 +435,17 @@ class Actions:
         site.announce()
         print(site.needFile(inner_path, update=True))
 
-    def siteCmd(self, address, cmd, parameters):
+    def siteCmd(self, address, cmd, parameters, wrapper_key=None, ui_host=None, ui_port=None, p2p=True):
+        if p2p:
+            if not wrapper_key:
+                raise ValueError("siteCmd on the native stack requires --wrapper-key")
+            import json
+            params = json.loads(parameters.replace("'", '"')) if parameters else {}
+            return self._runP2PAction(
+                "siteCmd", cmd=cmd, wrapper_key=wrapper_key, params=params,
+                ui_host=ui_host or config.ui_ip, ui_port=ui_port or config.ui_port,
+            )
+
         import json
         from Site import SiteManager
 
@@ -460,7 +470,10 @@ class Actions:
         else:
             return res
 
-    def importBundle(self, bundle):
+    def importBundle(self, bundle, p2p=True):
+        if p2p:
+            return self._runP2PAction("importBundle", bundle=bundle)
+
         import main
         main.importBundle(bundle)
 
@@ -534,7 +547,13 @@ class Actions:
             logging.info("No peers found, sitePublish command only works if you already have visitors serving your site")
 
     # Crypto commands
-    def cryptPrivatekeyToAddress(self, privatekey=None):
+    def cryptPrivatekeyToAddress(self, privatekey=None, p2p=True):
+        if p2p:
+            if not privatekey:
+                import getpass
+                privatekey = getpass.getpass("Private key (input hidden):")
+            return self._runP2PAction("cryptPrivatekeyToAddress", privatekey=privatekey)
+
         from Crypt import CryptBitcoin
         if not privatekey:  # If no privatekey in args then ask it now
             import getpass
@@ -542,15 +561,27 @@ class Actions:
 
         print(CryptBitcoin.privatekeyToAddress(privatekey))
 
-    def cryptSign(self, message, privatekey):
+    def cryptSign(self, message, privatekey, p2p=True):
+        if p2p:
+            return self._runP2PAction("cryptSign", message=message, privatekey=privatekey)
+
         from Crypt import CryptBitcoin
         print(CryptBitcoin.sign(message, privatekey))
 
-    def cryptVerify(self, message, sign, address):
+    def cryptVerify(self, message, sign, address, p2p=True):
+        if p2p:
+            return self._runP2PAction("cryptVerify", message=message, sign=sign, address=address)
+
         from Crypt import CryptBitcoin
         print(CryptBitcoin.verify(message, address, sign))
 
-    def cryptGetPrivatekey(self, master_seed, site_address_index=None):
+    def cryptGetPrivatekey(self, master_seed, site_address_index=None, p2p=True):
+        if p2p:
+            return self._runP2PAction(
+                "cryptGetPrivatekey", master_seed=master_seed,
+                site_address_index=site_address_index,
+            )
+
         from Crypt import CryptBitcoin
         if len(master_seed) != 64:
             logging.error("Error: Invalid master seed length: %s (required: 64)" % len(master_seed))
@@ -559,7 +590,12 @@ class Actions:
         print("Requested private key: %s" % privatekey)
 
     # Peer
-    def peerPing(self, peer_ip, peer_port=None):
+    def peerPing(self, peer_ip, peer_port=None, p2p=True):
+        if p2p:
+            if not peer_port:
+                raise ValueError("peerPing on the native stack requires peer_id and multiaddr")
+            return self._runP2PAction("peerPing", peer_id=peer_ip, multiaddr=peer_port)
+
         import main
         if not peer_port:
             peer_port = 15441
@@ -599,7 +635,13 @@ class Actions:
             print("Response time: %.3fs" % ping_delay)
             time.sleep(1)
 
-    def peerGetFile(self, peer_ip, peer_port, site, filename, benchmark=False):
+    def peerGetFile(self, peer_ip, peer_port, site, filename, benchmark=False, p2p=True):
+        if p2p:
+            return self._runP2PAction(
+                "peerGetFile", peer_id=peer_ip, multiaddr=peer_port,
+                site=site, inner_path=filename, benchmark=benchmark,
+            )
+
         import main
         logging.info("Opening a simple connection server")
         from Connection import ConnectionServer
@@ -620,7 +662,14 @@ class Actions:
         else:
             print(peer.getFile(site, filename).read())
 
-    def peerCmd(self, peer_ip, peer_port, cmd, parameters):
+    def peerCmd(self, peer_ip, peer_port, cmd, parameters, p2p=True):
+        if p2p:
+            import json
+            params = json.loads(parameters.replace("'", '"')) if parameters else {}
+            return self._runP2PAction(
+                "peerCmd", peer_id=peer_ip, multiaddr=peer_port, cmd=cmd, params=params,
+            )
+
         import main
         logging.info("Opening a simple connection server")
         from Connection import ConnectionServer
@@ -643,7 +692,7 @@ class Actions:
         except Exception as err:
             print("Unknown response (%s): %s" % (err, res))
 
-    def getConfig(self):
+    def getConfig(self, p2p=True):
         import json
         print(json.dumps(config.getServerInfo(), indent=2, ensure_ascii=False))
 

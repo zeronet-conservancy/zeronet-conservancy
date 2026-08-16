@@ -319,10 +319,15 @@ class Config:
         action.add_argument('address', help='Site address')
         action.add_argument('cmd', help='API command name')
         action.add_argument('parameters', help='Parameters of the command', nargs='?')
+        action.add_argument('--wrapper-key', help='Wrapper key for the running native UI server')
+        action.add_argument('--ui-host', help='Native UI server host', default='127.0.0.1')
+        action.add_argument('--ui-port', help='Native UI server port', type=int, default=43110)
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # Import bundled sites
         action = self.subparsers.add_parser("importBundle", help='Import sites from a .zip bundle')
         action.add_argument('bundle', help='Path to a data bundle')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
@@ -337,41 +342,53 @@ class Config:
 
         # PeerPing
         action = self.subparsers.add_parser("peerPing", help='Send Ping command to peer')
-        action.add_argument('peer_ip', help='Peer ip')
-        action.add_argument('peer_port', help='Peer port', nargs='?')
+        action.add_argument('peer_ip', help='Native peer ID (or legacy peer IP with --no-p2p)')
+        action.add_argument('peer_port', help='Native peer multiaddr (or legacy peer port with --no-p2p)', nargs='?')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # PeerGetFile
         action = self.subparsers.add_parser("peerGetFile", help='Request and print a file content from peer')
-        action.add_argument('peer_ip', help='Peer ip')
-        action.add_argument('peer_port', help='Peer port')
+        action.add_argument('peer_ip', help='Native peer ID (or legacy peer IP with --no-p2p)')
+        action.add_argument('peer_port', help='Native peer multiaddr (or legacy peer port with --no-p2p)')
         action.add_argument('site', help='Site address')
         action.add_argument('filename', help='File name to request')
         action.add_argument('--benchmark', help='Request file 10x then displays the total time', action='store_true')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # PeerCmd
         action = self.subparsers.add_parser("peerCmd", help='Request and print a file content from peer')
-        action.add_argument('peer_ip', help='Peer ip')
-        action.add_argument('peer_port', help='Peer port')
+        action.add_argument('peer_ip', help='Native peer ID (or legacy peer IP with --no-p2p)')
+        action.add_argument('peer_port', help='Native peer multiaddr (or legacy peer port with --no-p2p)')
         action.add_argument('cmd', help='Command to execute')
         action.add_argument('parameters', help='Parameters to command', nargs='?')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
+
+        # CryptSign
+        action = self.subparsers.add_parser("cryptPrivatekeyToAddress", help='Get the Bitcoin address for a private key')
+        action.add_argument('privatekey', help='Private key', nargs='?')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # CryptSign
         action = self.subparsers.add_parser("cryptSign", help='Sign message using Bitcoin private key')
         action.add_argument('message', help='Message to sign')
         action.add_argument('privatekey', help='Private key')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # Crypt Verify
         action = self.subparsers.add_parser("cryptVerify", help='Verify message using Bitcoin public address')
         action.add_argument('message', help='Message to verify')
         action.add_argument('sign', help='Signiture for message')
         action.add_argument('address', help='Signer\'s address')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # Crypt GetPrivatekey
         action = self.subparsers.add_parser("cryptGetPrivatekey", help='Generate a privatekey from master seed')
         action.add_argument('master_seed', help='Source master seed')
         action.add_argument('site_address_index', help='Site address index', type=int)
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         action = self.subparsers.add_parser("getConfig", help='Return json-encoded info')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
         action = self.subparsers.add_parser("testConnection", help='Testing')
         action = self.subparsers.add_parser("testAnnounce", help='Testing')
 
