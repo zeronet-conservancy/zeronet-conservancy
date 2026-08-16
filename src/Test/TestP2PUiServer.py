@@ -166,6 +166,107 @@ class TestP2PUiServer:
         assert "1TestStatsPageSiteAAAAAAAAAA1" in response.text
         assert "test-tracker.example" in response.text
 
+    def testDumpobjAndListobjAreDebugGated(self):
+        """This test suite's own conftest.py runs with config.debug = True
+        always on, so the gate has to be exercised by explicitly forcing
+        it False here, not by relying on a default."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                from Config import config
+                site = Site("1TestDebugGateSiteAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                config.debug = False
+                try:
+                    async with server.run():
+                        base_url = server.bound_addresses[0]
+                        async with httpx.AsyncClient() as client:
+                            dumpobj = await client.get("%s/Dumpobj?class=Site" % base_url)
+                            listobj = await client.get("%s/Listobj?type=int" % base_url)
+                    return dumpobj, listobj
+                finally:
+                    config.debug = True
+
+        dumpobj, listobj = compat.run(scenario)
+        assert dumpobj.status_code == 200
+        assert "Not in debug mode" in dumpobj.text
+        assert listobj.status_code == 200
+        assert "Not in debug mode" in listobj.text
+
+    def testDumpobjListsRealSiteInstanceAttributes(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                from Config import config
+                site = Site("1TestDumpobjSiteAAAAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                config.debug = True
+                try:
+                    async with server.run():
+                        base_url = server.bound_addresses[0]
+                        async with httpx.AsyncClient() as client:
+                            return await client.get("%s/Dumpobj?class=Site" % base_url)
+                finally:
+                    config.debug = True
+
+        response = compat.run(scenario)
+        assert response.status_code == 200
+        assert "1TestDumpobjSiteAAAAAAAAAAAA1" in response.text  # site.address attribute, real object dump
+
+    def testListobjFindsReferrersOfRealObjects(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                from Config import config
+                site = Site("1TestListobjSiteAAAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                config.debug = True
+                try:
+                    async with server.run():
+                        base_url = server.bound_addresses[0]
+                        type_name = str(type(site))
+                        async with httpx.AsyncClient() as client:
+                            import urllib.parse
+                            return await client.get("%s/Listobj?type=%s" % (base_url, urllib.parse.quote(type_name)))
+                finally:
+                    config.debug = True
+
+        response = compat.run(scenario)
+        assert response.status_code == 200
+        assert "Listing all" in response.text
+
+    def testGcCollectRunsUnconditionally(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestGcCollectSiteAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        return await client.get("%s/GcCollect" % base_url)
+
+        response = compat.run(scenario)
+        assert response.status_code == 200
+        assert response.text.strip().isdigit()  # gc.collect()'s real unreachable-object count
+
+    def testStatsPageIncludesMemoryCensusOnlyInDebugMode(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                from Config import config
+                site = Site("1TestStatsDebugSiteAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site}, homepage=site.address)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        config.debug = False
+                        try:
+                            without_debug = await client.get("%s/Stats" % base_url)
+                        finally:
+                            config.debug = True
+                        with_debug = await client.get("%s/Stats" % base_url)
+                return without_debug, with_debug
+
+        without_debug, with_debug = compat.run(scenario)
+        assert "Objects in memory" not in without_debug.text
+        assert "Objects in memory" in with_debug.text
+
     def testAboutPageShowsRealVersionInfo(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:

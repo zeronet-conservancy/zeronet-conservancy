@@ -120,7 +120,7 @@ from ..SiteStorage import AccessError
 from .Wrapper import renderWrapper
 from .Dashboard import renderDashboard
 from .UiPassword import PasswordGateMiddleware, SESSION_COOKIE, SessionStore, renderLogin
-from .Stats import renderStats, renderAbout
+from .Stats import renderStats, renderAbout, renderDumpobj, renderListobj
 
 UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
 
@@ -256,6 +256,9 @@ class UiApp:
             Route("/Console/", self._handleConsole, methods=["GET"]),
             Route("/Stats", self._handleStats, methods=["GET"]),
             Route("/About", self._handleAbout, methods=["GET"]),
+            Route("/Dumpobj", self._handleDumpobj, methods=["GET"]),
+            Route("/Listobj", self._handleListobj, methods=["GET"]),
+            Route("/GcCollect", self._handleGcCollect, methods=["GET"]),
             Route("/list/{address}/{inner_path:path}", self._handleFileManager, methods=["GET"]),
             Route("/list/{address}", self._handleFileManager, methods=["GET"]),
             Route("/{address}/{inner_path:path}", self._handleSite, methods=["GET"]),
@@ -385,6 +388,31 @@ class UiApp:
 
     async def _handleAbout(self, request: Request) -> Response:
         return Response(renderAbout(), media_type="text/html")
+
+    async def _handleDumpobj(self, request: Request) -> Response:
+        """Port of StatsPlugin.actionDumpobj() -- debug-only (config.debug),
+        same gate the original uses; not multiuser-proxy-gated, matching
+        /Stats and /About's own gap notes on that."""
+        from Config import config
+        if not config.debug:
+            return Response("Not in debug mode", media_type="text/html")
+        class_filter = request.query_params.get("class", "")
+        return Response(renderDumpobj(class_filter), media_type="text/html")
+
+    async def _handleListobj(self, request: Request) -> Response:
+        """Port of StatsPlugin.actionListobj() -- same debug-only gate."""
+        from Config import config
+        if not config.debug:
+            return Response("Not in debug mode", media_type="text/html")
+        type_filter = request.query_params.get("type", "")
+        return Response(renderListobj(type_filter), media_type="text/html")
+
+    async def _handleGcCollect(self, request: Request) -> Response:
+        """Port of StatsPlugin.actionGcCollect() -- unlike Dumpobj/Listobj,
+        the original doesn't gate this behind config.debug either, so this
+        stays available unconditionally too."""
+        import gc
+        return Response(str(gc.collect()), media_type="text/plain")
 
     async def _handleFileManager(self, request: Request) -> Response:
         address = request.path_params["address"]

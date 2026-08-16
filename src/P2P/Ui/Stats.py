@@ -18,6 +18,14 @@ Ported for real, using this stack's own real data:
     libp2p, hypercorn, starlette, jinja2) plus Python/platform/SQLite
     info -- the original's own list (gevent, msgpack, merkletools, ...)
     describes a different runtime and isn't this stack's dependency set.
+  - gc-introspection debug tools: renderMemory (folded into /Stats when
+    config.debug), /Listobj, /Dumpobj, and /GcCollect. Pure gc.get_objects()
+    /sys.getsizeof() introspection with no legacy-specific dependency, so
+    ported close to verbatim -- only the original's per-legacy-class
+    itemized dumps (Connection/Worker/Peer/UiRequest/socket/msgpack.
+    Unpacker/greenlet/Site.Site instances) were dropped, replaced with one
+    native equivalent (this stack's own P2P.Site instances via app.sites)
+    rather than faking gevent-era types that don't exist here.
 
 Deliberately NOT ported, because the thing it needs doesn't exist in
 this stack (or isn't a good match), same "narrow but real" discipline as
@@ -43,11 +51,6 @@ the rest of this package:
     other diagnostic pages (/Config, /Plugins, /Console) have no such
     gating either yet; consistent with them, not a regression specific
     to this page.
-  - gc-introspection debug tools (renderMemory/actionDumpobj/
-    actionListobj/actionGcCollect) -- pure Python object-graph
-    inspection with no legacy-specific dependencies, so genuinely
-    portable, just not scoped into this pass; a plausible small
-    follow-up.
 """
 import html as html_module
 import platform
@@ -96,6 +99,136 @@ def renderStats(app) -> str:
             "%s/%s" % (loaded, len(contents)),
         ]))
     parts.append("</table>")
+
+    from Config import config
+    if config.debug:
+        parts.append(renderMemory(app))
+
+    return "".join(parts)
+
+
+def renderMemory(app) -> str:
+    """Port of StatsPlugin.renderMemory()'s object/class/module census --
+    pure gc.get_objects()/sys.getsizeof() introspection, nothing legacy-
+    specific, so genuinely portable as-is. Only gated behind config.debug,
+    same as the original.
+
+    Dropped: the original's per-legacy-class itemized dumps (Connection,
+    Worker, Peer, UiRequest, socket, msgpack.Unpacker, greenlet, Site.Site
+    instances) -- gevent/msgpack/greenlet-specific types this stack simply
+    doesn't have. Replaced with one native equivalent that IS a fair
+    comparison: this stack's own P2P.Site instances via app.sites, the
+    same object this page's own Sites table already reports on.
+    """
+    import gc
+
+    parts = ["<h3>Memory</h3>"]
+
+    obj_count: dict = {}
+    for obj in gc.get_objects():
+        key = str(type(obj))
+        entry = obj_count.setdefault(key, [0, 0.0])
+        entry[0] += 1
+        entry[1] += sys.getsizeof(obj) / 1024
+
+    parts.append("<p>Objects in memory (types: %s, total: %s, %.2fkb):</p>" % (
+        len(obj_count), sum(v[0] for v in obj_count.values()), sum(v[1] for v in obj_count.values()),
+    ))
+    for obj_type, (count, size) in sorted(obj_count.items(), key=lambda i: i[1][0], reverse=True)[:50]:
+        parts.append("%.1fkb = %s x <a href='/Listobj?type=%s'>%s</a><br>" % (
+            size, count, html_module.escape(obj_type, quote=True), html_module.escape(obj_type),
+        ))
+
+    class_count: dict = {}
+    for obj in gc.get_objects():
+        if type(obj) is not object and hasattr(obj, "__class__") and hasattr(obj, "__dict__"):
+            name = obj.__class__.__name__
+            entry = class_count.setdefault(name, [0, 0.0])
+            entry[0] += 1
+            entry[1] += sys.getsizeof(obj) / 1024
+
+    parts.append("<p>Classes in memory (types: %s, total: %s, %.2fkb):</p>" % (
+        len(class_count), sum(v[0] for v in class_count.values()), sum(v[1] for v in class_count.values()),
+    ))
+    for class_name, (count, size) in sorted(class_count.items(), key=lambda i: i[1][0], reverse=True)[:50]:
+        parts.append("%.1fkb = %s x <a href='/Dumpobj?class=%s'>%s</a><br>" % (
+            size, count, html_module.escape(class_name, quote=True), html_module.escape(class_name),
+        ))
+
+    from ..Site import Site
+    sites = [obj for obj in gc.get_objects() if isinstance(obj, Site)]
+    parts.append("<p>P2P.Site instances (%s):</p>" % len(sites))
+    for site in sites:
+        parts.append("%.1fkb: %s<br>" % (sys.getsizeof(site) / 1024, html_module.escape(repr(site))))
+
+    modules = sorted((name, mod) for name, mod in sys.modules.items() if mod is not None)
+    parts.append("<p>Modules (%s):</p>" % len(modules))
+    for name, mod in modules:
+        parts.append("%.3fkb: %s %s<br>" % (sys.getsizeof(mod) / 1024, html_module.escape(name), html_module.escape(repr(mod))))
+
+    return "".join(parts)
+
+
+def renderDumpobj(class_filter: str) -> str:
+    """Port of actionDumpobj(): every live instance of one class name
+    (matched by __class__.__name__, same as the original), with its full
+    attribute dump. Debug-only, same gate as renderMemory()."""
+    import gc
+
+    parts = ["<!doctype html><title>Dumpobj</title>", STYLE]
+    for obj in gc.get_objects():
+        if not hasattr(obj, "__class__") or not hasattr(obj, "__dict__") or obj.__class__.__name__ != class_filter:
+            continue
+        parts.append("<p>%.1fkb %s...</p>" % (sys.getsizeof(obj) / 1024, html_module.escape(str(obj))))
+        for attr in dir(obj):
+            try:
+                value = getattr(obj, attr)
+            except Exception as err:
+                value = "! Error reading attribute: %r" % err
+            parts.append("- %s: %s<br>" % (html_module.escape(attr), html_module.escape(str(value))))
+    return "".join(parts)
+
+
+def renderListobj(type_filter: str) -> str:
+    """Port of actionListobj(): every live object of one exact str(type(obj))
+    value, with its non-container referrers -- same "who's holding this
+    alive" diagnostic as the original, same debug-only gate."""
+    import gc
+
+    parts = ["<!doctype html><title>Listobj</title>", STYLE]
+    parts.append("<p>Listing all %s objects in memory...</p>" % html_module.escape(type_filter))
+
+    ref_count: dict = {}
+    for obj in gc.get_objects():
+        if str(type(obj)) != type_filter:
+            continue
+        refs = [
+            ref for ref in gc.get_referrers(obj)
+            if hasattr(ref, "__class__") and
+            ref.__class__.__name__ not in ("list", "dict", "function", "type", "frame", "WeakSet", "tuple")
+        ]
+        if not refs:
+            continue
+        try:
+            parts.append("%.1fkb <span title='%s'>%s</span>... " % (
+                sys.getsizeof(obj) / 1024, html_module.escape(str(obj), quote=True), html_module.escape(str(obj)[:100]),
+            ))
+        except Exception:
+            continue
+        for ref in refs:
+            ref_type = ref.__class__.__name__
+            label = ref_type if ("object at" in str(ref) or len(str(ref)) > 100) else "%s:%s" % (ref_type, ref)
+            parts.append("[%s] " % html_module.escape(label))
+            entry = ref_count.setdefault(ref_type, [0, 0.0])
+            entry[0] += 1
+            entry[1] += sys.getsizeof(obj) / 1024
+        parts.append("<br>")
+
+    parts.append("<p>Object referrers (total: %s, %.2fkb):</p>" % (
+        len(ref_count), sum(v[1] for v in ref_count.values()),
+    ))
+    for ref_type, (count, size) in sorted(ref_count.items(), key=lambda i: i[1][0], reverse=True)[:30]:
+        parts.append(" - %.1fkb = %s x %s<br>" % (size, count, html_module.escape(ref_type)))
 
     return "".join(parts)
 
