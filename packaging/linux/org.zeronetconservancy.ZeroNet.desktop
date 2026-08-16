@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=ZeroNet Conservancy
+Comment=Decentralized websites over peer-to-peer networking
+Icon=zeronet
+Exec=zeronet-conservancy
+Terminal=false
+Type=Application
+Categories=Network;WebBrowser;

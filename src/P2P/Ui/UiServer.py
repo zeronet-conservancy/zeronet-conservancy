@@ -123,11 +123,15 @@ from .UiPassword import PasswordGateMiddleware, SESSION_COOKIE, SessionStore, re
 from .Stats import renderStats, renderAbout, renderDumpobj, renderListobj
 
 UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
+if not UI_MEDIA_DIR.is_dir():
+    UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "src" / "Ui" / "media"
 
 # Legacy repo-root plugins/ (one level above src/) -- see _handleUiMediaExtra's
 # own docstring for why this stack reaches into it for a couple of plugins'
 # pure client-side JS/CSS.
 LEGACY_PLUGINS_DIR = pathlib.Path(__file__).resolve().parents[3] / "plugins"
+if not LEGACY_PLUGINS_DIR.is_dir():
+    LEGACY_PLUGINS_DIR = pathlib.Path(__file__).resolve().parents[2] / "plugins"
 
 # Plugin name -> extra client media this stack injects onto /uimedia/all.js
 # and /uimedia/all.css, IF that plugin is currently loaded (checked against

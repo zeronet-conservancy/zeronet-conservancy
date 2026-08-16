@@ -1,0 +1,216 @@
+name: desktop-packages
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - pywebview2-desktop
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows installers
+            os: windows-latest
+            target: msi
+          - name: Windows NSIS installer
+            os: windows-latest
+            target: nsis
+          - name: macOS disk image
+            os: macos-latest
+            target: dmg
+          - name: Linux packages
+            os: ubuntu-22.04
+            target: deb
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Windows packaging tools
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          choco install webview2-runtime --no-progress --ignore-checksums
+          choco install wixtoolset nsis --no-progress
+
+      - name: Install Linux packaging dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            dpkg-dev \
+            elfutils \
+            gir1.2-gtk-3.0 \
+            gir1.2-webkit2-4.1 \
+            libcairo2-dev \
+            libgirepository1.0-dev \
+            pkg-config \
+            libwebkit2gtk-4.1-0 \
+            python3-gi \
+            python3-gi-cairo \
+            rpm \
+            flatpak \
+            flatpak-builder \
+            xvfb
+          curl -L --fail --retry 3 \
+            -o "$RUNNER_TEMP/appimagetool" \
+            https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x "$RUNNER_TEMP/appimagetool"
+          echo "$RUNNER_TEMP" >> "$GITHUB_PATH"
+          flatpak remote-add --if-not-exists --user flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user --noninteractive -y \
+            flathub org.freedesktop.Sdk//23.08 \
+            org.freedesktop.Platform//23.08
+
+      - name: Install pywebview2 and ZeroNet dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-webview.txt
+
+      - name: Check packaging environment
+        run: pywebview2 doctor
+
+      - name: Build desktop packages
+        env:
+          SOURCE_DATE_EPOCH: '0'
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          pywebview2 build --config pywebview2.conf.json --dist dist --target ${{ matrix.target }}
+
+      - name: Build RPM package
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/rpm
+          mkdir -p dist/rpm/{BUILD,BUILDROOT,RPMS,SOURCES,SPECS,SRPMS}
+          rpmbuild -bb packaging/linux/zeronet.spec \
+            --define "_topdir $PWD/dist/rpm" \
+            --define "_source_dir $PWD/dist/ZeroNet"
+          find dist/rpm -type f -name '*.rpm' -exec cp {} dist/installers/ \;
+
+      - name: Build AppImage package
+        if: runner.os == 'Linux'
+        run: |
+          appdir="$PWD/dist/appimage/ZeroNet.AppDir"
+            mkdir -p "$appdir/usr/bin"
+            cp -a dist/ZeroNet "$appdir/usr/bin/"
+            cp packaging/linux/org.zeronetconservancy.ZeroNet.desktop "$appdir/"
+            cp src/Ui/media/img/logo.png "$appdir/zeronet.png"
+          cat > "$appdir/AppRun" <<'EOF'
+          #!/bin/sh
+          HERE="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
+          exec "$HERE/usr/bin/ZeroNet/ZeroNet" "$@"
+          EOF
+          chmod +x "$appdir/AppRun"
+          appimagetool "$appdir" \
+            dist/installers/ZeroNet-x86_64.AppImage
+
+      - name: Build Flatpak package
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p dist/flatpak
+          flatpak-builder --force-clean --user --disable-rofiles-fuse \
+            dist/flatpak/build \
+            packaging/linux/org.zeronetconservancy.ZeroNet.yml
+          flatpak build-export \
+            dist/flatpak/repo dist/flatpak/build stable
+          flatpak build-bundle \
+            dist/flatpak/repo \
+            dist/installers/org.zeronetconservancy.ZeroNet.flatpak \
+            org.zeronetconservancy.ZeroNet stable
+
+      - name: Upload package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeronet-${{ matrix.os }}-${{ matrix.target }}
+          path: dist/installers/*
+          if-no-files-found: error
+
+  release:
+    name: Publish desktop release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: zeronet-*
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Publish tagged release artifacts
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release-artifacts/*
+
+  android:
+    name: Android APK
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Set up Java
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends -y \
+            automake \
+            libffi-dev \
+            libltdl-dev \
+            libssl-dev \
+            pkg-config \
+            zlib1g-dev
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-webview.txt
+          python -m pip install buildozer setuptools 'cython==0.29.34'
+
+      - name: Cache Buildozer toolchain
+        uses: actions/cache@v4
+        with:
+          path: |
+            .buildozer
+            ~/.buildozer
+          key: android-buildozer-${{ runner.os }}-${{ hashFiles('pywebview2.android.conf.json') }}
+
+      - name: Check Android packaging environment
+        run: pywebview2 doctor
+
+      - name: Build Android debug APK
+        env:
+          BUILDOZER_ALLOW_ORG_TEST_DOMAIN: '1'
+        run: pywebview2 build --config pywebview2.android.conf.json --target android
+
+      - name: Upload Android APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: zeronet-android
+          path: bin/*.apk
+          if-no-files-found: error

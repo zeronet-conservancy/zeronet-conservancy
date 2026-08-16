@@ -1,0 +1,88 @@
+{
+  "productName": "ZeroNet",
+  "version": "0.7.10",
+  "identifier": "org.zeronetconservancy.ZeroNet",
+  "entry": "desktop.py",
+  "window": {
+    "title": "ZeroNet",
+    "width": 1280,
+    "height": 800,
+    "resizable": true
+  },
+  "bundle": {
+    "targets": ["msi", "nsis", "dmg", "deb", "appimage"],
+    "pyinstaller": {
+      "onefile": false,
+      "excludes": [],
+        "extraArgs": [
+          "--paths", "src",
+          "--hidden-import", "src.main",
+          "--hidden-import", "src.util.compat",
+          "--hidden-import", "util.compat",
+          "--hidden-import", "util.helper",
+          "--hidden-import", "coincurve._cffi_backend",
+          "--hidden-import", "lib.bencode_open",
+          "--hidden-import", "util.Cached",
+          "--hidden-import", "util.Diff",
+          "--hidden-import", "util.Electrum",
+          "--hidden-import", "util.Event",
+          "--hidden-import", "util.Flag",
+          "--hidden-import", "util.Git",
+          "--hidden-import", "util.GreenletManager",
+          "--hidden-import", "util.Msgpack",
+          "--hidden-import", "util.Noparallel",
+          "--hidden-import", "util.OpensslFindPatch",
+          "--hidden-import", "util.Platform",
+          "--hidden-import", "util.Pooled",
+          "--hidden-import", "util.QueryJson",
+          "--hidden-import", "util.RateLimit",
+          "--hidden-import", "util.SafeRe",
+          "--hidden-import", "util.SocksProxy",
+          "--hidden-import", "util.ThreadPool",
+          "--hidden-import", "util.UpnpPunch",
+          "--hidden-import", "util.WebView",
+          "--hidden-import", "util.argparseCompat",
+          "--hidden-import", "lib.subtl",
+          "--hidden-import", "src.util.Cached",
+          "--hidden-import", "src.util.Diff",
+          "--hidden-import", "src.util.Electrum",
+          "--hidden-import", "src.util.Event",
+          "--hidden-import", "src.util.Flag",
+          "--hidden-import", "src.util.Git",
+          "--hidden-import", "src.util.GreenletManager",
+          "--hidden-import", "src.util.Msgpack",
+          "--hidden-import", "src.util.Noparallel",
+          "--hidden-import", "src.util.OpensslFindPatch",
+          "--hidden-import", "src.util.Platform",
+          "--hidden-import", "src.util.Pooled",
+          "--hidden-import", "src.util.QueryJson",
+          "--hidden-import", "src.util.RateLimit",
+          "--hidden-import", "src.util.SafeRe",
+          "--hidden-import", "src.util.SocksProxy",
+          "--hidden-import", "src.util.ThreadPool",
+          "--hidden-import", "src.util.UpnpPunch",
+          "--hidden-import", "src.util.WebView",
+          "--hidden-import", "src.util.argparseCompat",
+          "--hidden-import", "src.util.compat",
+          "--hidden-import", "src.util.helper",
+          "--collect-submodules", "multiaddr.codecs",
+          "--collect-submodules", "src.util",
+          "--collect-submodules", "util",
+          "--collect-submodules", "lib"
+        ]
+    },
+    "resources": [
+      "src/Ui/media",
+      "src/Ui/template",
+      "src/P2P/Ui/templates",
+      "src/P2P/plugins",
+      "plugins"
+    ],
+    "windows": {
+      "webview2InstallMode": "downloadBootstrapper"
+    },
+    "linux": {
+      "debDepends": ["libwebkit2gtk-4.1-0"]
+    }
+  }
+}

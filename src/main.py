@@ -126,6 +126,11 @@ def init_dirs():
             f.write("{}")
 
 def load_plugins():
+    # The native P2P stack has its own plugin manager. Loading the legacy
+    # root-level plugins here can import incompatible gevent-era modules and
+    # prevent the native desktop app from starting.
+    if config.p2p:
+        return
     from Plugin import PluginManager
     PluginManager.plugin_manager.loadPlugins()
     config.loadPlugins()
