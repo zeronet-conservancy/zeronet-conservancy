@@ -335,7 +335,12 @@ class Scheduler:
         self._inflight: dict[str, Future] = {}  # inner_path -> Future, for dedup
 
     async def needFile(self, inner_path: str, peers: list, priority: int = 0, timeout: float = 60) -> bytes:
-        file_info = self.site.content_manager.getFileInfo(inner_path)
+        # Small scheduler adapters (and callers fetching an ordinary file
+        # before content metadata is loaded) do not necessarily expose the
+        # ContentManager metadata lookup.  Only big-file handling needs it;
+        # ordinary files can use the peer race below without metadata.
+        get_file_info = getattr(self.site.content_manager, "getFileInfo", None)
+        file_info = get_file_info(inner_path) if get_file_info else None
         if file_info and (file_info.get("piece_size") or file_info.get("piecemap")):
             with trio.move_on_after(timeout) as scope:
                 await downloadBigfile(self.site, inner_path, file_info, peers)
