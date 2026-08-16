@@ -11,7 +11,12 @@ P2P/plugins/__init__.py for why that's a separate, non-overlapping set
 from this stack's own P2P/plugins/). Tor is now also covered here, via
 P2P.Tor.TorManager (enable_tor=True) -- control-port only (onion service
 create/remove); TorManager's own module docstring has what's still not
-ported (dialing out through Tor's SOCKS5 proxy). Db.py-backed querying
+ported (dialing out through Tor's SOCKS5 proxy). UPnP port mapping
+(enable_upnp=True, the default) uses py-libp2p's own trio-native
+UpnpManager (libp2p.discovery.upnp.upnp, backed by the miniupnpc
+library) directly -- no separate port needed, since the original
+zeronet's UpnpPunch.py-equivalent functionality already ships in the
+libp2p dependency this stack is built on. Db.py-backed querying
 and the CLI
 actions (siteCreate/siteSign/siteVerify/dbRebuild/etc.) ARE covered now,
 in P2P.Db/P2P.SiteStorage and P2P/actions.py respectively. Running this
@@ -46,6 +51,7 @@ import pathlib
 from contextlib import AsyncExitStack
 
 import trio
+from libp2p.discovery.upnp.upnp import UpnpManager
 
 from .FileServer import FileServer
 from .Site import Site
@@ -82,6 +88,7 @@ class App:
         tor_control_port: int = 9051,
         tor_socks_port: int = 9050,
         tor_password: str | None = None,
+        enable_upnp: bool = True,
         homepage: str | None = None,
         auto_download_timeout: float = 15.0,
         ui_password: str | None = None,
@@ -97,6 +104,9 @@ class App:
         self._tor_password = tor_password
         self._tor_socks_port = tor_socks_port
         self.tor_manager: TorManager | None = None
+        self._enable_upnp = enable_upnp
+        self.upnp_manager: UpnpManager | None = None
+        self._upnp_port: int | None = None
         self._shutdown_event = None
 
         p2p_dir = data_dir / ".p2p"
@@ -232,10 +242,44 @@ class App:
             log.warning("Tor control port connect failed (%s) -- continuing without Tor", self.tor_manager.status)
         self.ui_server.app.tor_manager = self.tor_manager
 
+    async def _setupUpnp(self) -> None:
+        """Maps the real fileserver TCP port on the LAN gateway via UPnP,
+        same "resolve the real bound port before using it" reasoning as
+        _connectTor() (tcp_port=0 at construction is only resolvable once
+        the host has actually bound). Unlike _connectTor(), this runs as a
+        background task inside run()'s own nursery rather than being
+        awaited before it -- real SSDP discovery can take a couple of
+        seconds, and gating "P2P app running" (and the very first announce)
+        on it would slow down startup for a mapping that's a pure
+        convenience. Best-effort throughout regardless: no UPnP-capable
+        gateway on the network (the common case in CI/sandboxed/cloud
+        environments) is not an error -- discover() itself already returns
+        False rather than raising in that case, and a failed/skipped
+        mapping just means peers reach this node the same way they would
+        without UPnP at all (manual port forward, or simply being
+        reachable directly)."""
+        tcp_addrs = [addr for addr in self.file_server.host.get_addrs() if "/ws" not in str(addr)]
+        if not tcp_addrs:
+            return
+        port = int(tcp_addrs[0].value_for_protocol("tcp"))
+
+        self.upnp_manager = UpnpManager()
+        if not await self.upnp_manager.discover():
+            log.warning("UPnP gateway discovery failed -- continuing without a port mapping")
+            return
+        if await self.upnp_manager.add_port_mapping(port, "TCP"):
+            self._upnp_port = port
+        else:
+            log.warning("UPnP port mapping for port %d failed -- continuing without one", port)
+
+    async def _teardownUpnp(self) -> None:
+        if self.upnp_manager is not None and self._upnp_port is not None:
+            await self.upnp_manager.remove_port_mapping(self._upnp_port, "TCP")
+
     async def run(self) -> None:
         """Runs forever (until cancelled) -- boots the host, UI server, and
-        (if enabled) DHT discovery and Tor, then keeps one announce loop
-        alive per loaded site plus a periodic sites.json save loop."""
+        (if enabled) DHT discovery, Tor, and UPnP, then keeps one announce
+        loop alive per loaded site plus a periodic sites.json save loop."""
         self._shutdown_event = trio.Event()
         async with AsyncExitStack() as stack:
             await stack.enter_async_context(self.file_server.run())
@@ -246,6 +290,8 @@ class App:
                 await stack.enter_async_context(self.local_announcer.run())
             if self._enable_tor:
                 await self._connectTor()
+            if self._enable_upnp:
+                stack.push_async_callback(self._teardownUpnp)
 
             log.info(
                 "P2P app running: peer_id=%s sites=%d ui=%s",
@@ -254,6 +300,8 @@ class App:
 
             async with trio.open_nursery() as nursery:
                 nursery.start_soon(self._saveLoop)
+                if self._enable_upnp:
+                    nursery.start_soon(self._setupUpnp)
                 for address in list(self.sites):
                     nursery.start_soon(self._announceLoop, address)
                 await self._shutdown_event.wait()
@@ -272,6 +320,7 @@ async def _main(args) -> None:
         enable_tor=args.tor,
         tor_control_port=args.tor_control_port,
         tor_password=args.tor_password,
+        enable_upnp=not args.no_upnp,
         ui_password=args.ui_password,
         multiuser=args.multiuser,
     )
@@ -299,6 +348,7 @@ def main() -> None:
     parser.add_argument("--tor-control-port", type=int, default=9051)
     parser.add_argument("--tor-socks-port", type=int, default=9050)
     parser.add_argument("--tor-password", default=None)
+    parser.add_argument("--no-upnp", action="store_true", help="Don't try to map the fileserver port on the LAN gateway via UPnP")
     parser.add_argument("--ui-password", default=None, help="Password to access the web UI")
     parser.add_argument("--multiuser", action="store_true", help="Each visiting browser gets its own account")
     parser.add_argument("--log-level", default="INFO")

@@ -85,7 +85,7 @@ class TestP2PApp:
         async def scenario():
             with tempfile.TemporaryDirectory() as d:
                 data_dir = pathlib.Path(d)
-                app = App(data_dir, ws_port=None, ui_port=0, enable_dht=False)
+                app = App(data_dir, ws_port=None, ui_port=0, enable_dht=False, enable_upnp=False)
                 site = app.addSite(SITE_ADDRESS_2)
                 await site.storage.write("content.json", content)
 
@@ -146,7 +146,7 @@ class TestP2PApp:
                     tor_port = await _startFakeServer(tor_nursery)
 
                     app = App(
-                        data_dir, ws_port=None, ui_port=0, enable_dht=False,
+                        data_dir, ws_port=None, ui_port=0, enable_dht=False, enable_upnp=False,
                         enable_tor=True, tor_control_port=tor_port,
                     )
                     results = {}
