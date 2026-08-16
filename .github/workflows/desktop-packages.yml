@@ -3,6 +3,8 @@ name: desktop-packages
 on:
   workflow_dispatch:
   push:
+    branches:
+      - pywebview2-desktop
     tags:
       - 'v*'
 
