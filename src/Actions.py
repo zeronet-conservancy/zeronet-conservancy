@@ -90,8 +90,10 @@ class Actions:
         know about before dropping --no-p2p: the P2P stack doesn't load
         the legacy plugins/ ecosystem (a genuinely different,
         non-overlapping plugin system -- see P2P/plugins/__init__.py),
-        has no Multiuser/UiPassword equivalent, and Tor is control-port-
-        only (no SOCKS5 dial-out yet, see P2P/Tor.py's own docstring).
+        and has no Multiuser equivalent. UiPassword (--ui-password, a
+        single shared UI password) and Tor (both control-port AND SOCKS5
+        dial-out, see P2P/Tor.py's own docstring) are both closed now --
+        stale gaps corrected here, not still open.
         --no-p2p remains a full, unchanged escape hatch to the exact
         previous default behavior -- nothing about the legacy path
         itself changed, only which one runs when no flag is given.
@@ -139,6 +141,7 @@ class Actions:
                 enable_dht=config.dht,
                 enable_tor=(config.tor != "disable"),
                 homepage=config.homepage,
+                ui_password=config.ui_password,
             )
             await app.loadSites()
             await app.loadUsers()

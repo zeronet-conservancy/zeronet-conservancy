@@ -82,6 +82,7 @@ class App:
         tor_password: str | None = None,
         homepage: str | None = None,
         auto_download_timeout: float = 15.0,
+        ui_password: str | None = None,
     ):
         self.data_dir = data_dir
         self.announce_interval = announce_interval
@@ -110,7 +111,7 @@ class App:
             site_manager=self.site_manager, user_manager=self.user_manager, file_server=self.file_server,
             announcers=self.announcers, homepage=homepage, on_missing_site=self.addSite,
             auto_download_timeout=auto_download_timeout, data_dir=data_dir,
-            shutdown_callback=self.requestShutdown,
+            shutdown_callback=self.requestShutdown, ui_password=ui_password,
         )
         # A peer pushing us a fresh content.json (protocols/update.py) is
         # genuinely network-driven, unlike UiApp.broadcast()'s other four
@@ -255,6 +256,7 @@ async def _main(args) -> None:
         enable_tor=args.tor,
         tor_control_port=args.tor_control_port,
         tor_password=args.tor_password,
+        ui_password=args.ui_password,
     )
     await app.loadSites()
     await app.loadUsers()
@@ -279,6 +281,7 @@ def main() -> None:
     parser.add_argument("--tor-control-port", type=int, default=9051)
     parser.add_argument("--tor-socks-port", type=int, default=9050)
     parser.add_argument("--tor-password", default=None)
+    parser.add_argument("--ui-password", default=None, help="Password to access the web UI")
     parser.add_argument("--log-level", default="INFO")
     args = parser.parse_args()
 

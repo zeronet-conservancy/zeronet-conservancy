@@ -424,6 +424,7 @@ class Config:
         self.parser.add_argument('--ui-port', help='Web interface bind port', default=43110, type=int, metavar='port')
         self.parser.add_argument('--ui-site-port', help='Port for serving site content, defaults to ui_port+1', default=None, metavar='port')
         self.parser.add_argument('--ui-restrict', help='Restrict web access', default=False, metavar='ip', nargs='*')
+        self.parser.add_argument('--ui-password', help='Password to access the web UI (P2P/--p2p stack only for now)', default=None, metavar='password')
         self.parser.add_argument('--ui-host', help='Allow access using this hosts', metavar='host', nargs='*')
         self.parser.add_argument('--ui-trans-proxy', help='Allow access using a transparent proxy', action='store_true')
 

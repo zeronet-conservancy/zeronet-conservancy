@@ -119,6 +119,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 from ..SiteStorage import AccessError
 from .Wrapper import renderWrapper
 from .Dashboard import renderDashboard
+from .UiPassword import PasswordGateMiddleware, SESSION_COOKIE, SessionStore, renderLogin
 
 UI_MEDIA_DIR = pathlib.Path(__file__).resolve().parents[2] / "Ui" / "media"
 
@@ -206,7 +207,7 @@ class UiApp:
                  file_server=None, announcers: dict | None = None, tor_manager=None,
                  homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0,
                  data_dir=None, shutdown_callback=None, dht_discovery=None,
-                 allowed_ws_origins: set[str] | None = None):
+                 allowed_ws_origins: set[str] | None = None, ui_password: str | None = None):
         self.sites = sites  # site address -> P2P.Site
         self.site_manager = site_manager  # P2P.SiteManager, for siteAdd/siteDelete/sitePause/siteResume/siteList
         self.user_manager = user_manager  # P2P.UserManager, for cert*/user* commands
@@ -225,6 +226,10 @@ class UiApp:
         # lifetime rather than being consumed by the first raw file request.
         self.wrapper_nonces: dict[str, float] = {}
         self.sessions: set["UiSession"] = set()
+        # See UiPassword.py's own module docstring -- off by default,
+        # matching plugins/disabled-UiPassword/'s own default.
+        self.ui_password = ui_password
+        self._password_sessions = SessionStore() if ui_password else None
 
         routes = [
             Route("/", self._handleHomepage, methods=["GET"]),
@@ -240,6 +245,9 @@ class UiApp:
             Route("/{address}", self._handleSite, methods=["GET"]),
             WebSocketRoute("/ZeroNet-Internal/Websocket", self._handleWebsocket),
         ]
+        if ui_password:
+            routes.insert(0, Route("/Login", self._handleLogin, methods=["GET", "POST"]))
+            routes.insert(0, Route("/Logout", self._handleLogout, methods=["GET"]))
         if UI_MEDIA_DIR.is_dir():
             # all.js/all.css get their own routes (plugin-media injection --
             # see _handleUiMediaExtra), matched before the generic mount
@@ -257,6 +265,8 @@ class UiApp:
             Middleware(TrustedHostMiddleware, allowed_hosts=allowed_hosts or ["127.0.0.1", "localhost"]),
             Middleware(CORSMiddleware, allow_origins=[], allow_credentials=False),
         ]
+        if ui_password:
+            middleware.insert(0, Middleware(PasswordGateMiddleware, sessions=self._password_sessions))
 
         self._asgi = Starlette(routes=routes, middleware=middleware)
 
@@ -267,6 +277,36 @@ class UiApp:
         if not self.homepage:
             return Response(b"No homepage configured", status_code=404)
         return RedirectResponse(url="/%s/" % self.homepage)
+
+    async def _handleLogin(self, request: Request) -> Response:
+        """GET shows the form; POST validates it. Parses the urlencoded
+        body by hand (urllib.parse.parse_qs) rather than Starlette's own
+        request.form(), which needs the optional python-multipart
+        dependency this stack doesn't otherwise use -- the login form's
+        two fields (password, an optional keep checkbox) don't need a
+        real multipart parser."""
+        if request.method == "GET":
+            return Response(renderLogin(), media_type="text/html")
+
+        from urllib.parse import parse_qs
+        body = await request.body()
+        posted = parse_qs(body.decode("utf8", errors="replace"))
+        password = (posted.get("password") or [""])[0]
+        if password != self.ui_password:
+            return Response(renderLogin(bad_password=True), media_type="text/html")
+
+        keep = bool((posted.get("keep") or [""])[0])
+        session_id, max_age = self._password_sessions.create(keep)
+        next_url = request.query_params.get("next") or ("/%s/" % self.homepage if self.homepage else "/")
+        response = RedirectResponse(url=next_url, status_code=303)
+        response.set_cookie(SESSION_COOKIE, session_id, max_age=max_age, path="/", httponly=True, samesite="lax")
+        return response
+
+    async def _handleLogout(self, request: Request) -> Response:
+        self._password_sessions.delete(request.cookies.get(SESSION_COOKIE))
+        response = RedirectResponse(url="/", status_code=303)
+        response.delete_cookie(SESSION_COOKIE, path="/")
+        return response
 
     def _dashboardSite(self):
         """Return the site whose wrapper key scopes dashboard websocket calls."""
@@ -663,12 +703,13 @@ class UiServer:
                  site_manager=None, user_manager=None, file_server=None, announcers: dict | None = None,
                  tor_manager=None, homepage: str | None = None, on_missing_site=None,
                  auto_download_timeout: float = 15.0, allowed_ws_origins: set[str] | None = None,
-                 data_dir=None, shutdown_callback=None):
+                 data_dir=None, shutdown_callback=None, ui_password: str | None = None):
         self.app = UiApp(
             sites, allowed_hosts=allowed_hosts, site_manager=site_manager, user_manager=user_manager,
             file_server=file_server, announcers=announcers, tor_manager=tor_manager,
             homepage=homepage, on_missing_site=on_missing_site, auto_download_timeout=auto_download_timeout,
             allowed_ws_origins=allowed_ws_origins, data_dir=data_dir, shutdown_callback=shutdown_callback,
+            ui_password=ui_password,
         )
         self._host = host
         self._port = port

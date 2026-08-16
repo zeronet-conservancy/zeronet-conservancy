@@ -88,8 +88,9 @@ class TestZeronetP2PDefaultFlip:
     runs the trio-native stack (Config.py's --p2p defaults to True as of
     this change), and --no-p2p is the escape hatch back to the exact
     previous default behavior. See Actions.mainP2P()'s own docstring for
-    what --no-p2p is still needed for (repo-root plugins/, Multiuser,
-    UiPassword, Tor SOCKS5 dial-out)."""
+    what --no-p2p is still needed for (repo-root plugins/, Multiuser --
+    UiPassword and Tor SOCKS5 dial-out, both once listed here too, are
+    closed now)."""
 
     def testMainWithNoFlagsDefaultsToP2P(self):
         with tempfile.TemporaryDirectory() as d:
@@ -202,6 +203,63 @@ class TestZeronetP2PEntrypoint:
 
         assert "[P2P.PluginManager] Loading plugin: ContentFilter" in log_text
         assert "[P2P.PluginManager] Loading plugin: Zeroname" in log_text
+
+    def testMainWithUiPasswordGatesRealHttp(self):
+        """--ui-password threaded through the REAL entrypoint (Config.py's
+        own top-level flag -> Actions.mainP2P() -> P2P.app.App ->
+        UiServer), not just constructed directly the way
+        TestP2PUiPassword.py's unit tests do. An unauthenticated request
+        gets the login page; posting the right password back through the
+        same urllib opener (which keeps cookies via a CookieJar) then
+        reaches the real UI."""
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            log_path = data_dir / "stdout.log"
+
+            with open(log_path, "wb") as log_file:
+                proc = subprocess.Popen(
+                    [
+                        sys.executable, str(ZERONET_PY),
+                        "--data-dir", str(data_dir),
+                        "--ui-port", "0", "--fileserver-port", "0",
+                        "--no-dht", "--tor", "disable", "--batch",
+                        "--ui-password", "hunter2",
+                        "main", "--p2p",
+                    ],
+                    cwd=str(REPO_ROOT), stdout=log_file, stderr=subprocess.STDOUT,
+                )
+            import http.cookiejar
+            import urllib.parse
+
+            def _fetch(opener, url, data=None):
+                try:
+                    with opener.open(url, data=data, timeout=5) as resp:
+                        return resp.read().decode()
+                except urllib.error.HTTPError as err:
+                    return err.read().decode()
+
+            try:
+                ip, port = _waitForBoundUiPort(log_path, time.time() + 20)
+                base_url = "http://%s:%s" % (ip, port)
+
+                opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor(http.cookiejar.CookieJar()))
+
+                gated_body = _fetch(opener, base_url + "/Config")
+
+                data = urllib.parse.urlencode({"password": "hunter2"}).encode()
+                _fetch(opener, base_url + "/Login", data=data)  # Follows the 303; cookie lands in the shared jar
+
+                authed_body = _fetch(opener, base_url + "/Config")
+            finally:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=10)
+
+        assert "login_form" in gated_body  # Redirected to the real login page
+        assert "login_form" not in authed_body  # Same opener, now carrying a valid session cookie -- past the gate
 
 
 class TestZeronetP2PCliActions:

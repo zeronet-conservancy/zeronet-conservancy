@@ -14,12 +14,15 @@ itself terminates the onion routing locally before handing the
 connection off, so nothing in P2P.Host/libp2p's transport layer needs
 to change for INBOUND onion reachability.
 
-Deliberately NOT ported in this slice: createSocket() -- dialing OUT to
-a peer's .onion address through Tor's SOCKS5 proxy. That needs a custom
-libp2p ITransport wrapping a SOCKS5-proxied connection (libp2p's own TCP
-transport dials real IPs directly, no proxy hook), real, separate work,
-and PySocks (the `socks` package the original imports for this) isn't
-even a dependency of this stack yet. Also not ported: the Windows
+createSocket()'s equivalent -- dialing OUT to a peer's .onion address
+through Tor's SOCKS5 proxy -- IS ported now: TorSocksTransport below is a
+custom libp2p ITransport wrapping a hand-rolled SOCKS5 CONNECT client
+(raw protocol over trio.open_tcp_stream, not the PySocks dependency the
+original imports, since that's a blocking-socket library with no trio
+hook and the CONNECT handshake itself is a handful of lines). Host.py
+registers it for /onion and /onion3 multiaddrs whenever a tor_socks_proxy
+is passed through, threaded from App.__init__ via FileServer.py the same
+way tcp_port/ws_port already are. Also not ported: the Windows
 self-bundled tor.exe subprocess management (startTor/stopTor/atexit) --
 this stack is Linux-first, matching the original's own
 `sys.platform.startswith("win")` gate around that code. Also not
