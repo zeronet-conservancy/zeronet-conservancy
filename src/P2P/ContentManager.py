@@ -65,11 +65,15 @@ one. See sign()'s own docstring for the detail.
 """
 import io
 import json
+import pathlib
 import re
 import time
 
 from Crypt import CryptBitcoin, CryptHash
 from util import SafeRe
+
+from .Bigfile import DEFAULT_PIECE_SIZE, build_piece_map, digest_piece, merkle_root
+from util import Msgpack
 
 
 class VerifyError(Exception):
@@ -464,6 +468,21 @@ class ContentManager:
         if not file_info:
             raise VerifyError("File not in content.json")
 
+        if file_info.get("piece_size"):
+            piece_size = int(file_info["piece_size"])
+            piece_hashes = []
+            remaining = int(file_info.get("size", 0))
+            while remaining:
+                piece = file.read(min(piece_size, remaining))
+                if not piece:
+                    break
+                piece_hashes.append(digest_piece(piece))
+                remaining -= len(piece)
+            if remaining or merkle_root(piece_hashes) != file_info.get("sha512"):
+                raise VerifyError("Invalid Bigfile hash")
+            file.seek(0)
+            return True
+
         if CryptHash.sha512sum(file) != file_info.get("sha512", ""):
             raise VerifyError("Invalid hash")
 
@@ -491,15 +510,29 @@ class ContentManager:
 
     async def hashFile(self, file_relative_path: str) -> dict:
         content_bytes = await self.storage.read(file_relative_path)
-        return {"sha512": CryptHash.sha512sum(io.BytesIO(content_bytes)), "size": len(content_bytes)}
+        file_info = {"sha512": CryptHash.sha512sum(io.BytesIO(content_bytes)), "size": len(content_bytes)}
+        if len(content_bytes) >= 5 * 1024 * 1024:
+            piece_info = build_piece_map(content_bytes, DEFAULT_PIECE_SIZE)
+            piecemap_path = file_relative_path + ".piecemap.msgpack"
+            await self.storage.write(
+                piecemap_path,
+                Msgpack.pack({pathlib.PurePosixPath(file_relative_path).name: piece_info}),
+            )
+            file_info.update({
+                "sha512": merkle_root(piece_info["sha512_pieces"]),
+                "piecemap": piecemap_path,
+                "piece_size": DEFAULT_PIECE_SIZE,
+            })
+        return file_info
 
-    async def hashFiles(self, ignore_pattern=None) -> dict:
+    async def hashFiles(self, ignore_pattern=None, optional_pattern=None) -> tuple[dict, dict]:
         """Hashes every real file under storage into a files_node dict.
-        Root-content.json signing scope only, see sign()'s docstring:
-        no optional-files distinction (files_optional_node), no hashfield
-        bookkeeping (optionalDownloaded), no db-file exclusion beyond
-        the plain content.json/dotfile/-old/-new skips."""
+        Root-content.json signing scope only, see sign()'s docstring. Files
+        matching content.json's optional regexp are returned separately, so
+        native signing preserves the original files/files_optional contract.
+        """
         files_node = {}
+        files_optional_node = {}
         for file_relative_path in await self.storage.walk("", ignore=ignore_pattern):
             file_name = file_relative_path.rsplit("/", 1)[-1]
             if file_name == "content.json":
@@ -508,8 +541,17 @@ class ContentManager:
                 continue
             if not self.isValidRelativePath(file_relative_path):
                 continue
-            files_node[file_relative_path] = await self.hashFile(file_relative_path)
-        return files_node
+            file_info = await self.hashFile(file_relative_path)
+            target = files_optional_node if optional_pattern and SafeRe.match(optional_pattern, file_relative_path) else files_node
+            target[file_relative_path] = file_info
+            piecemap_path = file_info.get("piecemap")
+            if piecemap_path and piecemap_path not in files_node and piecemap_path not in files_optional_node:
+                piecemap_bytes = await self.storage.read(piecemap_path)
+                target[piecemap_path] = {
+                    "sha512": CryptHash.sha512sum(io.BytesIO(piecemap_bytes)),
+                    "size": len(piecemap_bytes),
+                }
+        return files_node, files_optional_node
 
     async def sign(self, privatekey: str, extend: dict | None = None, filewrite: bool = True):
         """Create and sign the ROOT content.json. Return: the new content
@@ -550,11 +592,20 @@ class ContentManager:
                 if not content.get(key):
                     content[key] = val
 
-        files_node = await self.hashFiles(content.get("ignore"))
+        files_node, files_optional_node = await self.hashFiles(
+            content.get("ignore"), content.get("optional"),
+        )
+
+        for file_relative_path, file_info in content.get("files_optional", {}).items():
+            if file_relative_path not in files_optional_node:
+                files_optional_node[file_relative_path] = file_info
 
         new_content = dict(content)
         new_content["files"] = files_node
-        new_content.pop("files_optional", None)
+        if files_optional_node:
+            new_content["files_optional"] = files_optional_node
+        else:
+            new_content.pop("files_optional", None)
         new_content["modified"] = int(time.time())
         new_content["signs_required"] = content.get("signs_required", 1)
         new_content["address"] = self.site_address

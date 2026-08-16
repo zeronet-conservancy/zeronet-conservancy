@@ -35,6 +35,7 @@ not a small addition on top of what's here.
 import shutil
 
 from P2P.ContentManager import _getDirname
+from P2P.Bigfile import piece_count, piece_range
 from P2P.Ui.commands import _param, _requireAdmin, _requireSite, command
 
 from .storage import OptionalFilesStorage
@@ -63,6 +64,45 @@ def _listOptionalFiles(site):
     return back
 
 
+def _fileInfo(site, inner_path):
+    return site.content_manager.getFileInfo(inner_path) or {}
+
+
+async def _progress(site, inner_path, size, file_info):
+    piece_size = file_info.get("piece_size")
+    if not piece_size:
+        downloaded = site.storage.isFile(inner_path)
+        return {
+            "pieces_downloaded": 1 if downloaded else 0,
+            "piece_count": 1,
+            "bytes_downloaded": size if downloaded else 0,
+        }
+
+    count = piece_count(size, int(piece_size))
+    file_hash = file_info.get("sha512", "")
+    field = await site.storage.loadPiecefield(file_hash, count)
+    sidecar_exists = site.storage._piecefieldPath(file_hash).is_file()
+    if not sidecar_exists and site.storage.isFile(inner_path) and site.storage.getSize(inner_path) == size:
+        # Files downloaded by the legacy stack have no native sidecar but are
+        # complete when their declared size matches.
+        completed = count
+    else:
+        completed = field.completed()
+    if not sidecar_exists and completed == count:
+        bytes_downloaded = size
+    else:
+        bytes_downloaded = sum(
+            piece_range(size, int(piece_size), piece_index)[1]
+            - piece_range(size, int(piece_size), piece_index)[0]
+            for piece_index in range(count) if field[piece_index]
+        )
+    return {
+        "pieces_downloaded": completed,
+        "piece_count": count,
+        "bytes_downloaded": bytes_downloaded,
+    }
+
+
 def _asList(value):
     return value if isinstance(value, list) else [value]
 
@@ -81,6 +121,9 @@ async def _cmdOptionalFileList(session, params):
             continue
         is_downloaded = site.storage.isFile(inner_path)
         entry = storage.getEntry(inner_path)
+        file_info = _fileInfo(site, inner_path)
+        progress = await _progress(site, inner_path, size, file_info)
+        is_downloaded = progress["pieces_downloaded"] == progress["piece_count"]
         is_pinned = entry.get("is_pinned", False)
         if "downloaded" in filter_value and not (is_downloaded or is_pinned):
             continue
@@ -95,6 +138,7 @@ async def _cmdOptionalFileList(session, params):
             "is_downloaded": is_downloaded,
             "is_pinned": is_pinned,
             "time_downloaded": entry.get("time_downloaded"),
+            **progress,
         })
     back.sort(key=lambda row: row.get("time_downloaded") or 0, reverse=True)
     return back[:limit]
@@ -109,13 +153,17 @@ async def _cmdOptionalFileInfo(session, params):
     is_downloaded = site.storage.isFile(inner_path)
     if not is_downloaded and not entry:
         return None
-    size = site.storage.getSize(inner_path) if is_downloaded else entry.get("size", 0)
+    file_info = _fileInfo(site, inner_path)
+    size = file_info.get("size", site.storage.getSize(inner_path) if is_downloaded else entry.get("size", 0))
+    progress = await _progress(site, inner_path, size, file_info)
+    is_downloaded = progress["pieces_downloaded"] == progress["piece_count"]
     return {
         "inner_path": inner_path,
         "size": size,
         "is_downloaded": is_downloaded,
         "is_pinned": entry.get("is_pinned", False),
         "time_downloaded": entry.get("time_downloaded"),
+        **progress,
     }
 
 

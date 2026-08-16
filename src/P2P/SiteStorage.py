@@ -180,6 +180,40 @@ class SiteStorage:
                 f.write(content)
         await self._pool_write.apply(_write)
 
+    def _piecefieldPath(self, file_hash: str):
+        if not file_hash or "/" in file_hash or "\\" in file_hash:
+            raise AccessError("Invalid piecefield key")
+        return self.directory / ".p2p-piecefields" / (file_hash + ".json")
+
+    async def loadPiecefield(self, file_hash: str, piece_count: int):
+        """Load resumable Bigfile state, treating missing/corrupt state as empty."""
+        from .Bigfile import Piecefield
+
+        path = self._piecefieldPath(file_hash)
+        try:
+            raw = await self._pool_read.apply(path.read_text)
+            return Piecefield.from_json(json.loads(raw))
+        except (FileNotFoundError, OSError, ValueError, KeyError):
+            return Piecefield(piece_count)
+
+    async def savePiecefield(self, file_hash: str, piecefield) -> None:
+        path = self._piecefieldPath(file_hash)
+
+        def _save():
+            path.parent.mkdir(parents=True, exist_ok=True)
+            temp = path.with_suffix(".tmp")
+            temp.write_text(json.dumps(piecefield.to_json(), sort_keys=True))
+            os.replace(temp, path)
+
+        await self._pool_write.apply(_save)
+
+    async def deletePiecefield(self, file_hash: str) -> None:
+        path = self._piecefieldPath(file_hash)
+        try:
+            await self._pool_write.apply(path.unlink)
+        except FileNotFoundError:
+            pass
+
     async def delete(self, inner_path) -> None:
         await self._pool_write.apply(lambda: self.getPath(inner_path).unlink())
 

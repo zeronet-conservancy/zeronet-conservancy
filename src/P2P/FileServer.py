@@ -19,7 +19,8 @@ import pathlib
 from .Host import Host
 from .ConnectionPolicy import ConnectionPolicy
 from .ProtocolRouter import ProtocolRouter
-from .protocols import getfile, pex, ping, update
+from .protocols import getfile, pex, piecefields, ping, update
+from .Bigfile import piece_count
 
 
 class FileServer:
@@ -40,6 +41,7 @@ class FileServer:
         self.router.register(ping.PROTOCOL_ID, ping.handle)
         self.router.register(getfile.PROTOCOL_ID, getfile.make_handler(self._resolveSiteStorage))
         self.router.register(pex.PROTOCOL_ID, pex.make_handler(self._knownPeersForSite, self._onPeerReceived))
+        self.router.register(piecefields.PROTOCOL_ID, piecefields.make_handler(self._piecefieldsForSite))
         self.router.register(update.PROTOCOL_ID, update.make_handler(self._resolveSite))
 
     def _resolveSiteStorage(self, site_address: str):
@@ -65,6 +67,22 @@ class FileServer:
         site = self.sites.get(site_address)
         if site is not None:
             site.addPeer(peer_id, ip, port, source="pex")
+
+    async def _piecefieldsForSite(self, site_address: str) -> dict:
+        site = self.sites.get(site_address)
+        if site is None or not site.isServing():
+            return {}
+        fields = {}
+        for content in site.content_manager.contents.values():
+            for inner_path, file_info in {
+                **content.get("files", {}), **content.get("files_optional", {}),
+            }.items():
+                if not file_info.get("piece_size"):
+                    continue
+                count = piece_count(int(file_info["size"]), int(file_info["piece_size"]))
+                field = await site.storage.loadPiecefield(file_info["sha512"], count)
+                fields[file_info["sha512"]] = {"count": count, "packed": field.pack()}
+        return fields
 
     def addSite(self, site) -> None:
         self.sites[site.address] = site

@@ -73,6 +73,10 @@ class Peer:
         from .protocols import pex as pex_protocol
         return await pex_protocol.request(self.host, self.peer_id, site_address, my_peers, need_num)
 
+    async def getPiecefields(self, site_address: str) -> dict:
+        from .protocols import piecefields
+        return await piecefields.request(self.host, self.peer_id, site_address)
+
     async def pushUpdate(self, site_address: str, inner_path: str, body: bytes) -> dict:
         """Pushes a content.json update to this peer -- see
         protocols/update.py for the receiving side."""

@@ -294,6 +294,35 @@ async def _cmdFileGet(session, params):
     return body.decode()
 
 
+@command("fileNeed")
+async def _cmdFileNeed(session, params):
+    """Fetch a missing regular file or Bigfile through the native scheduler."""
+    site = _requireSite(session)
+    inner_path = _param(params, "inner_path", 0)
+    timeout = float(_param(params, "timeout", 1, 60))
+    file_server = getattr(session.app, "file_server", None)
+    if file_server is None:
+        raise CommandError("This server has no file server configured")
+
+    from multiaddr import Multiaddr
+    from ..Peer import Peer
+    from ..WorkerManager import Scheduler
+
+    records = site.getConnectablePeers(need_num=5)
+    peers = []
+    for record in records:
+        if record.ip and record.port:
+            try:
+                file_server.host.get_peerstore().add_addrs(
+                    record.peer_id, [Multiaddr("/ip4/%s/tcp/%s" % (record.ip, record.port))], 3600,
+                )
+            except Exception:
+                pass
+        peers.append(Peer(record.peer_id, file_server.host, file_server.connection_policy))
+    data = await Scheduler(site).needFile(inner_path, peers, timeout=timeout)
+    return {"inner_path": inner_path, "size": len(data), "downloaded": True}
+
+
 @command("fileList")
 async def _cmdFileList(session, params):
     site = _requireSite(session)

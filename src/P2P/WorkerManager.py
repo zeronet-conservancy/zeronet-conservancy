@@ -29,10 +29,20 @@ task's lifecycle, like internet-outage detection).
 import heapq
 import itertools
 import json
+import pathlib
 
 import trio
 
 from .Future import Future
+from .Bigfile import (
+    Piecefield,
+    load_piecemap,
+    piece_count,
+    piece_range,
+    validate_file_info,
+    verify_piece,
+)
+from .ContentManager import _getDirname
 
 
 class NoPeerHadFileError(Exception):
@@ -60,6 +70,132 @@ async def fetchAndVerify(site, inner_path: str, peers: list) -> bytes:
         return buff.read()
 
     raise NoPeerHadFileError("No peer had a valid %s: %s" % (inner_path, last_error))
+
+
+async def fetchAndVerifyPiece(site, inner_path: str, pos_from: int, pos_to: int,
+                              expected_hash: bytes | str, peers: list) -> bytes:
+    """Fetch exactly one ranged piece and verify it before returning it."""
+    last_error = None
+    for peer in peers:
+        try:
+            buff = await peer.getFile(site.address, inner_path, pos_from=pos_from, pos_to=pos_to)
+            buff.seek(0)
+            data = buff.read()
+            if len(data) != pos_to - pos_from:
+                raise NoPeerHadFileError("Short Bigfile piece: %s != %s" % (len(data), pos_to - pos_from))
+            verify_piece(data, expected_hash)
+            return data
+        except Exception as err:
+            last_error = err
+    raise NoPeerHadFileError("No peer had a valid piece of %s: %s" % (inner_path, last_error))
+
+
+async def peersForPiece(site, file_info: dict, piece_index: int, peers: list) -> list:
+    """Prefer peers advertising a completed copy of this piece.
+
+    Older/native test peers may not implement piecefield exchange; those are
+    retained as fallback candidates and the piece hash remains authoritative.
+    """
+    file_hash = file_info.get("sha512")
+    advertised = []
+    fallback = []
+    for peer in peers:
+        if not hasattr(peer, "getPiecefields"):
+            fallback.append(peer)
+            continue
+        try:
+            cache = getattr(peer, "_piecefields", None)
+            if cache is None:
+                cache = await peer.getPiecefields(site.address)
+                peer._piecefields = cache
+            entry = cache.get(file_hash)
+            if entry:
+                field = Piecefield.unpack(entry["packed"], int(entry["count"]))
+                if field[piece_index]:
+                    advertised.append(peer)
+                continue
+        except Exception:
+            pass
+        fallback.append(peer)
+    return advertised or fallback or peers
+
+
+async def loadBigfileInfo(site, inner_path: str, file_info: dict, peers: list) -> dict:
+    """Resolve inline or legacy msgpack piece hashes for a Bigfile entry."""
+    if file_info.get("sha512_pieces"):
+        info = dict(file_info)
+        validate_file_info(info)
+        return info
+    piecemap = file_info.get("piecemap")
+    if not piecemap:
+        raise ValueError("Bigfile metadata has no piece map")
+
+    content_dir = _getDirname(file_info.get("content_inner_path", ""))
+    piecemap_path = (content_dir + piecemap).strip("/")
+    if site.storage.isFile(piecemap_path):
+        raw = await site.storage.read(piecemap_path)
+    else:
+        raw = await fetchAndVerify(site, piecemap_path, peers)
+        await site.storage.write(piecemap_path, raw)
+
+    file_name = pathlib.PurePosixPath(inner_path).name
+    info = dict(file_info)
+    info.update(load_piecemap(raw, file_name))
+    validate_file_info(info)
+    return info
+
+
+async def downloadBigfilePiece(site, inner_path: str, file_info: dict, piece_index: int,
+                               peers: list, piecefield=None, state_lock=None) -> bool:
+    info = await loadBigfileInfo(site, inner_path, file_info, peers)
+    size, piece_size, hashes = validate_file_info(info)
+    start, end = piece_range(size, piece_size, piece_index)
+    if piecefield is None:
+        piecefield = await site.storage.loadPiecefield(info["sha512"], len(hashes))
+    if piecefield[piece_index]:
+        return False
+
+    candidates = await peersForPiece(site, info, piece_index, peers)
+    data = await fetchAndVerifyPiece(site, inner_path, start, end, hashes[piece_index], candidates)
+    if not site.storage.isFile(inner_path):
+        site.storage.createSparseFile(inner_path, size)
+    await site.storage.writeRange(inner_path, start, data)
+
+    if state_lock is None:
+        piecefield[piece_index] = True
+        await site.storage.savePiecefield(info["sha512"], piecefield)
+    else:
+        async with state_lock:
+            piecefield[piece_index] = True
+            await site.storage.savePiecefield(info["sha512"], piecefield)
+    return True
+
+
+async def downloadBigfile(site, inner_path: str, file_info: dict, peers: list,
+                          max_workers: int = 5) -> list[int]:
+    """Download missing pieces concurrently and persist resumable progress."""
+    info = await loadBigfileInfo(site, inner_path, file_info, peers)
+    size, piece_size, hashes = validate_file_info(info)
+    if not site.storage.isFile(inner_path):
+        site.storage.createSparseFile(inner_path, size)
+    piecefield = await site.storage.loadPiecefield(info["sha512"], len(hashes))
+    state_lock = trio.Lock()
+    limiter = trio.CapacityLimiter(max_workers)
+    downloaded: list[int] = []
+
+    async def one(piece_index):
+        async with limiter:
+            changed = await downloadBigfilePiece(
+                site, inner_path, info, piece_index, peers, piecefield, state_lock,
+            )
+            if changed:
+                downloaded.append(piece_index)
+
+    async with trio.open_nursery() as nursery:
+        for piece_index in range(len(hashes)):
+            if not piecefield[piece_index]:
+                nursery.start_soon(one, piece_index)
+    return sorted(downloaded)
 
 
 async def downloadContentJson(site, peers: list) -> dict:
@@ -101,6 +237,10 @@ async def syncSite(site, peers: list) -> list:
     content = await downloadContentJson(site, peers)
     updated = []
     for relative_path, file_info in content.get("files", {}).items():
+        if file_info.get("piece_size") or file_info.get("piecemap"):
+            await downloadBigfile(site, relative_path, file_info, peers)
+            updated.append(relative_path)
+            continue
         if site.storage.isFile(relative_path) and site.storage.getSize(relative_path) == file_info.get("size"):
             continue  # Cheap skip -- same size as what we'd fetch; not a full hash re-check
         data = await fetchAndVerify(site, relative_path, peers)
@@ -195,6 +335,14 @@ class Scheduler:
         self._inflight: dict[str, Future] = {}  # inner_path -> Future, for dedup
 
     async def needFile(self, inner_path: str, peers: list, priority: int = 0, timeout: float = 60) -> bytes:
+        file_info = self.site.content_manager.getFileInfo(inner_path)
+        if file_info and (file_info.get("piece_size") or file_info.get("piecemap")):
+            with trio.move_on_after(timeout) as scope:
+                await downloadBigfile(self.site, inner_path, file_info, peers)
+            if scope.cancelled_caught:
+                raise TimeoutError("needFile timeout: %s" % inner_path)
+            return await self.site.storage.read(inner_path)
+
         existing = self._inflight.get(inner_path)
         if existing is not None:
             return await existing.get()
