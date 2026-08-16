@@ -1,0 +1,14 @@
+{
+ "title": "Resume",
+ "slug": "resume",
+ "blocks": [
+  {"type": "heading", "level": 1, "body": "Your Name"},
+  {"type": "text", "body": "One-line summary of what you do."},
+  {"type": "heading", "level": 2, "body": "Experience"},
+  {"type": "list", "ordered": false, "items": ["Role - Company (year)", "Role - Company (year)"]},
+  {"type": "heading", "level": 2, "body": "Skills"},
+  {"type": "list", "ordered": false, "items": ["Skill one", "Skill two", "Skill three"]},
+  {"type": "heading", "level": 2, "body": "Education"},
+  {"type": "markdown", "body": "**Degree**, School (year)"}
+ ]
+}

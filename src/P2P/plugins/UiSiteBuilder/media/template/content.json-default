@@ -1,0 +1,7 @@
+{
+ "title": "Site Builder",
+ "description": "A self-hosted site and page builder for 0net",
+ "signs_required": 1,
+ "ignore": "(data/sitebuilder\\.db)",
+ "optional": "(data/media/.*)"
+}
