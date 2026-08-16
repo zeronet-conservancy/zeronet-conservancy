@@ -55,8 +55,7 @@ Still NOT ported, because the thing they need doesn't exist in this stack
   - certSelect now uses the wrapper's existing notification/injected-script
     channel to provide the account selector, including the local auth
     identity and provider registration links.
-  - siteClone, siteFavourite/siteUnfavourite (needs a "dashboard" site
-    concept not modeled here), announcerStats (the ALL-sites admin
+  - announcerStats (the ALL-sites admin
     aggregation, as opposed to announcerInfo's per-site report -- the
     original filters by self.site.announcer.getTrackers(), which is
     always [] in this stack's core with no tracker plugins registered
@@ -85,6 +84,7 @@ paragraph describes P2P/actions.py's siteVerify, not a websocket command
 in the original too.)
 """
 import base64
+import copy
 import html
 import os
 import stat
@@ -93,11 +93,11 @@ from pathlib import Path
 
 from Config import config
 from Crypt import CryptBitcoin
-from util import SafeRe
+from util import QueryJson, SafeRe
 
 from ..ContentManager import _getDirname
 from ..PluginManager import plugin_manager
-from .UiServer import command
+from .UiServer import COMMAND_HANDLERS, command
 
 
 class CommandError(Exception):
@@ -195,6 +195,43 @@ def _sitePeers(session, site, need_num: int = 5) -> list:
     return peers
 
 
+class _AsSiteProxy:
+    """Site stand-in used by the "as" command below: delegates every
+    attribute to the target site except `permissions`, which stays the
+    acting connection's own -- matching the original UiWebsocket.actionAs,
+    where hasCmdPermission stays bound to the original `self` (the acting
+    connection), not the site being acted on. Without this, a dashboard
+    site (ADMIN on itself, not on the target) couldn't run admin-gated
+    commands like siteSetLimit against sites it doesn't own, which is the
+    entire point of "as" -- it's how the sidebar's per-site buttons work."""
+    def __init__(self, target_site, acting_permissions):
+        self._target = target_site
+        self.permissions = acting_permissions
+
+    def __getattr__(self, name):
+        return getattr(self._target, name)
+
+
+@command("as")
+async def _cmdAs(session, params):
+    acting_site = _requireSite(session)
+    address = _param(params, "address", 0)
+    cmd = _param(params, "cmd", 1)
+    inner_params = _param(params, "params", 2, [])
+    if address != acting_site.address and "ADMIN" not in acting_site.permissions:
+        raise CommandError("No permission for site %s" % address)
+    handler = COMMAND_HANDLERS.get(cmd)
+    if handler is None:
+        raise CommandError("Unknown command: %s" % cmd)
+    site_manager = _requireSiteManager(session)
+    target_site = site_manager.sites.get(address)
+    if target_site is None:
+        raise CommandError("No permission for site %s" % address)
+    sub_session = copy.copy(session)
+    sub_session.site = _AsSiteProxy(target_site, acting_site.permissions)
+    return await handler(sub_session, inner_params)
+
+
 @command("ping")
 async def _cmdPing(session, params):
     return "pong"
@@ -256,7 +293,7 @@ def formatSiteInfo(site, site_manager=None, user=None):
         size_optional = sum(f.get("size", 0) for f in raw_content.get("files_optional", {}).values())
         size += size_optional
 
-    content = dict(raw_content) if raw_content else None
+    content = dict(raw_content) if raw_content else {}
     if content:
         content["files"] = len(content.get("files", {}))
         content["files_optional"] = len(content.get("files_optional", {}))
@@ -386,6 +423,23 @@ async def _cmdDirList(session, params):
         file_stat = os.stat(site.storage.getPath(rel_path))
         back.append({"name": name, "size": file_stat.st_size, "is_dir": stat.S_ISDIR(file_stat.st_mode)})
     return back
+
+
+@command("fileQuery")
+async def _cmdFileQuery(session, params):
+    """Found live: ZeroName's own ZeroName.coffee calls fileQuery(["data/names.json",
+    ""]) on every page load to list registered domains, unconditionally --
+    without this command, res[0] in its updateDomains() callback was
+    undefined, and Object.keys(undefined) threw before the page could
+    render (a blank page under a red banner, no error visible to the
+    user). Reuses util.QueryJson.query verbatim, same as the original's
+    actionFileQuery -- glob-walks dir_inner_path for JSON files matching
+    its last path segment and returns each match's queried rows."""
+    site = _requireSite(session)
+    dir_inner_path = _param(params, "dir_inner_path", 0)
+    query = _param(params, "query", 1, "") or ""
+    dir_path = str(site.storage.getPath(dir_inner_path))
+    return list(QueryJson.query(dir_path, query))
 
 
 @command("fileWrite")
@@ -798,6 +852,100 @@ async def _cmdSiteCreate(session, params):
     await site.content_manager.sign(privatekey, extend=extend)
     await _requireSiteManager(session).save()
     return {"address": address}
+
+
+@command("siteClone")
+async def _cmdSiteClone(session, params):
+    """Real, but root-content.json-only port of the original's Site.clone()
+    -- matches ContentManager.sign()'s own established root-vs-non-root
+    split (see that module's docstring): copies every file the source
+    site's root content.json actually lists (skipping any optional file
+    that isn't downloaded yet) under root_inner_path, seeds a fresh
+    content.json from the source's own header fields, and lets sign()'s
+    hashFiles() recompute the real files/files_optional hashes from
+    what's actually on disk -- same "narrow but real" discipline as
+    siteCreate. This is what both ZeroHello's per-site "Clone" button
+    (no root_inner_path/target_address -- a plain fresh copy) and its
+    dashboard "Create new site" button (root_inner_path="template-new",
+    cloning off ZeroHello's own bundled template) actually send.
+
+    Upgrading an existing cloned site in place (target_address given --
+    ZeroHello's "Upgrade" button on an outdated clone) copies the newer
+    files over that site's own storage and re-signs with ITS OWN stored
+    privatekey, without touching its existing content.json header
+    (title/domain/etc. stay the site owner's, only files change) --
+    matches the original's overwrite=False clone() semantics there.
+
+    Doesn't touch included (non-root) content.json files or the
+    original's "-default" template-file convention -- neither exists
+    anywhere in this stack yet, and nothing this stack serves depends on
+    them (this stack's ZeroHello template lives entirely under a single
+    root_inner_path, no nested content.json of its own). Also skips the
+    original's bad_files-before-cloning guard: bad_files isn't tracked
+    in this stack (see ContentManager's own module docstring)."""
+    _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    address = _param(params, "address", 0)
+    root_inner_path = _param(params, "root_inner_path", 1, "") or ""
+    target_address = _param(params, "target_address", 2)
+
+    source_site = site_manager.sites.get(address)
+    if source_site is None:
+        raise CommandError("Unknown site: %s" % address)
+
+    user = await _requireUser(session)
+    address_index = None
+
+    if target_address:
+        target_site = site_manager.sites.get(target_address)
+        if target_site is None:
+            raise CommandError("Unknown site: %s" % target_address)
+        privatekey = user.getSiteData(target_address).get("privatekey")
+        if not privatekey:
+            raise CommandError("No privatekey stored for site %s" % target_address)
+        is_new = False
+    else:
+        new_address, address_index, site_data = await user.getNewSiteData()
+        privatekey = site_data["privatekey"]
+        add_site = getattr(session.app, "addSite", None)
+        target_site = add_site(new_address, own=True) if add_site else site_manager.add(new_address, own=True)
+        if target_site is None:
+            raise CommandError("Unable to create site")
+        target_address = new_address
+        is_new = True
+
+    root = Path(root_inner_path) if root_inner_path else None
+    raw_content = source_site.content_manager.contents.get("content.json") or {}
+
+    if is_new and not target_site.storage.isFile("content.json"):
+        header = dict(raw_content)
+        for key in ("files", "files_optional", "signs", "sign", "signers_sign", "domain"):
+            header.pop(key, None)
+        header["title"] = "my" + str(header.get("title", target_address))
+        header.setdefault("description", "")
+        header["cloned_from"] = address
+        header["clone_root"] = root_inner_path
+        if address_index is not None:
+            header["address_index"] = address_index
+        await target_site.storage.writeJson("content.json", header)
+        await target_site.content_manager.loadContent("content.json")
+
+    for relative_path in raw_content.get("files", {}):
+        file_path = Path(relative_path)
+        if root is not None:
+            if root != file_path and root not in file_path.parents:
+                continue
+            dest_relative = str(file_path.relative_to(root))
+        else:
+            dest_relative = relative_path
+        if dest_relative == "content.json" or not source_site.storage.isFile(relative_path):
+            continue
+        data = await source_site.storage.read(relative_path)
+        await target_site.storage.write(dest_relative, data)
+
+    await target_site.content_manager.sign(privatekey)
+    await site_manager.save()
+    return {"address": target_address}
 
 
 @command("siteDelete")

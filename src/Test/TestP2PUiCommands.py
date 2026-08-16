@@ -51,6 +51,26 @@ class TestP2PUiCommands:
         assert result["content"]["files"] == 1
         assert "sign" not in result["content"]
 
+    def testSiteInfoWithoutContentJsonReturnsEmptyDictNotNull(self):
+        """Found live: the dashboard's own SiteList.render() does
+        `row.content.merged_type` unconditionally on every site row,
+        crashing the whole Sites tab (and its "Create new site" menu)
+        the moment ANY undownloaded site (no content.json yet) was
+        listed -- the original always sends `content: {}` for that case,
+        never `content: null` (see UiWebsocket.formatSiteInfo, `.get(...,
+        {})` not `.get(...)`)."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestCmdSiteNoContent", pathlib.Path(root))
+
+                server = UiServer(sites={"1TestCmdSiteNoContent": site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "siteInfo")
+
+        reply = compat.run(scenario)
+        assert reply["result"]["content"] == {}
+
     def testChannelJoinTracksChannelsPerSession(self):
         async def scenario():
             server = UiServer(sites={})
@@ -109,6 +129,23 @@ class TestP2PUiCommands:
         assert stats_by_name["a.txt"]["size"] == 1
         assert stats_by_name["a.txt"]["is_dir"] is False
         assert stats_by_name["sub"]["is_dir"] is True
+
+    def testFileQueryReturnsWholeJsonForBlankFilter(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestCmdSite5", pathlib.Path(root))
+                await site.storage.write("data/names.json", json.dumps({"a.bit": "1AAA", "b.bit": "1BBB"}).encode())
+
+                server = UiServer(sites={"1TestCmdSite5": site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "fileQuery", ["data/names.json", ""])
+
+        reply = compat.run(scenario)
+        rows = reply["result"]
+        assert len(rows) == 1
+        assert rows[0]["a.bit"] == "1AAA"
+        assert rows[0]["b.bit"] == "1BBB"
 
     def testFileWriteRequiresAdminPermission(self):
         async def scenario():

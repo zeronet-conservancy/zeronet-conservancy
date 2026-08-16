@@ -341,6 +341,160 @@ class TestP2PUiCommandsSiteManagement:
         assert reply["result"] == "ok"
         assert limit == 20.0
 
+    def testAsProxiesAdminCommandToTargetSiteUsingActingPermissions(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                dashboard_address = "1TestAsDashboardSiteAAAAAAAA1"
+                target_address = "1TestAsTargetSiteAAAAAAAAAA1"
+                dashboard_site = site_manager.add(dashboard_address)
+                dashboard_site.permissions = ["ADMIN"]
+                target_site = site_manager.add(target_address)
+                target_site.permissions = []
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, dashboard_site)) as ws:
+                        reply = await _call(
+                            ws, "as", [target_address, "siteSetLimit", "20"], msg_id=1
+                        )
+                return reply, site_manager.getSizeLimitOverride(target_address)
+
+        reply, override = compat.run(scenario)
+        assert reply["result"] == "ok"
+        assert override == 20.0
+
+    def testAsWithoutAdminOnUnrelatedSiteIsDenied(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                acting_address = "1TestAsNonAdminActorAAAAAAA1"
+                target_address = "1TestAsNonAdminTargetAAAAA1"
+                acting_site = site_manager.add(acting_address)
+                acting_site.permissions = []
+                site_manager.add(target_address)
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, acting_site)) as ws:
+                        return await _call(ws, "as", [target_address, "siteSetLimit", "20"], msg_id=1)
+
+        reply = compat.run(scenario)
+        assert "No permission" in reply["error"]
+
+    def testSiteCloneCreatesFreshSignedSiteWithCopiedFiles(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                source_privatekey = CryptBitcoin.newPrivatekey()
+                source_address = CryptBitcoin.privatekeyToAddress(source_privatekey)
+                source = site_manager.add(source_address)
+                source.permissions = ["ADMIN"]
+                await source.storage.write("index.html", b"hello")
+                await source.storage.write("js/all.js", b"console.log(1)")
+                await source.storage.writeJson("content.json", {"title": "Source"})
+                await source.content_manager.loadContent("content.json")
+                await source.content_manager.sign(source_privatekey)
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, source)) as ws:
+                        reply = await _call(ws, "siteClone", {"address": source_address})
+                new_address = reply["result"]["address"]
+                cloned = site_manager.sites[new_address]
+                return (
+                    new_address,
+                    source_address,
+                    cloned.storage.isFile("index.html"),
+                    cloned.storage.isFile("js/all.js"),
+                    dict(cloned.content_manager.contents["content.json"]),
+                )
+
+        new_address, source_address, has_index, has_js, content = compat.run(scenario)
+        assert new_address != source_address
+        assert has_index
+        assert has_js
+        assert content["cloned_from"] == source_address
+        assert content["title"] == "mySource"
+        assert "index.html" in content["files"]
+        assert "signs" in content
+
+    def testSiteCloneWithRootInnerPathStripsPrefix(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                source_privatekey = CryptBitcoin.newPrivatekey()
+                source_address = CryptBitcoin.privatekeyToAddress(source_privatekey)
+                source = site_manager.add(source_address)
+                source.permissions = ["ADMIN"]
+                await source.storage.write("template-new/index.html", b"template body")
+                await source.storage.write("unrelated.txt", b"not part of the template")
+                await source.content_manager.sign(source_privatekey, extend={"title": "Dashboard"})
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, source)) as ws:
+                        reply = await _call(
+                            ws, "siteClone", {"address": source_address, "root_inner_path": "template-new"}
+                        )
+                cloned = site_manager.sites[reply["result"]["address"]]
+                return (
+                    cloned.storage.isFile("index.html"),
+                    cloned.storage.isFile("unrelated.txt"),
+                    cloned.storage.isFile("template-new/index.html"),
+                )
+
+        has_index, has_unrelated, has_nested_template = compat.run(scenario)
+        assert has_index
+        assert not has_unrelated
+        assert not has_nested_template
+
+    def testSiteCloneWithTargetAddressUpgradesExistingSiteInPlace(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+
+                source_privatekey = CryptBitcoin.newPrivatekey()
+                source_address = CryptBitcoin.privatekeyToAddress(source_privatekey)
+                source = site_manager.add(source_address)
+                source.permissions = ["ADMIN"]
+                await source.storage.write("index.html", b"version 2")
+                await source.content_manager.sign(source_privatekey, extend={"title": "Source"})
+
+                target_privatekey = CryptBitcoin.newPrivatekey()
+                target_address = CryptBitcoin.privatekeyToAddress(target_privatekey)
+                target = site_manager.add(target_address, own=True)
+                target.permissions = ["ADMIN"]
+                await target.storage.write("index.html", b"version 1")
+                await target.storage.writeJson("content.json", {"title": "My own title"})
+                await target.content_manager.loadContent("content.json")
+                await target.content_manager.sign(target_privatekey)
+                user.getSiteData(target_address)["privatekey"] = target_privatekey
+                await user.save()
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, source)) as ws:
+                        reply = await _call(
+                            ws, "siteClone", {"address": source_address, "target_address": target_address}
+                        )
+                cloned_index = await target.storage.read("index.html")
+                return reply, target, cloned_index
+
+        reply, target, cloned_index = compat.run(scenario)
+        assert reply["result"]["address"] == target.address
+        assert cloned_index == b"version 2"
+        assert target.content_manager.contents["content.json"]["title"] == "My own title"
+
     def testSiteAddDeletePauseResumeAndList(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:

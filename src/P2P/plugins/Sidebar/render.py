@@ -36,6 +36,7 @@ discipline as every other file in this package:
 """
 import html
 import math
+from pathlib import Path
 
 
 def _extensionSizesFromFiles(files: dict) -> tuple[dict[str, int], int]:
@@ -136,7 +137,7 @@ def _renderOptionalFileStats(body: list, site) -> bool:
 def _renderDbInfo(body: list, site) -> None:
     if site.storage.db is not None:
         db_path = str(site.storage.db.db_path)
-        size_kb = site.storage.getSize(site.storage.getInnerPath(db_path)) / 1024
+        size_kb = site.storage.getSize(site.storage.getInnerPath(Path(db_path))) / 1024
         body.append(
             "<li><label>Database <small>(%.2fkB)</small></label>"
             "<div class='flex'><input type='text' class='text disabled' value='%s' disabled='disabled'/>"

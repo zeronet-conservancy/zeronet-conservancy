@@ -190,3 +190,34 @@ class TestP2PPluginsSidebar:
 
         reply = compat.run(scenario)
         assert "error" in reply
+
+    def testSidebarGetHtmlTagWithRealDbReturnsHtml(self):
+        """Found live: dragging open the sidebar on ZeroMe/ZeroTalk (both
+        real sqlite-backed sites) rendered the literal text "[object
+        Object]" instead of the sidebar -- sidebarGetHtmlTag() was
+        throwing (str db_path passed where getInnerPath() needs a Path),
+        so the command handler's generic error-result dict got
+        string-concatenated client-side. No existing test opened a real
+        db before calling this command, which is why it went unnoticed."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestSidebarDbSiteAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                site.permissions.append("ADMIN")
+                await site.storage.writeJson("dbschema.json", {
+                    "db_name": "TestSite",
+                    "db_file": "site.db",
+                    "version": 1,
+                    "maps": {},
+                })
+                await site.storage.getDb()
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "sidebarGetHtmlTag")
+
+        reply = compat.run(scenario)
+        assert "error" not in reply
+        assert isinstance(reply["result"], str)
+        assert "<label>Database" in reply["result"]
