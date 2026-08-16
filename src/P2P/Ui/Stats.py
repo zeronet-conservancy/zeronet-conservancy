@@ -43,9 +43,24 @@ the rest of this package:
     Sidebar/render.py's own docstring making the identical point about
     the sidebar's transfer-stats section); faking a number here would be
     a lie, not a simplification.
-  - Bigfile piecefield introspection -- Bigfile Layers B-D (piece
-    hashing, piecefield bookkeeping) aren't built, so there's nothing to
-    introspect.
+  - Per-peer Bigfile piecefield introspection (the original's own
+    renderBigfiles(): which known peer has which pieces of a given
+    bigfile). Correction to an earlier draft of this docstring, which
+    wrongly claimed Bigfile piece hashing/piecefield bookkeeping weren't
+    built at all -- they are (Bigfile.py, SiteStorage.loadPiecefield/
+    savePiecefield, protocols/piecefields.py, WorkerManager's real
+    piece-by-piece download loop): downloading/serving/storing a
+    bigfile's own pieces works end to end. What's specifically missing is
+    a place to READ another peer's piecefield back out for display: the
+    original reads it off its own long-lived Peer objects' cached
+    .piecefields attribute, populated as a side effect of ordinary
+    protocol traffic. This stack's site.peers holds lightweight
+    PeerRecord metadata, not a connected session, and Peer.getPiecefields()
+    is a live RPC with no cache -- so a faithful "already-known, no new
+    I/O" introspection page has nothing to read yet; adding one would mean
+    either triggering fresh network calls on every /Stats load (different
+    cost/semantics than the original) or building real peer-piecefield
+    caching first. Real, separate follow-up.
   - The original's Multiuser-proxy gate (actionStats refuses entirely
     when a public multiuser instance doesn't allow it) -- this stack's
     other diagnostic pages (/Config, /Plugins, /Console) have no such
