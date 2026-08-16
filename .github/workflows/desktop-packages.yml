@@ -214,6 +214,20 @@ jobs:
       - name: Build Android debug APK
         env:
           BUILDOZER_ALLOW_ORG_TEST_DOMAIN: '1'
+          # python-for-android defensively runs `pip install -U pip` before
+          # each requirement it installs into the build venv (see
+          # python-for-android's hostpython3/python3 recipes). The FIRST
+          # call upgrades pip fine; a LATER call re-upgrading the same,
+          # already-running pip process corrupts its own already-imported
+          # _internal modules (a known "can't safely reinstall pip while
+          # it's still running" class of bug) and crashes with
+          # "cannot import name 'open_rich_spinner' from
+          # 'pip._internal.cli.spinners'". Constraining pip to a fixed
+          # version here (absolute path -- these pip invocations run with
+          # a cwd deep inside .buildozer/, not the repo root) makes every
+          # `pip install -U pip` call after the first a no-op instead of a
+          # live self-reinstall, since it's already at the pinned version.
+          PIP_CONSTRAINT: ${{ github.workspace }}/packaging/android/pip-constraints.txt
         run: pywebview2 build --config pywebview2.android.conf.json --target android
 
       - name: Upload Android APK
