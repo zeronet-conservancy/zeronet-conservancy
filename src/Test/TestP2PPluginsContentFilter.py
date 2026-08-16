@@ -204,6 +204,84 @@ class TestP2PPluginsContentFilterEnforcement:
 
         compat.run(scenario)
 
+    def testSyncSiteSkipsMutedAuthorButSyncsRest(self):
+        """End-to-end proof that the mute check applies during a real bulk
+        WorkerManager.syncSite() run, not just a single needFile() call --
+        two real FileServer nodes, a real signed content.json listing one
+        muted-author file and one unmuted file, only the unmuted one ends
+        up synced. Generic per-file-skip behavior is already proven at the
+        WorkerManager level in TestP2PWorkerManager.py's own
+        testSyncSiteSkipsFileRefusedByPluginButSyncsRest; this confirms
+        ContentFilter's actual plugin is what's wired into that path."""
+        import time
+
+        from libp2p.peer.peerinfo import PeerInfo
+        from Crypt import CryptBitcoin, CryptHash
+        from P2P.ConnectionPolicy import ConnectionPolicy
+        from P2P.FileServer import FileServer
+        from P2P.Peer import Peer
+        from P2P.WorkerManager import syncSite
+
+        def _sha512(data: bytes) -> str:
+            import io
+            return CryptHash.sha512sum(io.BytesIO(data))
+
+        def _sign(content, privatekey):
+            sign_content = json.dumps(content, sort_keys=True)
+            content = dict(content)
+            content["signs"] = {CryptBitcoin.privatekeyToAddress(privatekey): CryptBitcoin.sign(sign_content, privatekey)}
+            return content
+
+        privatekey = CryptBitcoin.newPrivatekey()
+        site_address = CryptBitcoin.privatekeyToAddress(privatekey)
+        muted_author = "1MutedAuthorEEEEEEEEEEEEEEEEE"
+        muted_content = b"spam post"
+        normal_content = b"real post"
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d, \
+                    tempfile.TemporaryDirectory() as da, tempfile.TemporaryDirectory() as db, \
+                    tempfile.TemporaryDirectory() as root_a, tempfile.TemporaryDirectory() as root_b:
+                from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+                from P2P.plugins.ContentFilter.storage import ContentFilterStorage
+                smp.filter_storage = ContentFilterStorage(pathlib.Path(d) / "filter")
+                smp.filter_storage.muteAdd(muted_author, reason="spam")
+
+                server_a = FileServer(pathlib.Path(da), ws_port=None)
+                site_a = Site(site_address, pathlib.Path(root_a))
+                server_a.addSite(site_a)
+
+                muted_path = "data/users/%s/data.json" % muted_author
+                await site_a.storage.write(muted_path, muted_content)
+                await site_a.storage.write("data/normal.json", normal_content)
+                content = {
+                    "address": site_address,
+                    "modified": time.time(),
+                    "files": {
+                        muted_path: {"sha512": _sha512(muted_content), "size": len(muted_content)},
+                        "data/normal.json": {"sha512": _sha512(normal_content), "size": len(normal_content)},
+                    },
+                }
+                signed_content = _sign(content, privatekey)
+                site_a.content_manager.contents["content.json"] = signed_content
+                await site_a.storage.writeJson("content.json", signed_content)
+
+                server_b = FileServer(pathlib.Path(db), ws_port=None)
+                site_b = ContentFilterSite(site_address, pathlib.Path(root_b))
+
+                async with server_a.run(), server_b.run():
+                    await server_b.host.connect(PeerInfo(server_a.host.peer_id, server_a.host.get_addrs()))
+                    policy_b = ConnectionPolicy(server_b.host)
+                    peer_a_from_b = Peer(server_a.host.peer_id, server_b.host, policy_b)
+
+                    updated = await syncSite(site_b, [peer_a_from_b])
+                    return updated, site_b.storage.isFile(muted_path), site_b.storage.isFile("data/normal.json")
+
+        updated, has_muted, has_normal = compat.run(scenario)
+        assert updated == ["data/normal.json"]
+        assert has_muted is False
+        assert has_normal is True
+
 
 class TestP2PPluginsContentFilterDbEnforcement:
     """SiteStorage.updateDbFile() mute enforcement -- the second real hook,

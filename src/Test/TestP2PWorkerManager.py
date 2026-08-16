@@ -114,6 +114,63 @@ class TestP2PWorkerManager:
         assert first == ["data.json"]
         assert second == []  # nothing changed since -- content.json's "modified" matched, no re-fetch
 
+    def testSyncSiteSkipsFileRefusedByPluginButSyncsRest(self):
+        """syncSite() routes every file through site.needFile() now (see
+        that function's own docstring) -- a plugin's own per-file refusal
+        (e.g. ContentFilter's mute check) should skip just that one file,
+        not abort the whole sync. RefusingSite stands in for any such
+        plugin override generically, proving the WorkerManager-level
+        contract independent of ContentFilter specifically (that plugin's
+        own real needFile() override is tested end-to-end in
+        TestP2PPluginsContentFilter.py)."""
+        privatekey = CryptBitcoin.newPrivatekey()
+        site_address = CryptBitcoin.privatekeyToAddress(privatekey)
+        allowed_content = b"allowed file"
+        refused_content = b"refused file"
+
+        class RefusingSite(Site):
+            async def needFile(self, inner_path, peers, priority=0, timeout=60):
+                if inner_path == "refused.json":
+                    raise PermissionError("refused: %s" % inner_path)
+                return await super().needFile(inner_path, peers, priority=priority, timeout=timeout)
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as da, tempfile.TemporaryDirectory() as db, \
+                    tempfile.TemporaryDirectory() as root_a, tempfile.TemporaryDirectory() as root_b:
+                server_a = FileServer(pathlib.Path(da), ws_port=None)
+                site_a = Site(site_address, pathlib.Path(root_a))
+                server_a.addSite(site_a)
+
+                await site_a.storage.write("allowed.json", allowed_content)
+                await site_a.storage.write("refused.json", refused_content)
+                content = {
+                    "address": site_address,
+                    "modified": time.time(),
+                    "files": {
+                        "allowed.json": {"sha512": _sha512(allowed_content), "size": len(allowed_content)},
+                        "refused.json": {"sha512": _sha512(refused_content), "size": len(refused_content)},
+                    },
+                }
+                signed_content = _sign(content, privatekey)
+                site_a.content_manager.contents["content.json"] = signed_content
+                await site_a.storage.writeJson("content.json", signed_content)
+
+                server_b = FileServer(pathlib.Path(db), ws_port=None)
+                site_b = RefusingSite(site_address, pathlib.Path(root_b))
+
+                async with server_a.run(), server_b.run():
+                    await server_b.host.connect(PeerInfo(server_a.host.peer_id, server_a.host.get_addrs()))
+                    policy_b = ConnectionPolicy(server_b.host)
+                    peer_a_from_b = Peer(server_a.host.peer_id, server_b.host, policy_b)
+
+                    updated = await syncSite(site_b, [peer_a_from_b])
+                    return updated, site_b.storage.isFile("allowed.json"), site_b.storage.isFile("refused.json")
+
+        updated, has_allowed, has_refused = compat.run(scenario)
+        assert updated == ["allowed.json"]  # Only the non-refused file made it into the return value
+        assert has_allowed is True
+        assert has_refused is False  # Refused, not partially written either
+
     def testFetchAndVerifyRejectsTamperedFile(self):
         privatekey = CryptBitcoin.newPrivatekey()
         site_address = CryptBitcoin.privatekeyToAddress(privatekey)

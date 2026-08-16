@@ -28,12 +28,11 @@ task's lifecycle, like internet-outage detection).
 
 Scheduler.needFile() is now wrapped by Site.needFile() (see Site.py's own
 docstring) -- the real, plugin-overridable per-file fetch entrypoint, e.g.
-ContentFilter's mute check. syncSite()'s own bulk per-file loop below
-still calls fetchAndVerify()/downloadBigfile() directly, bypassing that
-hook -- a real, separate gap (bulk site sync doesn't consult per-file
-mute state), not fixed by this pass. needFile() is what a user actually
-hits clicking into a single page/post; syncSite() is the whole-site CLI
-download path.
+ContentFilter's mute check. syncSite()'s own bulk per-file loop below now
+routes through site.needFile() too (see that function's own docstring),
+so a plugin's per-file policy applies during a whole-site sync, not just
+a single on-demand fetch -- closes what used to be documented here as a
+real, separate gap.
 """
 import heapq
 import itertools
@@ -242,18 +241,43 @@ async def syncSite(site, peers: list) -> list:
     """content.json + every listed file, fetched and verified from
     whichever peers have them. Returns the inner_paths actually
     (re)written. This is the flow the Phase 6 milestone exercises: a real
-    site update propagating from one node to another over libp2p."""
+    site update propagating from one node to another over libp2p.
+
+    Routes each file through site.needFile() (added alongside Site's own
+    @acceptPlugins) rather than calling fetchAndVerify()/downloadBigfile()
+    directly -- closes the gap plugins/ContentFilter/SitePlugin.py's own
+    docstring used to flag ("WorkerManager.syncSite()'s bulk whole-site
+    download loop bypasses [Site.needFile()] entirely"): a plugin's mute
+    check now actually applies during a full site sync, not just a single
+    on-demand fetch. needFile() itself already branches on piece_size/
+    piecemap internally (see Site.needFile()'s own docstring), so this no
+    longer needs its own separate Bigfile-vs-regular-file check either --
+    one call handles both, and only a regular file's returned bytes still
+    need an explicit storage.write() (a Bigfile's pieces are already
+    written to disk piece-by-piece by the time needFile() returns).
+
+    Per-file failures (network OR a plugin's own refusal, e.g. a mute
+    match) are caught and skipped, not propagated -- a real behavior
+    change from this function's earlier all-or-nothing version, and a
+    deliberate one: a bulk sync where one peer doesn't have one file (or
+    where content policy refuses it) should still bring back everything
+    else, the same "best effort, return what actually updated" contract
+    the original's own downloadContent() has. A caller that wants "all or
+    nothing" for a single file already has that via site.needFile()
+    directly (commands.py's fileNeed, actions.py's siteNeedFile) --
+    unaffected, since neither goes through this loop."""
     content = await downloadContentJson(site, peers)
     updated = []
     for relative_path, file_info in content.get("files", {}).items():
-        if file_info.get("piece_size") or file_info.get("piecemap"):
-            await downloadBigfile(site, relative_path, file_info, peers)
-            updated.append(relative_path)
-            continue
         if site.storage.isFile(relative_path) and site.storage.getSize(relative_path) == file_info.get("size"):
             continue  # Cheap skip -- same size as what we'd fetch; not a full hash re-check
-        data = await fetchAndVerify(site, relative_path, peers)
-        await site.storage.write(relative_path, data)
+        is_bigfile = bool(file_info.get("piece_size") or file_info.get("piecemap"))
+        try:
+            data = await site.needFile(relative_path, peers)
+        except Exception:
+            continue
+        if not is_bigfile:
+            await site.storage.write(relative_path, data)
         updated.append(relative_path)
     return updated
 
