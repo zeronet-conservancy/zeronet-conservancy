@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.2
+Version:        1.0.3
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,11 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.3-1
+- Silence a spurious gevent MonkeyPatchWarning on startup (harmless
+  side effect of importing trio/libp2p before gevent patches ssl);
+  bumped pywebview2 to 0.1.6 (GTK drag-region compatibility fix,
+  not used by this app)
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.2-1
 - Fix Android crashes: drop the unnecessary Kivy requirement from the
   generated Buildozer project and harden WebView teardown/pause-resume

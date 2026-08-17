@@ -1,3 +1,14 @@
+### zeronet-conservancy 1.0.3
+- Silence a spurious `MonkeyPatchWarning` gevent printed on every startup
+  (visible in the packaged AppImage's stderr). It's a harmless side effect
+  of importing `trio`/`libp2p` before `gevent.monkey.patch_all()` (required
+  for trio's socket subclass to be correct) -- libp2p's own dependency
+  chain (httpx -> anyio, urllib3) imports `ssl` first, so gevent can't
+  patch those modules' references. Now wrapped to suppress the warning
+  instead of leaking it as a startup log line
+- `pywebview2` bumped to 0.1.6 (GTK-only frameless-window drag-region
+  compatibility fix; not used by this app, no code changes needed)
+
 ### zeronet-conservancy 1.0.2
 - Fix Android crashes: bumped the `pywebview2` dependency to 0.1.5, which
   drops the unnecessary Kivy requirement from the generated Buildozer
