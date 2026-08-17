@@ -1,3 +1,12 @@
+### zeronet-conservancy 1.0.2
+- Fix Android crashes: bumped the `pywebview2` dependency to 0.1.5, which
+  drops the unnecessary Kivy requirement from the generated Buildozer
+  Android project (the Android backend uses python-for-Android's SDL2
+  bootstrap and pyjnius, not Kivy) and makes WebView teardown and
+  pause/resume safe against partial-init and double-destroy races.
+  `pywebview2.android.conf.json`'s `buildozerSpecOverrides.requirements`
+  updated to match
+
 ### zeronet-conservancy 1.0.1
 - Fix desktop packaging: the Windows MSI installer and the Linux AppImage/deb
   packages were broken in 1.0.0 (bumped the `pywebview2` dependency to 0.1.4,

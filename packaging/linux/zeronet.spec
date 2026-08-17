@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.1
+Version:        1.0.2
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,10 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.2-1
+- Fix Android crashes: drop the unnecessary Kivy requirement from the
+  generated Buildozer project and harden WebView teardown/pause-resume
+  (pywebview2 0.1.5)
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.1-1
 - Fix broken Windows MSI and Linux AppImage/deb desktop packages
   (pywebview2 0.1.4)
