@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.7
+Version:        1.0.8
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,12 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Tue Aug 18 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.8-1
+- Fix the Sidebar plugin's own JS/CSS (drag-to-open gesture, Console
+  panel, left-edge nav drawer) missing from every packaged desktop and
+  Android build since 1.0.0 -- plugins/Sidebar/media was dropped from
+  the PyInstaller resources list by a pre-1.0.0 cleanup that mistook it
+  for dead legacy code
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.7-1
 - Add a persistent left-edge nav drawer (New site, Content filters,
   Configuration, Plugins, Theme, Language, Update all sites, Show data

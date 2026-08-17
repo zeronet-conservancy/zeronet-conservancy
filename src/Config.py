@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from rich import print
 
-VERSION = "1.0.7"
+VERSION = "1.0.8"
 
 class StartupError(RuntimeError):
     def __init__(self, message, *paths):

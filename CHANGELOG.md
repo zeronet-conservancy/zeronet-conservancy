@@ -1,3 +1,17 @@
+### zeronet-conservancy 1.0.8
+- Fix the Sidebar plugin's own JS/CSS (the fixbutton drag-to-open
+  gesture, the Console panel, and the new left-edge nav drawer) being
+  completely missing from every packaged desktop and Android build
+  since 1.0.0 -- a pre-1.0.0 cleanup dropped `plugins/Sidebar/media`
+  from the PyInstaller bundle's resources list on the mistaken
+  assumption the whole legacy `plugins/` directory was dead code.
+  Found live from a real screenshot: the left drawer rendered
+  completely unstyled in the packaged app, stacked in plain document
+  flow above the site content instead of as a fixed off-canvas panel.
+  Verified with a real local PyInstaller build that the fix actually
+  lands the files at the path the server's own fallback resolution
+  expects
+
 ### zeronet-conservancy 1.0.7
 - New: a persistent left-edge nav drawer (click or drag the peek-tab to
   open), present on every page including `/Config`, `/Plugins`,
