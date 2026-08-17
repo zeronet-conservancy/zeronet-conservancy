@@ -21,7 +21,7 @@ def startupError(msg):
 # so if gevent has already swapped socket.socket for its own greenlet-aware
 # class by the time trio/libp2p are first imported anywhere in the process,
 # that wrong base class is baked in permanently, and no amount of restoring
-# socket.socket afterward (see P2P/geventtrio.py) can fix it. See src/P2P/geventtrio.py
+# socket.socket afterward (see P2P/compat.py) can fix it. See src/P2P/compat.py
 # for the rest of the story (select.epoll/socket.socket also get deleted/replaced
 # by patch_all() at runtime, independently of this import-order issue).
 import trio  # noqa: F401
@@ -29,7 +29,19 @@ import libp2p  # noqa: F401
 
 import gevent
 import gevent.monkey
-gevent.monkey.patch_all(thread=False)
+import warnings
+
+# The trio/libp2p-first import above is exactly what triggers this: libp2p's
+# own dependency chain (httpx -> anyio -> anyio.streams.tls, plus urllib3)
+# imports ssl before we get a chance to patch it. That's harmless here --
+# anyio/httpx/trio deliberately keep using the *real* socket/ssl machinery
+# for the P2P stack (P2P/compat.py restores it explicitly), and the one
+# post-patch urllib3 user (the legacy bootstrap-bundle fetch in
+# init_dirs()) is always skipped when --p2p is active. Silence the warning
+# rather than have it show up as a spurious-looking error in user logs.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=gevent.monkey.MonkeyPatchWarning)
+    gevent.monkey.patch_all(thread=False)
 
 update_after_shutdown = False  # If set True then update and restart zeronet after main loop ended
 restart_after_shutdown = False  # If set True then restart zeronet after main loop ended
