@@ -226,7 +226,7 @@ class UiApp:
     def __init__(self, sites: dict, allowed_hosts: list | None = None, site_manager=None, user_manager=None,
                  file_server=None, announcers: dict | None = None, tor_manager=None,
                  homepage: str | None = None, on_missing_site=None, auto_download_timeout: float = 15.0,
-                 data_dir=None, shutdown_callback=None, dht_discovery=None,
+                 data_dir=None, shutdown_callback=None, dht_discovery=None, port_recheck_callback=None,
                  allowed_ws_origins: set[str] | None = None, ui_password: str | None = None):
         self.sites = sites  # site address -> P2P.Site
         self.site_manager = site_manager  # P2P.SiteManager, for siteAdd/siteDelete/sitePause/siteResume/siteList
@@ -238,6 +238,7 @@ class UiApp:
         self.data_dir = data_dir
         self.shutdown_callback = shutdown_callback
         self.dht_discovery = dht_discovery
+        self.port_recheck_callback = port_recheck_callback  # () -> Awaitable[None], App._setupUpnp -- serverPortcheck
         self.on_missing_site = on_missing_site  # (address) -> Site | None, e.g. App.addSite; adds + wires a new site
         self.auto_download_timeout = auto_download_timeout
         self.allowed_ws_origins = set(allowed_ws_origins or ())
@@ -945,13 +946,13 @@ class UiServer:
                  site_manager=None, user_manager=None, file_server=None, announcers: dict | None = None,
                  tor_manager=None, homepage: str | None = None, on_missing_site=None,
                  auto_download_timeout: float = 15.0, allowed_ws_origins: set[str] | None = None,
-                 data_dir=None, shutdown_callback=None, ui_password: str | None = None):
+                 data_dir=None, shutdown_callback=None, port_recheck_callback=None, ui_password: str | None = None):
         self.app = UiApp(
             sites, allowed_hosts=allowed_hosts, site_manager=site_manager, user_manager=user_manager,
             file_server=file_server, announcers=announcers, tor_manager=tor_manager,
             homepage=homepage, on_missing_site=on_missing_site, auto_download_timeout=auto_download_timeout,
             allowed_ws_origins=allowed_ws_origins, data_dir=data_dir, shutdown_callback=shutdown_callback,
-            ui_password=ui_password,
+            port_recheck_callback=port_recheck_callback, ui_password=ui_password,
         )
         self._host = host
         self._port = port

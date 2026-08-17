@@ -1605,6 +1605,14 @@ async def _cmdDbQuery(session, params):
 
 # -- Server / announcer info, listing modified files --
 
+def _formatPortOpened(ip_external: bool | None) -> dict:
+    """Shared by formatServerInfo() and serverPortcheck() so a manual
+    recheck's response matches what the next serverInfo poll would report.
+    IPv6 is always None ("Unsupported" in the real dashboard.js) -- this
+    stack has no IPv6 UPnP mapping."""
+    return {"ipv4": bool(ip_external) if ip_external is not None else None, "ipv6": None}
+
+
 def formatServerInfo(session):
     """Deliberately narrower than the original's actionServerInfo(): still
     missing fileserver_ip/config fingerprinting (none of that exists in
@@ -1686,7 +1694,7 @@ def formatServerInfo(session):
         # which is accurate: this stack has no IPv6 UPnP mapping at all.
         ip_external = getattr(session.app, "ip_external", None)
         info["ip_external"] = ip_external
-        info["port_opened"] = {"ipv4": bool(ip_external) if ip_external is not None else None, "ipv6": None}
+        info["port_opened"] = _formatPortOpened(ip_external)
         tcp_addrs = [addr for addr in file_server.host.get_addrs() if "/ws" not in str(addr)]
         if tcp_addrs:
             info["fileserver_port"] = int(tcp_addrs[0].value_for_protocol("tcp"))
@@ -1707,6 +1715,30 @@ def formatAnnouncerInfo(session, site):
 @command("serverInfo")
 async def _cmdServerInfo(session, params):
     return formatServerInfo(session)
+
+
+@command("serverPortcheck")
+async def _cmdServerPortcheck(session, params):
+    """Real ZeroHello's "Re-check opened port" button (handlePortRecheckClick)
+    calls this then unconditionally calls reloadServerInfo() -- it doesn't
+    do anything with the response itself, just clears its own port_checking
+    spinner flag once this resolves. Legacy actionServerPortcheck() ran
+    FileServer.portCheck() (an actual external self-test) and responded
+    with the resulting dict; this stack's only real reachability signal is
+    UPnP (see App._setupUpnp()'s own docstring), so this re-runs that same
+    best-effort mapping attempt on demand and reports its outcome in the
+    same shape formatServerInfo() already uses, for parity with any site
+    JS that (unlike ZeroHello) does read the direct response.
+
+    port_recheck_callback is None when UPnP was disabled via --no-upnp --
+    silently re-attempting it anyway on a manual click would override that
+    choice, so this reports the current (always-False) state without
+    retrying instead."""
+    _requireAdmin(session)
+    callback = getattr(session.app, "port_recheck_callback", None)
+    if callback is not None:
+        await callback()
+    return _formatPortOpened(getattr(session.app, "ip_external", None))
 
 
 @command("serverErrors")

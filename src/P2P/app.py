@@ -124,7 +124,12 @@ class App:
             site_manager=self.site_manager, user_manager=self.user_manager, file_server=self.file_server,
             announcers=self.announcers, homepage=homepage, on_missing_site=self.addSite,
             auto_download_timeout=auto_download_timeout, data_dir=data_dir,
-            shutdown_callback=self.requestShutdown, ui_password=ui_password,
+            shutdown_callback=self.requestShutdown,
+            # None (not self._setupUpnp) when --no-upnp was passed -- a
+            # manual "re-check port" click shouldn't silently re-attempt
+            # UPnP for someone who deliberately disabled it.
+            port_recheck_callback=self._setupUpnp if enable_upnp else None,
+            ui_password=ui_password,
         )
         self.ui_server.app.upnp_port = None
         self.ui_server.app.ip_external = None
