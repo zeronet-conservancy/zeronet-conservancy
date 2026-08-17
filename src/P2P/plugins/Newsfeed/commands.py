@@ -24,12 +24,14 @@ Deliberately NOT ported from actionFeedQuery: the ":params" placeholder
 substitution via util.helper.sqlquote (an advanced feed-query feature
 none of the queries ZeroHello ships with actually use) and
 actionFeedSearch (a separate, LIKE-based full-text search action nothing
-in this session's live testing exercised). Also not ported:
-formatSiteInfo()'s feed_follow_num field override -- P2P/Ui/commands.py's
-formatSiteInfo() is a plain function, not a class method plugins can
-override via super(), so there's no hook point for this without
-restructuring that function into something pluggable (a bigger, separate
-design change, not specific to this plugin).
+in this session's live testing exercised).
+
+formatSiteInfo()'s feed_follow_num field IS ported, directly in
+P2P/Ui/commands.py's formatSiteInfo() rather than here -- that function
+is a plain function, not a class method plugins can override via
+super(), but it already takes `user` as a plain argument, so the field
+is set inline next to the other user-scoped fields (auth_address,
+cert_user_id, privatekey) rather than needing a plugin hook point.
 
 feedFollow/feedListFollow store directly on the user's per-site settings
 dict (user.getSiteData(address)["follow"]) via markDirty() -- not calling

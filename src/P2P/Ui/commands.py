@@ -498,10 +498,12 @@ def formatSiteInfo(site, site_manager=None, user=None):
     }
     if user is not None:
         site_data = user.getSiteData(site.address)
+        follow = site_data.get("follow")
         info.update({
             "auth_address": site_data.get("auth_address"),
             "cert_user_id": user.getCertUserId(site.address),
             "privatekey": bool(site_data.get("privatekey")),
+            "feed_follow_num": len(follow) if follow is not None else None,
         })
     return info
 
