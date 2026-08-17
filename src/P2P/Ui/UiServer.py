@@ -810,9 +810,19 @@ class UiApp:
                         except (ValueError, TypeError):
                             continue
                         response = await self._handleCommand(session, request)
-                        session._send_channel.send_nowait(response)
-                        for message in session._after_response:
-                            session._send_channel.send_nowait(message)
+                        try:
+                            session._send_channel.send_nowait(response)
+                            for message in session._after_response:
+                                session._send_channel.send_nowait(message)
+                        except trio.WouldBlock:
+                            # Outbound queue is backed up (slow/throttled
+                            # client) -- drop this response rather than
+                            # tearing down the whole session, matching
+                            # UiSession.push()'s own best-effort semantics.
+                            log.warning(
+                                "UI websocket outbound queue full, dropping response (site=%s)",
+                                getattr(site, "address", None),
+                            )
                         session._after_response.clear()
                 except WebSocketDisconnect as err:
                     log.info(
