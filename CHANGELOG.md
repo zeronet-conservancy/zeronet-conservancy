@@ -1,3 +1,12 @@
+### zeronet-conservancy 1.0.1
+- Fix desktop packaging: the Windows MSI installer and the Linux AppImage/deb
+  packages were broken in 1.0.0 (bumped the `pywebview2` dependency to 0.1.4,
+  which fixes both: a WiX v3/v4 schema mismatch that produced an unbuilt
+  `.wxs` script instead of a real `.msi`, and a GTK/GLib library bundling
+  conflict that crashed the app on launch with `undefined symbol:
+  g_once_init_enter_pointer` on Linux). Windows NSIS `.exe`, macOS `.dmg`,
+  and Android APK were already working in 1.0.0 and are unaffected.
+
 ### zeronet-conservancy 1.0.0
 - Full rewrite of the networking/UI stack onto trio (structured concurrency)
   and py-libp2p (transport/peer-routing/DHT), replacing the gevent-based
