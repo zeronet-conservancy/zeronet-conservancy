@@ -70,6 +70,18 @@ _env = jinja2.Environment(
 )
 
 
+def _rev() -> str:
+    """Cache-busting value for /uimedia/all.js|all.css's own ?rev= query
+    param -- found live: this used to be hardcoded to "", so every app
+    version produced the exact same wrapper-page asset URL and a browser
+    (or WebKitGTK's persistent HTTP cache in the packaged desktop app)
+    that had already cached that URL from a previous version kept serving
+    the stale all.js forever, silently masking real client-JS fixes
+    (e.g. the Sidebar drag-to-open-gesture fix) after an upgrade."""
+    from Config import config
+    return config.version
+
+
 def _xescape(value: str) -> str:
     """HTML-escape only -- Jinja2's autoescaping already handles this for
     every non-`| safe` field, so this exists just for the couple of values
@@ -162,7 +174,7 @@ def renderWrapper(
         permissions=json.dumps(site.permissions),
         show_loadingscreen=json.dumps(show_loadingscreen),
         sandbox_permissions=sandbox_permissions,
-        rev="",
+        rev=_rev(),
         lang="en",
         homepage=homepage,
         themeclass=themeclass,

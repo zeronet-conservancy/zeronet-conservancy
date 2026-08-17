@@ -36,6 +36,17 @@ def main():
             "Desktop webview support requires `pip install pywebview2` "
             "and the native platform dependencies documented by pywebview2."
         ) from err
+    # Every pywebview2 backend used to tie the native right-click context
+    # menu (copy/paste, etc.) to the debug flag, so packaged builds
+    # (debug=False) lost basic copy/paste entirely, not just devtools.
+    # This turns the context menu back on without enabling debug/devtools.
+    # Guarded: ENABLE_CONTEXT_MENU only exists in pywebview2 releases that
+    # carry this fix -- webview.settings is an ImmutableDict that raises
+    # KeyError on unknown keys, and older/PyPI-published pywebview2 builds
+    # must keep starting (with the pre-existing context-menu bug) rather
+    # than crash on startup.
+    if "ENABLE_CONTEXT_MENU" in webview.settings:
+        webview.settings["ENABLE_CONTEXT_MENU"] = True
     webview.create_window("ZeroNet", sys.argv[1], width=1280, height=800)
     webview.start()
 
