@@ -1180,6 +1180,26 @@ async def _cmdSiteUpdate(session, params):
     return "Updated"
 
 
+@command("siteUpdateAll")
+async def _cmdSiteUpdateAll(session, params):
+    """Server-side loop version of ZeroHello's own "Update all sites" menu
+    item, which does this same thing client-side (iterating its own
+    Page.site_list.sites and calling siteUpdate per address). A single
+    command is simpler for a caller that doesn't already hold a full site
+    list client-side (the new left-drawer menu doesn't)."""
+    _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    updated = []
+    for site in site_manager.sites.values():
+        if not site.isServing():
+            continue
+        if site.storage.isFile("content.json"):
+            await site.content_manager.loadContent()
+        session.app.broadcast("siteChanged", site, {"event": "updated"})
+        updated.append(site.address)
+    return {"updated": updated}
+
+
 @command("siteReload")
 async def _cmdSiteReload(session, params):
     site = _requireSite(session)
@@ -1669,6 +1689,7 @@ def formatServerInfo(session):
         "rev": config.user_agent_rev,
         "plugins": list(plugin_manager.plugin_names) if is_admin else [],
         "user_settings": user.settings if user else {},
+        "language": config.language or "en",
     }
     if user_manager is not None and user_manager.multiuser:
         info["multiuser"] = True

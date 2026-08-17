@@ -119,6 +119,69 @@
 .fixbutton-bg:active { cursor: -webkit-grabbing; }
 
 
+.left-drawer {
+	position: fixed; top: 0; left: -300px; width: 300px; height: 100%;
+	background-color: #1B1B1D; color: #DDD; z-index: 1000;
+	transition: left 0.25s cubic-bezier(.2,.8,.3,1); box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+	font-family: 'Lucida Grande', 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-user-drag: none;
+	border-right: 1px solid rgba(255,255,255,0.06);
+}
+.left-drawer.dragging { transition: none; }
+.left-drawer.open { left: 0; }
+.left-drawer-tab {
+	position: absolute; top: 50%; right: -30px; transform: translateY(-50%);
+	width: 30px; height: 64px; background-color: #1B1B1D; color: #888;
+	display: flex; align-items: center; justify-content: center; cursor: pointer;
+	border-radius: 0 8px 8px 0; box-shadow: 3px 0 8px rgba(0,0,0,0.3);
+	border: 1px solid rgba(255,255,255,0.06); border-left: none;
+	-webkit-user-select: none; user-select: none; -webkit-user-drag: none; font-size: 20px;
+	transition: color 0.15s, background-color 0.15s;
+}
+.left-drawer-tab:hover { color: #fff; background-color: #262628; }
+.left-drawer.open .left-drawer-tab { transform: translateY(-50%) rotateY(180deg); }
+.left-drawer { display: flex; flex-direction: column; }
+.left-drawer-head {
+	flex: 0 0 auto; padding: 18px 20px; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;
+	color: #888; border-bottom: 1px solid rgba(255,255,255,0.07);
+	background: linear-gradient(135deg, rgba(175,59,255,0.12), transparent 60%);
+}
+.left-drawer-head b { color: #DDD; font-weight: 600; }
+.left-drawer-content {
+	flex: 1 1 auto; padding: 8px 20px 24px; overflow-y: auto; box-sizing: border-box; min-height: 0;
+	scrollbar-width: thin; scrollbar-color: #4A4A4E transparent;
+}
+.left-drawer-content::-webkit-scrollbar { width: 8px; }
+.left-drawer-content::-webkit-scrollbar-track { background: transparent; }
+.left-drawer-content::-webkit-scrollbar-thumb { background-color: #45454A; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+.left-drawer-content::-webkit-scrollbar-thumb:hover { background-color: #AF3BFF; background-clip: padding-box; }
+.left-drawer h2 {
+	font-weight: 600; font-size: 11px; text-transform: uppercase; color: #7A7A80;
+	margin: 22px 0 6px; letter-spacing: 1.5px;
+}
+.left-drawer h2:first-child { margin-top: 16px; }
+.left-drawer #leftdrawer-home { margin-bottom: 6px; padding-bottom: 9px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+.left-drawer a.item {
+	display: block; color: #DDD; text-decoration: none; padding: 9px 10px; margin: 0 -10px;
+	border-radius: 5px; font-size: 13.5px; transition: background-color 0.15s, color 0.15s, padding-left 0.15s;
+	border-left: 2px solid transparent;
+}
+.left-drawer a.item:hover { color: #fff; background-color: rgba(175,59,255,0.12); border-left-color: #AF3BFF; padding-left: 14px; }
+.left-drawer a.item.danger { color: #E0736B; }
+.left-drawer a.item.danger:hover { background-color: rgba(224,91,91,0.12); border-left-color: #E0736B; color: #FF8A82; }
+.left-drawer .theme-row, .left-drawer .lang-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 16px; }
+.left-drawer .theme-row a, .left-drawer .lang-row a {
+	color: #999; text-decoration: none; padding: 4px 10px; border: 1px solid rgba(255,255,255,0.09);
+	background-color: rgba(255,255,255,0.03); border-radius: 4px; font-size: 11.5px; text-transform: uppercase;
+	letter-spacing: 0.5px; transition: all 0.15s;
+}
+.left-drawer .theme-row a:hover, .left-drawer .lang-row a:hover { color: #fff; border-color: #666; }
+.left-drawer .theme-row a.selected, .left-drawer .lang-row a.selected {
+	color: white; border-color: #AF3BFF; background-color: rgba(175,59,255,0.25);
+	box-shadow: 0 0 0 1px rgba(175,59,255,0.4);
+}
+.left-drawer .version { color: #666; font-size: 11px; margin: 22px 0 6px; letter-spacing: 0.3px; }
+
+
 .body-sidebar, .body-console { background-color: #666 !important;  }
 #inner-iframe { -webkit-transition: 0.3s ease-in-out; -moz-transition: 0.3s ease-in-out; -o-transition: 0.3s ease-in-out; -ms-transition: 0.3s ease-in-out; transition: 0.3s ease-in-out ; transform-origin: left bottom; }
 .body-sidebar iframe { -webkit-transform: rotateY(5deg); -moz-transform: rotateY(5deg); -o-transform: rotateY(5deg); -ms-transform: rotateY(5deg); transform: rotateY(5deg) ; opacity: 0.8; pointer-events: none; outline: 1px solid transparent }

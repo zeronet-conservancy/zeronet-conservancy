@@ -164,6 +164,10 @@ def _renderControls(body: list, site, is_admin: bool) -> None:
         "<li><label>Site address</label><br><div class='flex'>"
         "<span class='input text disabled'>%s</span></div></li>" % html.escape(site.address)
     )
+    body.append(
+        "<li><label>ZeroNet</label>"
+        "<a href='/Config' target='_top' class='button'>Dashboard</a></li>"
+    )
 
 
 def _renderOwnedCheckbox(body: list, is_own: bool) -> None:

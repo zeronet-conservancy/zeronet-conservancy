@@ -1462,10 +1462,255 @@ window.initScrollable = function () {
 
   })(Class);
 
+  function LeftDrawer(wrapper) {
+    this.wrapper = wrapper;
+    this.opened = false;
+    this.dragMoved = false;
+    this.drag_startx = 0;
+    this.width = 300;
+    this.createHtmltag();
+    this.bindEvents();
+  }
+
+  LeftDrawer.prototype.createHtmltag = function() {
+    // Markup itself is server-rendered (templates/left_drawer.html,
+    // included by wrapper.html) rather than built here, so the exact
+    // same markup can also be included by dashboard.html -- the drawer
+    // needs to persist across /Config, /Plugins, etc, not just site
+    // pages, and those pages have no jQuery/Wrapper class to build it
+    // with. This just binds behavior onto what's already in the DOM.
+    this.container = $("#left-drawer");
+    this.tab = this.container.find("#left-drawer-tab");
+    this.content = this.container.find(".left-drawer-content");
+  };
+
+  LeftDrawer.prototype.refreshInfo = function() {
+    var _this = this;
+    return this.wrapper.ws.cmd("serverInfo", [], function(server_info) {
+      _this.wrapper.server_info = server_info;
+      _this.content.find("#leftdrawer-version").text(
+        "Version " + server_info.version + " (rev" + server_info.rev + ")"
+      );
+      return _this.refreshThemeLang(server_info);
+    });
+  };
+
+  LeftDrawer.prototype.refreshThemeLang = function(server_info) {
+    var theme_selected, lang_selected;
+    if (server_info.user_settings && server_info.user_settings.use_system_theme) {
+      theme_selected = "system";
+    } else {
+      theme_selected = (server_info.user_settings && server_info.user_settings.theme) || "system";
+    }
+    this.content.find(".theme-option").removeClass("selected");
+    this.content.find(".theme-option[data-theme='" + theme_selected + "']").addClass("selected");
+    lang_selected = server_info.language || "en";
+    this.content.find(".lang-option").removeClass("selected");
+    this.content.find(".lang-option[data-lang='" + lang_selected + "']").addClass("selected");
+    return true;
+  };
+
+  LeftDrawer.prototype.open = function() {
+    this.opened = true;
+    this.container.addClass("open");
+    return this.refreshInfo();
+  };
+
+  LeftDrawer.prototype.close = function() {
+    this.opened = false;
+    return this.container.removeClass("open");
+  };
+
+  LeftDrawer.prototype.toggle = function() {
+    if (this.opened) {
+      return this.close();
+    } else {
+      return this.open();
+    }
+  };
+
+  LeftDrawer.prototype.bindEvents = function() {
+    var _this = this;
+
+    this.tab.on("dragstart", function(e) {
+      return e.preventDefault();
+    });
+
+    this.dragMoved = false;
+
+    this.tab.on("click", function(e) {
+      e.preventDefault();
+      // mousedown fires before every click, dragged or not -- gating on
+      // elapsed time (< 250ms) is backwards: a plain quick click ALWAYS
+      // falls under that threshold, so toggle() never ran except on an
+      // unnaturally slow click. Track actual pointer movement instead
+      // (set on mousemove below) and only suppress the toggle when a
+      // real drag happened, letting mouseup's own open()/close() stand.
+      if (_this.dragMoved) {
+        return false;
+      }
+      _this.toggle();
+      return false;
+    });
+
+    this.tab.on("mousedown touchstart", function(e) {
+      var downx;
+      if (e.button > 0) {
+        return;
+      }
+      downx = e.pageX;
+      if (!downx && e.originalEvent.touches) {
+        downx = e.originalEvent.touches[0].pageX;
+      }
+      _this.drag_startx = downx;
+      _this.drag_opened_at_start = _this.opened;
+      _this.dragMoved = false;
+      _this.container.addClass("dragging");
+      $("body").on("mousemove.leftdrawer touchmove.leftdrawer", function(e) {
+        var movex, dx, targetx;
+        movex = e.pageX;
+        if (!movex && e.originalEvent.touches) {
+          movex = e.originalEvent.touches[0].pageX;
+        }
+        dx = movex - _this.drag_startx;
+        if (Math.abs(dx) > 5) {
+          _this.dragMoved = true;
+        }
+        targetx = (_this.drag_opened_at_start ? 0 : -_this.width) + dx;
+        if (targetx > 0) {
+          targetx = 0;
+        }
+        if (targetx < -_this.width) {
+          targetx = -_this.width;
+        }
+        return _this.container[0].style.left = targetx + "px";
+      });
+      return $("body").one("mouseup touchend touchcancel", function(e) {
+        var left;
+        $("body").off("mousemove.leftdrawer touchmove.leftdrawer");
+        _this.container.removeClass("dragging");
+        if (!_this.dragMoved) {
+          _this.container[0].style.left = "";
+          return false;
+        }
+        left = parseInt(_this.container[0].style.left) || 0;
+        _this.container[0].style.left = "";
+        if (left > -_this.width / 2) {
+          _this.open();
+        } else {
+          _this.close();
+        }
+        return false;
+      });
+    });
+
+    this.content.find("#leftdrawer-back").on("click", function(e) {
+      e.preventDefault();
+      window.top.history.back();
+      return false;
+    });
+
+    this.content.find("#leftdrawer-home").on("click", function(e) {
+      e.preventDefault();
+      var homepage_href = $(".fixbutton-bg").attr("href");
+      window.top.location = homepage_href || "/";
+      return false;
+    });
+
+    this.content.find("#leftdrawer-newsite-blank").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.ws.cmd("siteCreate", [], function(res) {
+        if (res && res.address) {
+          return window.top.location = "/" + res.address + "/";
+        }
+      });
+      return false;
+    });
+
+    this.content.find("#leftdrawer-siteupdateall").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.ws.cmd("siteUpdateAll", [], function(res) {
+        var num = (res && res.updated) ? res.updated.length : 0;
+        return _this.wrapper.notifications.add("siteupdateall", "done", "Updated " + num + " site(s)", 5000);
+      });
+      return false;
+    });
+
+    this.content.find("#leftdrawer-showdir").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.ws.cmd("serverShowdirectory", ["backup"], function(res) {
+        if (res && res.path) {
+          return _this.wrapper.notifications.add("showdir", "done", "Data directory: <b>" + res.path + "</b>", 15000);
+        }
+      });
+      return false;
+    });
+
+    this.content.find("#leftdrawer-shutdown").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.displayConfirm("Are you sure?", "Shut down ZeroNet", function(confirmed) {
+        if (confirmed) {
+          return _this.wrapper.ws.cmd("serverShutdown", []);
+        }
+      });
+      return false;
+    });
+
+    this.content.on("click", ".theme-option", function(e) {
+      var theme = $(e.currentTarget).attr("data-theme");
+      e.preventDefault();
+      return _this.wrapper.ws.cmd("userGetGlobalSettings", [], function(user_settings) {
+        var DARK, mqDark, applied_theme;
+        user_settings = user_settings || {};
+        if (theme === "system") {
+          DARK = "(prefers-color-scheme: dark)";
+          mqDark = window.matchMedia(DARK);
+          applied_theme = mqDark.matches ? "dark" : "light";
+          user_settings.use_system_theme = true;
+        } else {
+          applied_theme = theme;
+          user_settings.use_system_theme = false;
+        }
+        user_settings.theme = applied_theme;
+        _this.wrapper.ws.cmd("userSetGlobalSettings", [user_settings]);
+        document.body.className = document.body.className.replace(/theme-[a-z]+/, "");
+        document.body.className += " theme-" + applied_theme;
+        // Best-effort: the wrapper's OWN body class only ever controlled
+        // the loading screen (see src/Ui/media/all.css's only two
+        // theme-dark rules) -- everything visible is the site's own
+        // iframe, styled by ITS OWN body class. Real ZeroHello's own
+        // theme menu toggles that same convention on its own document
+        // when triggered from inside it; this reaches into the iframe
+        // to do the same thing from outside, same-origin so no CORS
+        // issue, wrapped in try/catch since not every site follows this
+        // convention (a no-op then, not an error).
+        try {
+          var frame = document.getElementById("inner-iframe");
+          var frame_body = frame && frame.contentDocument && frame.contentDocument.body;
+          if (frame_body) {
+            frame_body.className = frame_body.className.replace(/theme-[a-z]+/, "") + " theme-" + applied_theme;
+          }
+        } catch (err) {}
+        return _this.refreshThemeLang({user_settings: user_settings, language: _this.wrapper.server_info ? _this.wrapper.server_info.language : "en"});
+      });
+    });
+
+    this.content.on("click", ".lang-option", function(e) {
+      var lang = $(e.currentTarget).attr("data-lang");
+      e.preventDefault();
+      return _this.wrapper.ws.cmd("configSet", ["language", lang], function() {
+        return window.top.location.reload();
+      });
+    });
+
+    return $(window).on("resize", function() {});
+  };
+
   wrapper = window.wrapper;
 
   setTimeout((function() {
-    return window.sidebar = new Sidebar(wrapper);
+    window.sidebar = new Sidebar(wrapper);
+    return window.leftDrawer = new LeftDrawer(wrapper);
   }), 500);
 
   window.transitionEnd = 'transitionend webkitTransitionEnd oTransitionEnd otransitionend';

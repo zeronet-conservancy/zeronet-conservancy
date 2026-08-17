@@ -360,6 +360,33 @@ class UiApp:
         await user.save()
         return user.master_address
 
+    def _currentTheme(self, request: Request) -> str:
+        """Resolve the wrapper page's initial theme class from the current
+        user's saved settings (user.settings["theme"], the same field
+        userGetGlobalSettings/userSetGlobalSettings already round-trip) --
+        used to be hardcoded to "light" unconditionally (see Wrapper.py's
+        own former docstring note), so a saved "dark" preference never
+        actually reached the very first paint of a fresh page load; only
+        the client-side JS toggling document.body's class after the fact
+        masked it. Same "peek at whatever user_manager.users already has
+        loaded, no await" convention formatServerInfo() uses, since this
+        runs synchronously inside a plain HTTP handler building an HTML
+        response, not a command coroutine. "system" is resolved to a
+        concrete light/dark client-side at selection time (see the real
+        ZeroHello's own handleThemeClick) and stored as that concrete
+        value -- there's no live OS-preference tracking to redo here,
+        matching upstream's own behavior, not a gap introduced here."""
+        if self.user_manager is None:
+            return "light"
+        if self.user_manager.multiuser:
+            master_address = request.cookies.get(MULTIUSER_COOKIE)
+            user = self.user_manager.users.get(master_address) if master_address else None
+        else:
+            user = next(iter(self.user_manager.users.values()), None)
+        if user is None:
+            return "light"
+        return user.settings.get("theme") or "light"
+
     def _dashboardSite(self):
         """Return the site whose wrapper key scopes dashboard websocket calls."""
         if self.homepage and self.homepage in self.sites:
@@ -640,6 +667,7 @@ class UiApp:
                 title=address,
                 homepage=("/" + self.homepage) if self.homepage else "/",
                 wrapper_nonce=wrapper_nonce,
+                theme=self._currentTheme(request),
             )
             response = Response(body, media_type="text/html")
             master_address = await self._ensureMultiuserCookie(request)

@@ -82,6 +82,21 @@ def _rev() -> str:
     return config.version
 
 
+def _lang() -> str:
+    """Wrapper-page language for /uimedia/all.js|all.css's own ?lang=
+    query param -- used to be hardcoded to "en" regardless of
+    config.language, so a site's own bundled JS (real ZeroHello's included
+    -- Head.renderMenuLanguage() reads Page.server_info.language, and its
+    "Language" menu item's configSet("language", lang) already worked and
+    persisted, just never actually changed what the NEXT page load sent
+    down here) had no way to ever see a non-English language even after
+    the user picked one. configSet already applies config.language live
+    (it's in keys_api_change_allowed and NOT in keys_restart_need -- see
+    Config.py), so reading it here is the only piece that was missing."""
+    from Config import config
+    return config.language or "en"
+
+
 def _xescape(value: str) -> str:
     """HTML-escape only -- Jinja2's autoescaping already handles this for
     every non-`| safe` field, so this exists just for the couple of values
@@ -104,6 +119,7 @@ def renderWrapper(
     script_nonce: str = "",
     show_loadingscreen: bool | None = None,
     wrapper_nonce: str | None = None,
+    theme: str = "light",
 ) -> str:
     file_inner_path = inner_path or "index.html"
     if file_inner_path.endswith("/"):
@@ -132,7 +148,6 @@ def renderWrapper(
     # correctly as ordinary key=value pairs right after it.
     file_url = "/%s/%s?&wrapper=0&wrapper_nonce=%s" % (address, inner_path, wrapper_nonce)
 
-    theme = "light"  # No multi-user theme system ported yet -- see module docstring
     themeclass = "theme-%-6s" % theme
 
     body_style = ""
@@ -175,7 +190,7 @@ def renderWrapper(
         show_loadingscreen=json.dumps(show_loadingscreen),
         sandbox_permissions=sandbox_permissions,
         rev=_rev(),
-        lang="en",
+        lang=_lang(),
         homepage=homepage,
         themeclass=themeclass,
         script_nonce=script_nonce,
