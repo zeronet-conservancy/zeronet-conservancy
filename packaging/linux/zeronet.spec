@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.6
+Version:        1.0.7
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,13 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.7-1
+- Add a persistent left-edge nav drawer (New site, Content filters,
+  Configuration, Plugins, Theme, Language, Update all sites, Show data
+  directory, Shut down), present on every page including /Config and
+  /Plugins, not just site pages; fix language/theme settings silently
+  not taking effect after being changed (both were hardcoded in the
+  wrapper's own render regardless of the saved preference)
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.6-1
 - Fix /uimedia/all.js|all.css never cache-busting across versions (the
   wrapper page's ?rev= was hardcoded to "", so upgrades kept serving a

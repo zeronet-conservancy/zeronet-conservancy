@@ -1,3 +1,22 @@
+### zeronet-conservancy 1.0.7
+- New: a persistent left-edge nav drawer (click or drag the peek-tab to
+  open), present on every page including `/Config`, `/Plugins`,
+  `/SiteBuilder`, `/ContentFilter`, and `/Console`, not just site
+  pages. Recreates the full item set of ZeroHello's own `⋮` menu --
+  New site, Content filters, Configuration, Plugins, Theme, Language,
+  Update all sites, Show data directory, Shut down -- in our own chrome
+  instead of someone else's signed site content, whose key we don't
+  hold
+- Fix `language`/`theme` settings silently not taking effect: both
+  were hardcoded in the wrapper's own render (`lang="en"`,
+  `theme="light"`) regardless of `config.language` or the user's saved
+  theme preference, so changing either already persisted correctly but
+  never actually reached the next page load
+- Fix the new drawer's peek-tab needing a drag to close after a click
+  opened it -- the "was this a drag, not a click" guard compared
+  elapsed time since mousedown, which fires before every click
+  (dragged or not), so it silently ate every second click
+
 ### zeronet-conservancy 1.0.6
 - Fix `/uimedia/all.js`/`all.css` never cache-busting across versions:
   the wrapper page's own `?rev=` query param was hardcoded to `""`
