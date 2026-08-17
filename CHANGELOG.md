@@ -1,3 +1,17 @@
+### zeronet-conservancy 1.0.5
+- New: `/SiteBuilder` dashboard page -- a "New site" flow that lists
+  starter templates and creates a signed, owned site from one. The
+  backend (`siteBuilderStarters`/`siteBuilderCreate`) has always worked
+  over the websocket API; it just had no UI anywhere calling it
+- New: `/ContentFilter` dashboard page -- view and remove blocked sites
+  and muted users. Blocking a site was already reachable (the Sidebar's
+  "Delete site -> Blacklist" flow), but there was no way to see your
+  block list, undo a block, or manage mutes at all
+- Both found auditing every P2P plugin for the same "the backend loads
+  and works fine, nothing in the UI ever calls it" gap after a user
+  report that SiteBuilder "wasn't showing up" -- not a plugin-loading
+  bug in either case, just missing UI wiring
+
 ### zeronet-conservancy 1.0.4
 - Fix the sidebar drag-to-open gesture (the top-right fixbutton you drag
   left to reveal the sidebar) not working in the packaged desktop app.

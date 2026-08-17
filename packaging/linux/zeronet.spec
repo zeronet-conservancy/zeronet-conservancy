@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.4
+Version:        1.0.5
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,11 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.5-1
+- Add a /SiteBuilder dashboard page (a "New site" flow with starter
+  templates) and a /ContentFilter dashboard page (view/remove blocked
+  sites and muted users) -- both plugins already worked over the
+  websocket API but had no UI anywhere to reach them
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.4-1
 - Fix the sidebar drag-to-open gesture not working under WebKitGTK
   (the packaged desktop app's webview engine): WebKitGTK coalesces an
