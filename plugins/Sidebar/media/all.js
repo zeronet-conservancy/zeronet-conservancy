@@ -649,6 +649,15 @@ window.initScrollable = function () {
     }
 
     Sidebar.prototype.initFixbutton = function() {
+      this.fixbutton.on("dragstart", function(e) {
+        // WebKitGTK (unlike Blink) doesn't always honor mousedown's
+        // preventDefault() to suppress the native link-drag on
+        // .fixbutton-bg's real href -- without this, that native OS-level
+        // drag swallows the gesture before our own mousemove handler below
+        // ever runs, so the drag-to-open-sidebar gesture silently does
+        // nothing under pywebview2's GTK backend.
+        return e.preventDefault();
+      });
       this.fixbutton.on("mousedown touchstart", (function(_this) {
         return function(e) {
           if (e.button > 0) {
@@ -659,17 +668,40 @@ window.initScrollable = function () {
           _this.dragStarted = +(new Date);
           $(".drag-bg").remove();
           $("<div class='drag-bg'></div>").appendTo(document.body);
-          return $("body").one("mousemove touchmove", function(e) {
-            var mousex, mousey;
-            mousex = e.pageX;
-            mousey = e.pageY;
-            if (!mousex) {
-              mousex = e.originalEvent.touches[0].pageX;
-              mousey = e.originalEvent.touches[0].pageY;
+          // Calibrate the grab offset from mousedown's own coordinates,
+          // not from the first mousemove -- see the comment above
+          // animDrag/waitMove's replay below for why: on a browser that
+          // coalesces an entire drag gesture down to a single mousemove
+          // event (confirmed live under WebKitGTK: 60 real X11 motion
+          // events over 1.2s still only produced one DOM 'mousemove'),
+          // calibrating from that same single event would make the
+          // start and end positions identical, so every drag would
+          // compute to zero net movement no matter how far the mouse
+          // actually moved.
+          (function() {
+            var downx, downy;
+            downx = e.pageX;
+            downy = e.pageY;
+            if (!downx) {
+              downx = e.originalEvent.touches[0].pageX;
+              downy = e.originalEvent.touches[0].pageY;
             }
-            _this.fixbutton_addx = _this.fixbutton.offset().left - mousex;
-            _this.fixbutton_addy = _this.fixbutton.offset().top - mousey;
-            return _this.startDrag();
+            _this.fixbutton_addx = _this.fixbutton.offset().left - downx;
+            _this.fixbutton_addy = _this.fixbutton.offset().top - downy;
+          })();
+          return $("body").one("mousemove touchmove", function(e) {
+            _this.startDrag();
+            // startDrag() just bound animDrag/waitMove for FUTURE mousemove
+            // events -- handlers bound mid-dispatch never fire for the
+            // event currently dispatching, so on a browser that delivers
+            // many mousemove events per drag (Chromium/Blink) the next
+            // one picks this up naturally. Under WebKitGTK's coalescing
+            // (see above) this first mousemove may be the ONLY one the
+            // gesture ever gets, so replay it manually against the
+            // already-calibrated grab offset instead of waiting for a
+            // second event that may never come.
+            _this.animDrag(e);
+            return _this.waitMove(e);
           });
         };
       })(this));

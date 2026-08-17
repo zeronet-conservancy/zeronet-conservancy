@@ -36,8 +36,10 @@ a { color: black }
 .fixbutton {
 	position: absolute; right: 35px; top: 15px; width: 40px;  z-index: 999;
 	text-align: center; color: white; font-family: Consolas, Monaco, monospace; font-size: 25px;
+	-webkit-user-drag: none; user-drag: none; -webkit-user-select: none; user-select: none;
 }
 .fixbutton-bg {
+	-webkit-user-drag: none; user-drag: none;
 	-webkit-border-radius: 80px; -moz-border-radius: 80px; -o-border-radius: 80px; -ms-border-radius: 80px; border-radius: 80px ; background-color: rgba(180, 180, 180, 0.5);
 	display: block; width: 80px; height: 80px; -webkit-transition: background-color 0.2s, box-shadow 0.5s; -moz-transition: background-color 0.2s, box-shadow 0.5s; -o-transition: background-color 0.2s, box-shadow 0.5s; -ms-transition: background-color 0.2s, box-shadow 0.5s; transition: background-color 0.2s, box-shadow 0.5s ; -webkit-transform: scale(0.6); -moz-transform: scale(0.6); -o-transform: scale(0.6); -ms-transform: scale(0.6); transform: scale(0.6) ; margin-left: -20px; margin-top: -20px; /* 2x size to prevent blur on anim */
 
