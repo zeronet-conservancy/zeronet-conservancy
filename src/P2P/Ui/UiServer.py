@@ -260,6 +260,8 @@ class UiApp:
             Route("/Plugins/", self._handlePlugins, methods=["GET"]),
             Route("/SiteBuilder", self._handleSiteBuilder, methods=["GET"]),
             Route("/SiteBuilder/", self._handleSiteBuilder, methods=["GET"]),
+            Route("/ContentFilter", self._handleContentFilter, methods=["GET"]),
+            Route("/ContentFilter/", self._handleContentFilter, methods=["GET"]),
             Route("/Console", self._handleConsole, methods=["GET"]),
             Route("/Console/", self._handleConsole, methods=["GET"]),
             Route("/Stats", self._handleStats, methods=["GET"]),
@@ -387,6 +389,9 @@ class UiApp:
 
     async def _handleSiteBuilder(self, request: Request) -> Response:
         return await self._handleDashboard(request, "sitebuilder")
+
+    async def _handleContentFilter(self, request: Request) -> Response:
+        return await self._handleDashboard(request, "contentfilter")
 
     async def _handleConsole(self, request: Request) -> Response:
         return await self._handleDashboard(request, "console")

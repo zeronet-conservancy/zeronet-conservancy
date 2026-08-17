@@ -2,6 +2,7 @@ import json
 import pathlib
 import tempfile
 
+import httpx
 import pytest
 import trio_websocket
 
@@ -165,6 +166,51 @@ class TestP2PPluginsContentFilterCommands:
         assert add_reply["result"] == "ok"
         assert list_reply["result"]["1AuthAddressAAAAAAAAAAAAAAAA"]["cert_user_id"] == "alice@example"
         assert remove_reply["result"] == "ok"
+
+    def testContentFilterDashboardPageListsAndRemoves(self):
+        """siteblockAdd was reachable (the Sidebar's "Delete site ->
+        Blacklist" flow), but siteblockList/siteblockRemove/muteAdd/
+        muteList/muteRemove had no UI anywhere -- found auditing every
+        P2P plugin for the same "backend works, nothing calls it" gap
+        SiteBuilder had. Covers the new /ContentFilter dashboard page
+        (added alongside /Config/Plugins/SiteBuilder) actually rendering,
+        and its remove buttons' commands (siteblockRemove/muteRemove)
+        really clearing a real block/mute, not just returning "ok"."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                admin_address = "1TestCfDashAdminSiteAAAAAAAAA1"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, homepage=admin_address)
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        page = await client.get("%s/ContentFilter" % base_url)
+
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        await _call(ws, "siteblockAdd", {"site_address": "1TestCfDashBlockedSiteAAAA2", "reason": "spam"}, msg_id=1)
+                        await _call(ws, "muteAdd", {"auth_address": "1TestCfDashMutedAuthAAAAAA3", "reason": "spam"}, msg_id=2)
+                        before_blocks = await _call(ws, "siteblockList", msg_id=3)
+                        before_mutes = await _call(ws, "muteList", msg_id=4)
+                        await _call(ws, "siteblockRemove", {"site_address": "1TestCfDashBlockedSiteAAAA2"}, msg_id=5)
+                        await _call(ws, "muteRemove", {"auth_address": "1TestCfDashMutedAuthAAAAAA3"}, msg_id=6)
+                        after_blocks = await _call(ws, "siteblockList", msg_id=7)
+                        after_mutes = await _call(ws, "muteList", msg_id=8)
+                        return page.status_code, page.text, before_blocks, before_mutes, after_blocks, after_mutes
+
+        status, body, before_blocks, before_mutes, after_blocks, after_mutes = compat.run(scenario)
+        assert status == 200
+        assert '"contentfilter"' in body
+        assert "siteblockList" in body
+        assert "muteList" in body
+        assert "siteblockRemove" in body
+        assert "muteRemove" in body
+        assert "1TestCfDashBlockedSiteAAAA2" in before_blocks["result"]
+        assert "1TestCfDashMutedAuthAAAAAA3" in before_mutes["result"]
+        assert "1TestCfDashBlockedSiteAAAA2" not in after_blocks["result"]
+        assert "1TestCfDashMutedAuthAAAAAA3" not in after_mutes["result"]
 
 
 class TestP2PPluginsContentFilterEnforcement:

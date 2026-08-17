@@ -21,6 +21,7 @@ def renderDashboard(page: str, websocket_url: str, **context) -> str:
         "config": "dashboard.html",
         "plugins": "dashboard.html",
         "sitebuilder": "dashboard.html",
+        "contentfilter": "dashboard.html",
         "files": "file_manager.html",
         "console": "console.html",
     }[page]

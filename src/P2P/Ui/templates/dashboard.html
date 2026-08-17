@@ -30,6 +30,7 @@
     <a href="/Config">Configuration</a>
     <a href="/Plugins">Plugins</a>
     <a href="/SiteBuilder">New site</a>
+    <a href="/ContentFilter">Content filters</a>
     {% if address %}<a href="/list/{{ address }}">Files</a>{% endif %}
     <a href="/Console">Console</a>
   </nav>
@@ -114,13 +115,44 @@
     });
   }
 
-  const PAGE_COMMANDS = {config: "configList", plugins: "pluginList", sitebuilder: "siteBuilderStarters"};
-  const PAGE_RENDERERS = {config: renderConfig, plugins: renderPlugins, sitebuilder: renderSiteBuilder};
+  function renderContentFilter(siteblocks, mutes) {
+    const blockRows = Object.entries(siteblocks).sort(([a], [b]) => a.localeCompare(b)).map(([address, info]) =>
+      `<tr><td><code>${esc(address)}</code></td><td>${esc(info.reason ?? "")}</td>` +
+      `<td><button data-unblock="${esc(address)}">Remove</button></td></tr>`
+    ).join("");
+    const muteRows = Object.entries(mutes).sort(([a], [b]) => a.localeCompare(b)).map(([auth_address, info]) =>
+      `<tr><td><code>${esc(auth_address)}</code></td><td>${esc(info.cert_user_id ?? "")}</td><td>${esc(info.reason ?? "")}</td>` +
+      `<td><button data-unmute="${esc(auth_address)}">Remove</button></td></tr>`
+    ).join("");
+    content.innerHTML =
+      `<h2>Blocked sites</h2>` +
+      (blockRows
+        ? `<table><thead><tr><th>Address</th><th>Reason</th><th></th></tr></thead><tbody>${blockRows}</tbody></table>`
+        : `<p class="muted">No blocked sites.</p>`) +
+      `<h2>Muted users</h2>` +
+      (muteRows
+        ? `<table><thead><tr><th>Auth address</th><th>Cert user id</th><th>Reason</th><th></th></tr></thead><tbody>${muteRows}</tbody></table>`
+        : `<p class="muted">No muted users.</p>`);
+    content.querySelectorAll("button[data-unblock]").forEach(button => button.onclick = async () => {
+      try { await call("siteblockRemove", {site_address: button.dataset.unblock}); status.textContent = "Site unblocked."; load(); }
+      catch (error) { status.textContent = error.message; }
+    });
+    content.querySelectorAll("button[data-unmute]").forEach(button => button.onclick = async () => {
+      try { await call("muteRemove", {auth_address: button.dataset.unmute}); status.textContent = "User unmuted."; load(); }
+      catch (error) { status.textContent = error.message; }
+    });
+  }
+
+  const PAGE_LOADERS = {
+    config: async () => renderConfig(await call("configList")),
+    plugins: async () => renderPlugins(await call("pluginList")),
+    sitebuilder: async () => renderSiteBuilder(await call("siteBuilderStarters")),
+    contentfilter: async () => renderContentFilter(await call("siteblockList"), await call("muteList")),
+  };
 
   async function load() {
     try {
-      const result = await call(PAGE_COMMANDS[page]);
-      PAGE_RENDERERS[page](result);
+      await PAGE_LOADERS[page]();
       status.textContent = "";
     } catch (error) { status.textContent = error.message; }
   }
