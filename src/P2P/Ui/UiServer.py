@@ -638,8 +638,13 @@ class UiApp:
 
         wrapper_nonce = request.query_params.get("wrapper_nonce")
         if wrapper_nonce and not self._consumeWrapperNonce(wrapper_nonce):
+            # Fail open: this nonce only exists for the site's own ZeroFrame
+            # postMessage matching (see Wrapper.py's docstring), not as an
+            # auth gate on serving public site content. A stale/expired
+            # nonce here just means the browser reloaded a cached wrapper
+            # page (e.g. back-navigation) -- rejecting the request left the
+            # iframe blank with no way to recover.
             log.warning("Invalid or expired wrapper nonce for %s: %s", address, wrapper_nonce)
-            return Response(b"Invalid wrapper nonce", status_code=403)
 
         target_path = inner_path or "content.json"
         try:
