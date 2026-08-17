@@ -29,6 +29,7 @@
   <nav>
     <a href="/Config">Configuration</a>
     <a href="/Plugins">Plugins</a>
+    <a href="/SiteBuilder">New site</a>
     {% if address %}<a href="/list/{{ address }}">Files</a>{% endif %}
     <a href="/Console">Console</a>
   </nav>
@@ -90,10 +91,36 @@
     });
   }
 
+  function renderSiteBuilder(starters) {
+    const cards = starters.map(starter =>
+      `<tr><td><code>${esc(starter.id)}</code></td><td>${esc(starter.title)}</td>` +
+      `<td class="muted">${esc(starter.description)}</td>` +
+      `<td><button data-starter="${esc(starter.id)}">Create</button></td></tr>`
+    ).join("");
+    content.innerHTML = `<p class="muted">Creates a new site signed with your own key, seeded from the chosen starter template.</p>` +
+      `<table><thead><tr><th>Starter</th><th>Title</th><th>Description</th><th></th></tr></thead><tbody>${cards}</tbody></table>`;
+    content.querySelectorAll("button[data-starter]").forEach(button => button.onclick = async () => {
+      const buttons = content.querySelectorAll("button[data-starter]");
+      buttons.forEach(b => b.disabled = true);
+      status.textContent = "Creating site…";
+      try {
+        const result = await call("siteBuilderCreate", {starter: button.dataset.starter});
+        status.innerHTML = `Site created: <a href="/${esc(result.address)}/">${esc(result.address)}</a>`;
+      } catch (error) {
+        status.textContent = error.message;
+      } finally {
+        buttons.forEach(b => b.disabled = false);
+      }
+    });
+  }
+
+  const PAGE_COMMANDS = {config: "configList", plugins: "pluginList", sitebuilder: "siteBuilderStarters"};
+  const PAGE_RENDERERS = {config: renderConfig, plugins: renderPlugins, sitebuilder: renderSiteBuilder};
+
   async function load() {
     try {
-      const result = await call(page === "config" ? "configList" : "pluginList");
-      if (page === "config") renderConfig(result); else renderPlugins(result);
+      const result = await call(PAGE_COMMANDS[page]);
+      PAGE_RENDERERS[page](result);
       status.textContent = "";
     } catch (error) { status.textContent = error.message; }
   }

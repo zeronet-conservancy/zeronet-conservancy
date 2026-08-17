@@ -12,6 +12,7 @@ from P2P.Site import Site
 from P2P.SiteManager import SiteManager
 from P2P.UserManager import UserManager
 from P2P.plugins.Sidebar.render import renderSidebarHtml
+import P2P.plugins.UiSiteBuilder.commands  # noqa: F401 -- import side effect registers @command handlers
 from P2P import compat
 
 
@@ -144,6 +145,53 @@ class TestP2PUiServer:
         assert "Plugins" in plugins_body
         assert '"plugins"' in plugins_body
         assert "pluginList" in plugins_body
+
+    def testSiteBuilderPageListsStartersAndCreatesRealSite(self):
+        """UiSiteBuilder's siteBuilderStarters/siteBuilderCreate commands
+        loaded and worked over the websocket from day one, but nothing in
+        the UI ever called them -- no /SiteBuilder route, no link, no page
+        (dashboard.html only had config/plugins). Found live investigating
+        a user report of the SiteBuilder plugin "not showing up": the
+        plugin was loading fine, it just had no UI surface at all. This
+        covers the /SiteBuilder page (added alongside /Config and
+        /Plugins) actually listing starters and creating a real site."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                data_dir = pathlib.Path(root)
+                site_manager = SiteManager(data_dir)
+                admin = site_manager.add("1TestSiteBuilderAdminAAAAAAAAA1")
+                admin.permissions = ["ADMIN"]
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager,
+                    user_manager=UserManager(data_dir), data_dir=data_dir,
+                    homepage=admin.address,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        page = await client.get("%s/SiteBuilder" % base_url)
+
+                    ws_url = base_url.replace("http://", "ws://")
+                    async with trio_websocket.open_websocket_url(
+                        ws_url + "/ZeroNet-Internal/Websocket?wrapper_key=%s" % admin.wrapper_key
+                    ) as ws:
+                        async def call(cmd, params, msg_id):
+                            await ws.send_message(json.dumps({"cmd": cmd, "params": params, "id": msg_id}))
+                            return json.loads(await ws.get_message())
+
+                        starters = await call("siteBuilderStarters", {}, 1)
+                        created = await call("siteBuilderCreate", {"starter": "blank"}, 2)
+
+                    return page.status_code, page.text, starters, created, site_manager
+
+        status, body, starters, created, site_manager = compat.run(scenario)
+        assert status == 200
+        assert '"sitebuilder"' in body
+        assert "siteBuilderStarters" in body
+        assert "siteBuilderCreate" in body
+        assert any(starter["id"] == "blank" for starter in starters["result"])
+        assert "address" in created["result"]
+        assert created["result"]["address"] in site_manager.sites
 
     def testStatsPageShowsRealSiteAndTrackerData(self):
         async def scenario():

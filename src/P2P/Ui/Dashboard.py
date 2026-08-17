@@ -20,6 +20,7 @@ def renderDashboard(page: str, websocket_url: str, **context) -> str:
     template_name = {
         "config": "dashboard.html",
         "plugins": "dashboard.html",
+        "sitebuilder": "dashboard.html",
         "files": "file_manager.html",
         "console": "console.html",
     }[page]
