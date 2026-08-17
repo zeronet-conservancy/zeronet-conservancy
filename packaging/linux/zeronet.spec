@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.3
+Version:        1.0.4
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,13 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.4-1
+- Fix the sidebar drag-to-open gesture not working under WebKitGTK
+  (the packaged desktop app's webview engine): WebKitGTK coalesces an
+  entire drag into a single mousemove event, which the previous code
+  needed at least two of to do anything. Calibrate the grab offset
+  from mousedown and replay the drag against the first mousemove
+  instead of waiting for a second one that may never arrive
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.3-1
 - Silence a spurious gevent MonkeyPatchWarning on startup (harmless
   side effect of importing trio/libp2p before gevent patches ssl);

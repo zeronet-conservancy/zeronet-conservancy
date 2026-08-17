@@ -1,3 +1,20 @@
+### zeronet-conservancy 1.0.4
+- Fix the sidebar drag-to-open gesture (the top-right fixbutton you drag
+  left to reveal the sidebar) not working in the packaged desktop app.
+  Root cause found live, driving a real WebKitGTK WebView with actual
+  X11 mouse input: WebKitGTK coalesces an entire drag gesture down to a
+  single DOM `mousemove` event, but the gesture's code structurally
+  needed at least two (one to bootstrap, a second to actually animate
+  the button and cross the open threshold) -- the second never arrived,
+  so the drag always silently reverted. Chromium/Blink doesn't coalesce
+  this aggressively, which is why the gesture worked there but not in
+  the packaged app. Fixed by calibrating the grab offset from
+  `mousedown`'s own coordinates and replaying the drag against the
+  first `mousemove` instead of waiting on a second one that may never
+  come. Also hardened `.fixbutton`/`.fixbutton-bg` against a separate,
+  unrelated WebKit native-link-drag quirk as defense-in-depth (ruled
+  out as the actual cause here, but still worth guarding against)
+
 ### zeronet-conservancy 1.0.3
 - Silence a spurious `MonkeyPatchWarning` gevent printed on every startup
   (visible in the packaged AppImage's stderr). It's a harmless side effect
