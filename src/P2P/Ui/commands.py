@@ -1607,8 +1607,8 @@ async def _cmdDbQuery(session, params):
 
 def formatServerInfo(session):
     """Deliberately narrower than the original's actionServerInfo(): still
-    missing port_opened/fileserver_ip/fileserver_port/config fingerprinting
-    (none of that exists in this stack yet). tor_enabled/tor_status match
+    missing fileserver_ip/config fingerprinting (none of that exists in
+    this stack yet). tor_enabled/tor_status match
     the original's own field names now that P2P.Tor.TorManager exists
     (tor_has_meek_bridges/tor_use_bridges are not ported concepts here).
 
@@ -1671,6 +1671,25 @@ def formatServerInfo(session):
         info["peer_id"] = file_server.host.peer_id.to_base58()
         info["addrs"] = [str(addr) for addr in file_server.host.get_addrs()]
         info["sites"] = len(file_server.sites)
+        # ip_external/port_opened have no self-test-via-peer equivalent in
+        # this stack (see App._setupUpnp() in P2P/app.py) -- a successful
+        # UPnP mapping is the only real reachability signal available.
+        # ip_external is a tri-state bool (App.py sets it, never this
+        # function): None while UPnP setup hasn't finished yet (the real
+        # dashboard.js renders that as "Checking..."), True once a mapping
+        # succeeds, False once UPnP is disabled/fails/finishes without one.
+        #
+        # ip_external is what the real ZeroHello dashboard.js's header PORT
+        # badge actually reads (Dashboard.render()); port_opened is a
+        # separate {ipv4, ipv6} shape its port-badge dropdown reads
+        # (handlePortClick()) -- None here renders as "Unsupported" there,
+        # which is accurate: this stack has no IPv6 UPnP mapping at all.
+        ip_external = getattr(session.app, "ip_external", None)
+        info["ip_external"] = ip_external
+        info["port_opened"] = {"ipv4": bool(ip_external) if ip_external is not None else None, "ipv6": None}
+        tcp_addrs = [addr for addr in file_server.host.get_addrs() if "/ws" not in str(addr)]
+        if tcp_addrs:
+            info["fileserver_port"] = int(tcp_addrs[0].value_for_protocol("tcp"))
     tor_manager = getattr(session.app, "tor_manager", None)
     if tor_manager is not None:
         info["tor_enabled"] = tor_manager.enabled

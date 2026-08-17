@@ -126,6 +126,8 @@ class App:
             auto_download_timeout=auto_download_timeout, data_dir=data_dir,
             shutdown_callback=self.requestShutdown, ui_password=ui_password,
         )
+        self.ui_server.app.upnp_port = None
+        self.ui_server.app.ip_external = None
         # A peer pushing us a fresh content.json (protocols/update.py) is
         # genuinely network-driven, unlike UiApp.broadcast()'s other four
         # call sites (sitePublish/sitePause/siteResume/siteUpdate, all
@@ -260,17 +262,41 @@ class App:
         reachable directly)."""
         tcp_addrs = [addr for addr in self.file_server.host.get_addrs() if "/ws" not in str(addr)]
         if not tcp_addrs:
+            self.ui_server.app.ip_external = False
             return
         port = int(tcp_addrs[0].value_for_protocol("tcp"))
 
         self.upnp_manager = UpnpManager()
         if not await self.upnp_manager.discover():
             log.warning("UPnP gateway discovery failed -- continuing without a port mapping")
+            self.ui_server.app.ip_external = False
             return
         if await self.upnp_manager.add_port_mapping(port, "TCP"):
             self._upnp_port = port
+            # Surfaced through serverInfo as ip_external/port_opened -- see
+            # formatServerInfo()'s own docstring in P2P/Ui/commands.py for
+            # why a successful UPnP mapping is the only reachability signal
+            # this stack has (no self-test-via-peer check exists here).
+            #
+            # ip_external is what the real ZeroHello dashboard.js's header
+            # PORT badge actually reads (Dashboard.render(), line ~2305),
+            # and it does a *strict* `=== true`/`=== null` check there --
+            # `null` means "still checking" (the initial value, set at
+            # __init__), `true` means opened, anything else (including a
+            # real IP string, which is truthy but not `=== true`) reads as
+            # closed. So this has to be the literal boolean, not
+            # get_external_ip()'s actual IP string, even though a real IP
+            # would be more informative -- found live, the badge stayed on
+            # "Closed" with a genuinely successful mapping until this was
+            # narrowed to bool. port_opened only feeds the port-badge
+            # dropdown's separate IPv4/IPv6 detail line (handlePortClick(),
+            # line ~2088), which does use ip_external's *truthiness*, so it
+            # stays correct either way.
+            self.ui_server.app.upnp_port = port
+            self.ui_server.app.ip_external = True
         else:
             log.warning("UPnP port mapping for port %d failed -- continuing without one", port)
+            self.ui_server.app.ip_external = False
 
     async def _teardownUpnp(self) -> None:
         if self.upnp_manager is not None and self._upnp_port is not None:
@@ -292,6 +318,8 @@ class App:
                 await self._connectTor()
             if self._enable_upnp:
                 stack.push_async_callback(self._teardownUpnp)
+            else:
+                self.ui_server.app.ip_external = False
 
             log.info(
                 "P2P app running: peer_id=%s sites=%d ui=%s",
