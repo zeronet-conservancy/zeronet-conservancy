@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.5
+Version:        1.0.6
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,13 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.6-1
+- Fix /uimedia/all.js|all.css never cache-busting across versions (the
+  wrapper page's ?rev= was hardcoded to "", so upgrades kept serving a
+  previously-cached bundle forever) and right-click doing nothing in
+  the packaged desktop app on any platform (pywebview2 tied the whole
+  context menu, not just devtools, to its debug flag; fixed in the
+  pywebview2 fork with a setting that decouples the two)
 * Mon Aug 17 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.5-1
 - Add a /SiteBuilder dashboard page (a "New site" flow with starter
   templates) and a /ContentFilter dashboard page (view/remove blocked

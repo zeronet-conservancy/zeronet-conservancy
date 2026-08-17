@@ -1,3 +1,20 @@
+### zeronet-conservancy 1.0.6
+- Fix `/uimedia/all.js`/`all.css` never cache-busting across versions:
+  the wrapper page's own `?rev=` query param was hardcoded to `""`
+  instead of the app version, so a WebView (or browser) that had
+  already cached that URL from a previous release kept serving the
+  stale bundle forever after an upgrade -- silently masking every
+  client-JS fix shipped since (including the 1.0.4 sidebar drag fix).
+  Now wired to the real app version
+- Fix right-click doing nothing in the packaged desktop app on every
+  platform: pywebview2 tied the entire native context menu (copy/paste,
+  etc.) to its `debug` flag, not just devtools, so packaged builds
+  (`debug=False`) had no working right-click at all. Fixed in the
+  pywebview2 fork with a new setting that decouples the context menu
+  from devtools exposure, and wired on here. Verified live driving a
+  real WebKitGTK window: right-click now shows the normal
+  Back/Forward/Stop/Reload menu with no Inspect Element leaked
+
 ### zeronet-conservancy 1.0.5
 - New: `/SiteBuilder` dashboard page -- a "New site" flow that lists
   starter templates and creates a signed, owned site from one. The
