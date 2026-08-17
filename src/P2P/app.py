@@ -146,7 +146,11 @@ class App:
         if enable_dht:
             kwargs = {} if dht_protocol_prefix is None else {"protocol_prefix": dht_protocol_prefix}
             self.dht_discovery = KadDHTDiscovery(self.file_server.host, **kwargs)
-        self.ui_server.dht_discovery = self.dht_discovery
+        # session.app in P2P/Ui/commands.py is ui_server.app (the UiApp
+        # instance), not ui_server itself -- this used to set the wrong
+        # object, so every dht*-family command always saw dht_discovery as
+        # None (UiApp's own __init__ default) even with DHT running.
+        self.ui_server.app.dht_discovery = self.dht_discovery
 
         self.local_announcer = None
         if enable_local_discovery:
