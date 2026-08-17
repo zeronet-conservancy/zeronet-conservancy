@@ -502,7 +502,11 @@ class TestP2PUiServer:
         assert body == "<h1>raw content</h1>"
         assert reused_status == 200
 
-    def testInvalidWrapperNonceRejected(self):
+    def testInvalidWrapperNonceFailsOpen(self):
+        # wrapper_nonce only guards ZeroFrame postMessage matching, not
+        # content access -- an invalid/stale one (e.g. a cached wrapper page
+        # restored via back-navigation) must still serve the content instead
+        # of leaving the iframe blank (see 799ef9ee).
         async def scenario():
             with tempfile.TemporaryDirectory() as root:
                 site = Site("1TestBadNonceSite", pathlib.Path(root))
@@ -515,9 +519,11 @@ class TestP2PUiServer:
                         response = await client.get(
                             "%s/1TestBadNonceSite/index.html?wrapper=0&wrapper_nonce=not-issued" % base_url
                         )
-                        return response.status_code
+                        return response.status_code, response.text
 
-        assert compat.run(scenario) == 403
+        status, body = compat.run(scenario)
+        assert status == 200
+        assert body == "<h1>raw content</h1>"
 
     def testSiteRootServesWrapped(self):
         async def scenario():
