@@ -66,7 +66,13 @@
           "--collect-submodules", "multiaddr.codecs",
           "--collect-submodules", "src.util",
           "--collect-submodules", "util",
-          "--collect-submodules", "lib"
+          "--collect-submodules", "lib",
+          "--hidden-import", "Db.Db",
+          "--hidden-import", "Db.DbCursor",
+          "--hidden-import", "Db.DbQuery",
+          "--hidden-import", "src.Db.Db",
+          "--hidden-import", "src.Db.DbCursor",
+          "--hidden-import", "src.Db.DbQuery"
         ]
     },
     "resources": [
