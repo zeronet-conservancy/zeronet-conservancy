@@ -259,7 +259,8 @@ or `--target nsis`), or grab the official installer from the
 
 ## Current limitations
 
-* File transactions are not compressed
+* File transfers support opt-in zlib compression (`--file-compression`),
+  but it's off by default
 * No private sites
 * Peer discovery is via a Kademlia DHT (plus local-network discovery and
   peer exchange) -- this is now the primary discovery path for the
