@@ -1,3 +1,31 @@
+### zeronet-conservancy 1.0.10
+- Fix: sites added to an already-running node (via the CLI or the
+  native UI's "add site" flow) now get their announce loop started
+  immediately, with its first iteration doubling as the immediate
+  announce. Previously only sites present when the app itself started
+  ever got a periodic re-announce; a dynamically-added site got an
+  announcer object but nothing ever ran for it, and the UI's
+  siteAdd/mergerSiteAdd commands' attempt to trigger a one-off announce
+  was silently broken (it looked up `session.app._announceOnce`, a
+  method that only ever existed on a different object and so was
+  always `None`). Removing a site now also stops its announce loop,
+  closing a related leak.
+- New: `--dht-bootstrap <multiaddr> [<multiaddr> ...]` lets a node seed
+  its DHT routing table with known peers on startup. Previously nothing
+  in production code ever called the DHT layer's own peer-seeding
+  method, so a fresh node's routing table started empty with no way to
+  ever discover a first peer via DHT -- it could only ever expand a
+  swarm already reached some other way (LAN/PEX), never bootstrap into
+  one from nothing.
+- Fix the packaged desktop app missing the Newsfeed plugin's `Db`
+  dependency (`Plugin Newsfeed load error: No module named 'Db'`).
+  The legacy `src/Db/` package it imports is only ever reached through
+  dynamic plugin loading, which PyInstaller's static analysis can't
+  see, so it was never bundled into the packaged app -- only present
+  in dev checkouts where `src/` sits on disk. Same category of gap as
+  1.0.8's Sidebar-assets fix, this time for a Python package rather
+  than media files.
+
 ### zeronet-conservancy 1.0.9
 - New: gossipsub-based content.json propagation, alongside the existing
   unicast push. Each site now gets its own gossipsub topic

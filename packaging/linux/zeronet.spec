@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.9
+Version:        1.0.10
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,18 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Tue Aug 18 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.10-1
+- Fix two real gaps in P2P announce/discovery wiring: sites added to an
+  already-running node now get their announce loop started immediately
+  (previously only sites present at startup were ever periodically
+  re-announced), and a new --dht-bootstrap flag lets a fresh node seed
+  its DHT routing table with known peers (previously no bootstrap
+  mechanism existed at all, so DHT discovery could never find a first
+  peer on a cold start)
+- Fix the packaged desktop app missing the Newsfeed plugin's Db
+  dependency (legacy src/Db/ package, only reached via dynamic plugin
+  loading so PyInstaller's static analysis never bundled it) --
+  "Plugin Newsfeed load error: No module named 'Db'" at startup
 * Tue Aug 18 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.9-1
 - Add gossipsub-based content.json propagation alongside the existing
   unicast push: sites now gossip updates to their mesh of subscribed
