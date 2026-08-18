@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.8
+Version:        1.0.9
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,12 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Tue Aug 18 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.9-1
+- Add gossipsub-based content.json propagation alongside the existing
+  unicast push: sites now gossip updates to their mesh of subscribed
+  peers (GossipManager, one topic per site), reusing the same
+  signature-verification path as the unicast RPC so both transports
+  apply identical validation before writing anything
 * Tue Aug 18 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.8-1
 - Fix the Sidebar plugin's own JS/CSS (drag-to-open gesture, Console
   panel, left-edge nav drawer) missing from every packaged desktop and

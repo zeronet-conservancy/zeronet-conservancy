@@ -1,3 +1,19 @@
+### zeronet-conservancy 1.0.9
+- New: gossipsub-based content.json propagation, alongside the existing
+  unicast push. Each site now gets its own gossipsub topic
+  (`GossipManager`, one shared `GossipSub`/`Pubsub` pair per node);
+  peers subscribed to a site's topic hear about updates through mesh
+  gossip, not only from peers that happen to be in their direct
+  unicast list. A topic validator rejects invalid/stale content before
+  it propagates further, sharing the exact same verification and
+  write/apply logic (`applyContentUpdate`) as the unicast RPC path, so
+  both transports enforce identical trust. Unicast push is kept as a
+  fallback/complement, not replaced -- a peer with no mesh yet (e.g.
+  right after its first connection to a swarm) still needs it.
+  `strict_signing` is disabled on the gossip layer since content.json
+  already carries its own site-address-keyed signature, which remains
+  the real trust root.
+
 ### zeronet-conservancy 1.0.8
 - Fix the Sidebar plugin's own JS/CSS (the fixbutton drag-to-open
   gesture, the Console panel, and the new left-edge nav drawer) being
