@@ -69,15 +69,15 @@ async def _cmdMergerSiteAdd(session, params):
 
     site_manager = _requireSiteManager(session)
     add_site = getattr(session.app, "on_missing_site", None)
-    announce_once = getattr(session.app, "_announceOnce", None)
     for address in addresses:
         if address in site_manager.sites:
             continue  # Already added
         new_site = add_site(address) if add_site is not None else site_manager.add(address)
         if not new_site:
             continue
-        if announce_once is not None and session.nursery is not None:
-            session.nursery.start_soon(announce_once, new_site.address)
+        # App.addSite() -> App._wireSite() already starts this site's
+        # announce loop (first iteration = immediate announce) if the app
+        # is running -- no separate announce-once trigger needed here.
     return "ok"
 
 

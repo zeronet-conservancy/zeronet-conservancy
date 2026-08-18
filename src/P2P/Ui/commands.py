@@ -998,12 +998,9 @@ async def _cmdSiteAdd(session, params):
     site = add_site(address) if add_site is not None else site_manager.add(address)
     if not site:
         return {"error": "Invalid address"}
-    # App.addSite() wires the site into FileServer and creates its announcer.
-    # Trigger the original's announce-on-add behavior without delaying the
-    # command response; the connection nursery owns this task's lifetime.
-    announce_once = getattr(session.app, "_announceOnce", None)
-    if announce_once is not None and session.nursery is not None:
-        session.nursery.start_soon(announce_once, site.address)
+    # App.addSite() -> App._wireSite() already starts this site's announce
+    # loop (whose first iteration is an immediate announce) if the app is
+    # running -- no separate announce-once trigger needed here.
     return "ok"
 
 

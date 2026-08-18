@@ -41,10 +41,13 @@ UiServer.py's own module docstring) and stays explicitly deferred.
 
 Per-site announce loops are simple fixed-interval polling (default 30
 minutes, matching the original's ANNOUNCE_INTERVAL default order of
-magnitude). New sites added through the native UI are also wired into the
-file server/announcer registries and receive one immediate best-effort
-announce; peer-count-drop and needFile-triggered announces still need the
-remaining WorkerManager/UI-event plumbing.
+magnitude). A site added at any point after run() has started -- via
+addSite()/on_missing_site, from the CLI or the native UI's "add site"
+flow -- gets its own announce loop self-started immediately by
+_wireSite() (its first iteration doubles as an immediate best-effort
+announce), not just sites present when run() itself starts; deleteSite()
+cancels it again. Peer-count-drop and needFile-triggered announces still
+need the remaining WorkerManager/UI-event plumbing.
 """
 import logging
 import pathlib
@@ -52,6 +55,8 @@ from contextlib import AsyncExitStack
 
 import trio
 from libp2p.discovery.upnp.upnp import UpnpManager
+from libp2p.peer.peerinfo import info_from_p2p_addr
+from multiaddr import Multiaddr
 
 from .FileServer import FileServer
 from .Site import Site
@@ -80,6 +85,7 @@ class App:
         ui_allowed_hosts: list | None = None,
         enable_dht: bool = True,
         dht_protocol_prefix: str | None = None,
+        dht_bootstrap: list[str] | None = None,
         enable_local_discovery: bool = True,
         announce_interval: float = DEFAULT_ANNOUNCE_INTERVAL,
         save_interval: float = DEFAULT_SAVE_INTERVAL,
@@ -98,6 +104,13 @@ class App:
         self.announce_interval = announce_interval
         self.save_interval = save_interval
         self.announcers: dict[str, SiteAnnouncer] = {}
+        # Set once run()'s nursery starts, cleared when it exits -- lets
+        # _wireSite() start a site's announce loop immediately when a site
+        # is added while already running (addSite()/on_missing_site, any
+        # time after startup), not just for sites present at startup. See
+        # _wireSite()'s own comment for why this was a real gap before.
+        self._nursery: trio.Nursery | None = None
+        self._announce_scopes: dict[str, trio.CancelScope] = {}
         self._enable_tor = enable_tor
         self._tor_control_ip = tor_control_ip
         self._tor_control_port = tor_control_port
@@ -143,6 +156,7 @@ class App:
             "siteChanged", site, {"event": "updated"}
         )
         self.dht_discovery = None
+        self._dht_bootstrap = dht_bootstrap or []
         if enable_dht:
             kwargs = {} if dht_protocol_prefix is None else {"protocol_prefix": dht_protocol_prefix}
             self.dht_discovery = KadDHTDiscovery(self.file_server.host, **kwargs)
@@ -170,6 +184,21 @@ class App:
         self.announcers[site.address] = SiteAnnouncer(
             site, self.file_server, dht_discovery=self.dht_discovery, local_announcer=self.local_announcer,
         )
+        # run()'s own startup loop (below) only starts _announceLoop for
+        # sites present in self.sites *at that moment* -- a site wired in
+        # afterward (addSite()/on_missing_site, any time after startup, via
+        # the CLI or the UI's "add site" flow) previously got an announcer
+        # object but no periodic re-announce ever ran for it, and no
+        # immediate announce either (Ui/commands.py's siteAdd/mergerSiteAdd
+        # tried to trigger one via a `session.app._announceOnce` lookup
+        # that was always None -- _announceOnce lives on this class, App,
+        # never on UiApp/session.app -- so that plumbing never actually
+        # fired; removed as part of this fix rather than left as
+        # misleading dead code). Starting the loop here, whenever the
+        # nursery already exists, covers both: the loop's own first
+        # iteration IS the immediate announce.
+        if self._nursery is not None:
+            self._nursery.start_soon(self._announceLoop, site.address)
 
     async def loadSites(self) -> None:
         """Loads every site listed in data_dir/sites.json via SiteManager
@@ -193,6 +222,9 @@ class App:
         self.file_server.removeSite(address)
         self.file_server.gossip.unsubscribeSite(address)
         self.announcers.pop(address, None)
+        scope = self._announce_scopes.pop(address, None)
+        if scope is not None:
+            scope.cancel()
 
     async def loadUsers(self) -> None:
         await self.user_manager.load()
@@ -206,22 +238,22 @@ class App:
         return user
 
     async def _announceLoop(self, address: str) -> None:
-        announcer = self.announcers[address]
-        while True:
-            try:
-                await announcer.announce(force=True)
-            except Exception:
-                log.exception("Announce failed for %s", address)
-            await trio.sleep(self.announce_interval)
-
-    async def _announceOnce(self, address: str) -> None:
-        announcer = self.announcers.get(address)
-        if announcer is None:
-            return
-        try:
-            await announcer.announce(force=True)
-        except Exception:
-            log.exception("Initial announce failed for %s", address)
+        """Runs for as long as `address` stays wired in -- deleteSite()
+        cancels self._announce_scopes[address] to stop it early. The first
+        iteration doubles as the "announce immediately when added" case
+        (no separate one-shot method needed): whether this task starts at
+        run() startup (a site loaded before run()) or from _wireSite()
+        (a site added afterward), the very first announce() call happens
+        right away, before the first sleep."""
+        with trio.CancelScope() as scope:
+            self._announce_scopes[address] = scope
+            announcer = self.announcers[address]
+            while True:
+                try:
+                    await announcer.announce(force=True)
+                except Exception:
+                    log.exception("Announce failed for %s", address)
+                await trio.sleep(self.announce_interval)
 
     def requestShutdown(self) -> None:
         """Request a graceful exit from the native app run loop."""
@@ -235,6 +267,34 @@ class App:
                 await self.site_manager.save()
             except Exception:
                 log.exception("Saving sites.json failed")
+
+    async def _bootstrapDht(self) -> None:
+        """Seeds the DHT's routing table from self._dht_bootstrap
+        (--dht-bootstrap) -- without this, KadDHTDiscovery.add_peer()
+        existed but nothing ever called it, so a fresh node's Kademlia
+        routing table started empty with no way to ever discover a first
+        peer via DHT (it could only expand a swarm already reached some
+        other way -- LAN/PEX -- never bootstrap into one from nothing).
+
+        add_peer() itself never dials -- it only looks up addresses
+        already in the peerstore (see KadDHT.add_peer's real
+        implementation) -- so each entry needs an explicit host.connect()
+        first, which is what actually populates the peerstore and
+        performs the handshake; add_peer() then just registers the
+        already-connected peer into the routing table.
+
+        Runs as its own nursery task (not awaited before the rest of
+        run()'s startup) since connecting out to a slow or unreachable
+        bootstrap peer could otherwise stall the whole app's startup;
+        each entry is independent and best-effort, one bad/unreachable
+        address shouldn't block the others."""
+        for addr in self._dht_bootstrap:
+            try:
+                peer_info = info_from_p2p_addr(Multiaddr(addr))
+                await self.file_server.host.connect(peer_info)
+                await self.dht_discovery.add_peer(peer_info.peer_id)
+            except Exception:
+                log.exception("DHT bootstrap failed for %s", addr)
 
     async def _connectTor(self) -> None:
         """Connects the Tor control port after the real fileserver TCP
@@ -339,12 +399,24 @@ class App:
             )
 
             async with trio.open_nursery() as nursery:
+                # Set before starting anything else -- _wireSite() checks
+                # this to decide whether to self-start a new site's
+                # announce loop immediately (see its own comment); it must
+                # already be set by the time any addSite()/on_missing_site
+                # call can race in from a UI/CLI command running
+                # concurrently with this startup sequence.
+                self._nursery = nursery
                 nursery.start_soon(self._saveLoop)
                 if self._enable_upnp:
                     nursery.start_soon(self._setupUpnp)
                 for address in list(self.sites):
                     nursery.start_soon(self._announceLoop, address)
-                await self._shutdown_event.wait()
+                if self.dht_discovery is not None and self._dht_bootstrap:
+                    nursery.start_soon(self._bootstrapDht)
+                try:
+                    await self._shutdown_event.wait()
+                finally:
+                    self._nursery = None
         self._shutdown_event = None
 
 
@@ -356,6 +428,7 @@ async def _main(args) -> None:
         ui_host=args.ui_host,
         ui_port=args.ui_port,
         enable_dht=not args.no_dht,
+        dht_bootstrap=args.dht_bootstrap,
         enable_local_discovery=not args.no_local_discovery,
         enable_tor=args.tor,
         tor_control_port=args.tor_control_port,
@@ -383,6 +456,13 @@ def main() -> None:
     parser.add_argument("--ui-host", default="127.0.0.1")
     parser.add_argument("--ui-port", type=int, default=43110)
     parser.add_argument("--no-dht", action="store_true")
+    parser.add_argument(
+        "--dht-bootstrap", metavar="multiaddr", nargs="*", default=[],
+        help="Bootstrap peer(s) to seed the DHT routing table with, "
+             "e.g. /ip4/1.2.3.4/tcp/4001/p2p/<peer_id> -- without at "
+             "least one, a fresh node has no way to discover any peer "
+             "via DHT until it learns some via LAN/PEX first",
+    )
     parser.add_argument("--no-local-discovery", action="store_true")
     parser.add_argument("--tor", action="store_true", help="Connect to a local Tor control port and run an onion service")
     parser.add_argument("--tor-control-port", type=int, default=9051)

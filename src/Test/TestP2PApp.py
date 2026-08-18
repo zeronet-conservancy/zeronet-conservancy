@@ -74,6 +74,101 @@ class TestP2PApp:
         assert SITE_ADDRESS_1 in fs_sites
         assert SITE_ADDRESS_1 in announcers
 
+    def testAddSiteAfterRunStartsAnnounceLoopImmediately(self):
+        """Regression test for a real gap: a site added via addSite()
+        *after* run()'s nursery has already started (the CLI/UI's normal
+        "add a site to an already-running node" path) used to get an
+        announcer object with no periodic re-announce ever started for it,
+        and no immediate announce either. _wireSite() now self-starts the
+        loop via self._nursery when it's already set -- verified here by
+        swapping in a fake announce() before the scheduled loop task gets
+        its first chance to run (start_soon() doesn't run the task until
+        this coroutine's next checkpoint, so the swap is race-free)."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                app = App(
+                    pathlib.Path(d), ws_port=None, ui_port=0, enable_dht=False, enable_upnp=False,
+                    enable_local_discovery=False, announce_interval=9999,
+                )
+                with trio.move_on_after(5):
+                    async with trio.open_nursery() as nursery:
+                        nursery.start_soon(app.run)
+                        await trio.sleep(0.2)  # Let file_server/ui_server finish binding
+
+                        site = app.addSite(SITE_ADDRESS_1)
+                        announce_calls = []
+
+                        async def fake_announce(force=False):
+                            announce_calls.append(force)
+
+                        app.announcers[SITE_ADDRESS_1].announce = fake_announce
+
+                        with trio.fail_after(5):
+                            while not announce_calls:
+                                await trio.sleep(0.05)
+                        has_scope_before = SITE_ADDRESS_1 in app._announce_scopes
+
+                        app.deleteSite(SITE_ADDRESS_1)
+                        has_scope_after = SITE_ADDRESS_1 in app._announce_scopes
+
+                        nursery.cancel_scope.cancel()
+                return announce_calls, has_scope_before, has_scope_after
+
+        announce_calls, has_scope_before, has_scope_after = compat.run(scenario)
+        assert announce_calls == [True]  # First loop iteration = the immediate announce
+        assert has_scope_before is True
+        assert has_scope_after is False  # deleteSite() cancels the loop
+
+    def testDhtBootstrapAllowsFreshNodeToDiscoverPeer(self):
+        """Regression test for a real gap: KadDHTDiscovery.add_peer()
+        existed to seed the DHT routing table, but nothing in production
+        code ever called it -- a fresh node's routing table started empty
+        with no way to ever find a first peer via DHT. dht_bootstrap=[...]
+        (--dht-bootstrap on the CLI) now seeds it for real via
+        App._bootstrapDht(). Node B here never calls host.connect() or
+        add_peer() itself anywhere in this test -- only the dht_bootstrap
+        config does, proving the CLI-facing flag actually works end to
+        end, not just KadDHTDiscovery.add_peer() in isolation (already
+        covered manually by TestP2PKadDHT.py)."""
+        import hashlib
+
+        site_hash = hashlib.sha1(b"1DhtBootstrapTestSite").digest()
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as da, tempfile.TemporaryDirectory() as db:
+                app_a = App(pathlib.Path(da), ws_port=None, ui_port=0, enable_upnp=False)
+
+                with trio.move_on_after(10):
+                    async with trio.open_nursery() as nursery_a:
+                        nursery_a.start_soon(app_a.run)
+                        await trio.sleep(0.2)  # Let A's host finish binding
+
+                        addr = app_a.file_server.host.get_addrs()[0]
+                        bootstrap_addr = "%s/p2p/%s" % (addr, app_a.file_server.host.peer_id.to_base58())
+
+                        app_b = App(
+                            pathlib.Path(db), ws_port=None, ui_port=0, enable_upnp=False,
+                            dht_bootstrap=[bootstrap_addr],
+                        )
+                        async with trio.open_nursery() as nursery_b:
+                            nursery_b.start_soon(app_b.run)
+
+                            await app_a.dht_discovery.announce(site_hash)
+
+                            found = []
+                            with trio.fail_after(10):
+                                while not found:
+                                    found = await app_b.dht_discovery.find_peers(site_hash)
+                                    if not found:
+                                        await trio.sleep(0.2)
+
+                            nursery_b.cancel_scope.cancel()
+                        nursery_a.cancel_scope.cancel()
+                return app_a.file_server.host.peer_id, [p.peer_id for p in found]
+
+        a_peer_id, found_ids = compat.run(scenario)
+        assert a_peer_id in found_ids
+
     def testRunServesFileAndUiTogether(self):
         """A real end-to-end smoke test of the wired application: one App
         instance actually serving a real site's file over the P2P wire
