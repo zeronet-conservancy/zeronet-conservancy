@@ -17,7 +17,7 @@ COPY requirements.lock .
 RUN python3 -m pip install --require-hashes --no-cache-dir -r requirements.lock
 
 RUN echo "tor &" > start.sh
-RUN echo "python3 zeronet.py --ui_ip '*' --fileserver_port 26552" >> start.sh
+RUN echo "python3 zeronet.py --ui-ip '*' --fileserver-port 26552" >> start.sh
 RUN chmod +x start.sh
 
 # the part below is updated with source updates

@@ -16,9 +16,9 @@ RUN python3 -m pip install --require-hashes --no-cache-dir -r requirements.lock
 
 COPY . .
 
-ENTRYPOINT python3 zeronet.py --ui_ip "*" --fileserver_port 26552 \
-    --tor $TOR_ENABLED --tor_controller tor:$TOR_CONTROL_PORT \
-    --tor_proxy tor:$TOR_SOCKS_PORT --tor_password $TOR_CONTROL_PASSWD
+ENTRYPOINT python3 zeronet.py --ui-ip "*" --fileserver-port 26552 \
+    --tor $TOR_ENABLED --tor-controller tor:$TOR_CONTROL_PORT \
+    --tor-proxy tor:$TOR_SOCKS_PORT --tor-password $TOR_CONTROL_PASSWD
 
 CMD main
 
