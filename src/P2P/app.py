@@ -166,6 +166,7 @@ class App:
 
     def _wireSite(self, site: Site) -> None:
         self.file_server.addSite(site)
+        self.file_server.gossip.subscribeSite(site)
         self.announcers[site.address] = SiteAnnouncer(
             site, self.file_server, dht_discovery=self.dht_discovery, local_announcer=self.local_announcer,
         )
@@ -190,6 +191,7 @@ class App:
         """Remove a site from persistence and every live P2P wiring table."""
         self.site_manager.delete(address)
         self.file_server.removeSite(address)
+        self.file_server.gossip.unsubscribeSite(address)
         self.announcers.pop(address, None)
 
     async def loadUsers(self) -> None:
@@ -318,6 +320,7 @@ class App:
         self._shutdown_event = trio.Event()
         async with AsyncExitStack() as stack:
             await stack.enter_async_context(self.file_server.run())
+            await stack.enter_async_context(self.file_server.gossip.run())
             await stack.enter_async_context(self.ui_server.run())
             if self.dht_discovery is not None:
                 await stack.enter_async_context(self.dht_discovery.run())

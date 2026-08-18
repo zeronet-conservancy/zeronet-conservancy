@@ -20,14 +20,58 @@ Scoped down from the original, deliberately, not just incidentally:
     from inside the handler). Applying the new content.json is a
     complete, useful action on its own; the caller decides whether/how
     to fetch the files it newly lists (WorkerManager.syncSite() already
-    does exactly that) and whether to forward the update further.
+    does exactly that) and whether to forward the update further. Update:
+    "forward the update further" now also has a real path -- gossipsub
+    (see GossipManager.py, protocols/gossip_update.py) -- but that's a
+    peer-to-swarm broadcast, orthogonal to this stream's peer-to-peer RPC,
+    not something this handler triggers.
   - No per-connection in-flight-dedup bookkeeping (files_parsing) --
     WorkerManager.Scheduler already dedupes needFile() calls; this
     handler doesn't need its own copy for a single verify-and-write.
+
+applyContentUpdate() below is the shared verify+write+notify core, used
+both by this RPC handler and by gossip_update.py's topic-subscription
+consumer, so gossiped and directly-pushed updates go through identical
+validation and application logic.
 """
 import json
 
 PROTOCOL_ID = "/zeronet/update/1.0.0"
+
+
+class ContentUpdateError(Exception):
+    """Raised by applyContentUpdate() when body isn't a valid content.json
+    update for the given site -- bad JSON, or a verifyContentJson()
+    failure (bad signature, stale/future timestamp, bad path, oversize,
+    failed include checks, ...). Callers translate this into whatever
+    error shape their own protocol needs: an RPC error dict here, a
+    reject from gossip_update.py's topic validator."""
+
+
+async def applyContentUpdate(site, inner_path: str, body: bytes, on_applied=None) -> bool:
+    """Verify body against site.content_manager and, if it's a genuine
+    update, write it and refresh the in-memory contents. Returns True if
+    applied, False for the benign "same content, not updated" case (not
+    an error -- the caller already has this version). Raises
+    ContentUpdateError for anything actually invalid."""
+    try:
+        content = json.loads(body.decode("utf8"))
+    except Exception as err:
+        raise ContentUpdateError("File invalid JSON: %s" % err) from err
+
+    try:
+        applied = site.content_manager.verifyContentJson(content, inner_path=inner_path)
+    except Exception as err:
+        raise ContentUpdateError("File invalid update: %s" % err) from err
+
+    if applied is False:
+        return False
+
+    await site.storage.write(inner_path, body)
+    site.content_manager.contents[inner_path] = content
+    if on_applied is not None:
+        on_applied(site, inner_path)
+    return True
 
 
 def make_handler(site_resolver, on_applied=None):
@@ -52,22 +96,12 @@ def make_handler(site_resolver, on_applied=None):
             return {"error": "Missing body"}
 
         try:
-            content = json.loads(body.decode("utf8"))
-        except Exception as err:
-            return {"error": "File invalid JSON: %s" % err}
+            applied = await applyContentUpdate(site, inner_path, body, on_applied=on_applied)
+        except ContentUpdateError as err:
+            return {"error": str(err)}
 
-        try:
-            applied = site.content_manager.verifyContentJson(content, inner_path=inner_path)
-        except Exception as err:
-            return {"error": "File invalid update: %s" % err}
-
-        if applied is False:
+        if not applied:
             return {"ok": "Same content, not updated"}
-
-        await site.storage.write(inner_path, body)
-        site.content_manager.contents[inner_path] = content
-        if on_applied is not None:
-            on_applied(site, inner_path)
         return {"ok": "Thanks, file %s updated!" % inner_path}
 
     return handle

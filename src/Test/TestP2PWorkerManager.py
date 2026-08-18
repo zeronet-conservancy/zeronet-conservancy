@@ -11,7 +11,7 @@ from P2P.FileServer import FileServer
 from P2P.Site import Site
 from P2P.Peer import Peer
 from P2P.ConnectionPolicy import ConnectionPolicy
-from P2P.WorkerManager import syncSite, fetchAndVerify, downloadContentJson, NoPeerHadFileError
+from P2P.WorkerManager import syncSite, fetchAndVerify, downloadContentJson, publishGossip, NoPeerHadFileError
 from P2P import compat
 
 
@@ -204,6 +204,59 @@ class TestP2PWorkerManager:
                         return "rejected"
 
         assert compat.run(scenario) == "rejected"
+
+    def testPublishGossipPublishesLoadedContentToSiteAddress(self):
+        """publishGossip() is publishUpdate()'s gossip-side sibling --
+        same already-loaded/signed content, published to the site's
+        gossip topic (GossipManager.publish(site.address, body)) instead
+        of pushed peer-by-peer. A fake stand-in for GossipManager, not a
+        real one, since this is about publishGossip()'s own contract
+        (what it passes and when), not gossipsub transport -- that's
+        covered by TestP2PGossipIntegration.py's real end-to-end case."""
+        privatekey = CryptBitcoin.newPrivatekey()
+        site_address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+        class FakeGossipManager:
+            def __init__(self):
+                self.published = []
+
+            async def publish(self, address, body):
+                self.published.append((address, body))
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site(site_address, pathlib.Path(root))
+                content = {"address": site_address, "modified": time.time(), "files": {}}
+                signed_content = _sign(content, privatekey)
+                site.content_manager.contents["content.json"] = signed_content
+
+                gossip = FakeGossipManager()
+                await publishGossip(site, gossip)
+                return gossip.published, signed_content
+
+        published, signed_content = compat.run(scenario)
+        assert len(published) == 1
+        published_address, published_body = published[0]
+        assert published_address == site_address
+        assert json.loads(published_body) == signed_content
+
+    def testPublishGossipRaisesWithoutLoadedContent(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1UnloadedSiteAddress", pathlib.Path(root))
+
+                class FakeGossipManager:
+                    async def publish(self, address, body):
+                        pass
+
+                raised = False
+                try:
+                    await publishGossip(site, FakeGossipManager())
+                except ValueError:
+                    raised = True
+                return raised
+
+        assert compat.run(scenario) is True
 
 
 def _sha512(data: bytes) -> str:

@@ -668,6 +668,20 @@ async def _cmdSitePublish(session, params):
             from ..WorkerManager import publishUpdate
             await publishUpdate(site, peers, inner_path=inner_path)
 
+        # Gossip publish is a sibling of the unicast push above, not a
+        # replacement -- see WorkerManager.publishGossip()'s own docstring.
+        # Unlike actions.py's standalone CLI sitePublish (a short-lived
+        # process that spins up its own FileServer for one action and
+        # exits, never running gossip.run() long enough for a mesh to
+        # form), this command runs inside the long-lived app process where
+        # GossipManager has been running continuously since startup and
+        # this site was already subscribed to its topic when loaded (see
+        # App._wireSite()) -- so a real mesh may already exist here.
+        file_server = getattr(session.app, "file_server", None)
+        if file_server is not None:
+            from ..WorkerManager import publishGossip
+            await publishGossip(site, file_server.gossip, inner_path=inner_path)
+
     session.app.broadcast("siteChanged", site, {"event": "file_done"})
     return "ok"
 

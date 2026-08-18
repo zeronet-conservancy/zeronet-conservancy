@@ -44,6 +44,12 @@ peer directly, not a whole site's swarm):
     when this was first written is built now. Returns how many peers
     acknowledged it; raises ActionError if none did (matching the
     original's own "no peers found" outcome for a fresh/unvisited site).
+    Deliberately unicast-only, unlike Ui/commands.py's sitePublish command:
+    this method's _networkSession() spins up a fresh FileServer for this
+    one action and tears it down again immediately after, never running
+    GossipManager.run() long enough (gossipsub mesh formation takes
+    multiple heartbeat cycles) for a gossip publish here to ever reach
+    anyone -- it would just be a silent no-op, not a real fallback.
 
 Also not ported: importBundle, getConfig, test, ipythonThread/main (main
 is P2P.app.main() already).

@@ -18,6 +18,7 @@ import pathlib
 
 from .Host import Host
 from .ConnectionPolicy import ConnectionPolicy
+from .GossipManager import GossipManager
 from .ProtocolRouter import ProtocolRouter
 from .protocols import getfile, pex, piecefields, ping, update
 from .Bigfile import piece_count
@@ -42,6 +43,12 @@ class FileServer:
         # at call time via _onUpdateApplied. None means "no UI wired up",
         # e.g. a standalone FileServer with no UiServer at all.
         self.on_update_applied = None
+
+        # _onUpdateApplied is a bound method, so passing it here (rather
+        # than after on_update_applied is set) is fine -- it reads
+        # self.on_update_applied dynamically at call time, same as the
+        # unicast update.py handler registered below.
+        self.gossip = GossipManager(self.host, on_applied=self._onUpdateApplied)
 
         self._registerProtocols()
 

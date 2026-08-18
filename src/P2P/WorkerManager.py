@@ -305,6 +305,21 @@ async def publishUpdate(site, peers: list, inner_path: str = "content.json") -> 
     return published
 
 
+async def publishGossip(site, gossip_manager, inner_path: str = "content.json") -> None:
+    """Publishes site's current, already-signed inner_path content to its
+    gossipsub topic (GossipManager.publish() -- a no-op if gossip isn't
+    running). Sibling to publishUpdate(), not a replacement: gossipsub only
+    reaches peers already meshed on this site's topic, so a peer with no
+    mesh yet (e.g. right after its very first connection to the swarm)
+    still needs the unicast push. Same content-already-loaded precondition
+    as publishUpdate(); this doesn't sign anything either."""
+    content = site.content_manager.contents.get(inner_path)
+    if content is None:
+        raise ValueError("No loaded content to publish for %s" % inner_path)
+    body = json.dumps(content).encode("utf8")
+    await gossip_manager.publish(site.address, body)
+
+
 class PriorityLimiter:
     """Like trio.CapacityLimiter, but waiters are released in priority
     order (highest first) rather than FIFO.
