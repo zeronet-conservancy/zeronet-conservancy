@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.12
+Version:        1.0.13
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,12 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.13-1
+- Overhaul the Configuration/Plugins/New site/Content filters/Files/
+  Console admin pages: shared layout, vendored offline-first Pico CSS,
+  real dark/light theme application (previously the drawer's theme
+  switcher never actually changed the page). Fixes page titles that
+  silently rendered blank on every one of these pages.
 * Wed Aug 19 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.12-1
 - Add private-site access-request management: owner UI (recipients list,
   pending-requests list with one-click approve/deny), direct P2P push

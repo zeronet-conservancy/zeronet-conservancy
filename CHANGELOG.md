@@ -1,3 +1,23 @@
+### zeronet-conservancy 1.0.13
+- Overhaul: the native admin pages (Configuration, Plugins, New site
+  [SiteBuilder], Content filters, Files, Console) now share one layout
+  template instead of five copies of duplicated head/nav/drawer/socket
+  boilerplate, styled with a vendored, offline-first copy of Pico CSS
+  (MIT licensed, inlined into each page -- no CDN dependency, no build
+  step). Real dark/light/system theming, a proper nav bar, restyled
+  tables/forms/buttons, and a card-grid layout for the "New site"
+  starter picker.
+- Fix: the left-drawer's light/dark/system theme switcher never
+  actually applied to the page itself, only saved a server-side
+  preference -- it's now applied immediately. Theme/version/language
+  also weren't fetched until the drawer was opened once; now fetched
+  as soon as the page connects.
+- Fix: `{{ title }}` was referenced in every admin page's `<title>`/
+  `<h1>` with nothing in context ever supplying it, so titles silently
+  rendered blank. Also: Console and Files previously had no left drawer
+  at all (no way back to the rest of the admin UI without the browser's
+  own back button).
+
 ### zeronet-conservancy 1.0.12
 - New: private-site access-request management. Owners get a sidebar
   section listing approved recipients and pending access requests, with
