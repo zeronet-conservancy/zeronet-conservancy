@@ -337,6 +337,44 @@ async def publishGossip(site, gossip_manager, inner_path: str = "content.json") 
     await gossip_manager.publish(site.address, body)
 
 
+async def forwardPendingAccessRequests(site, peers: list, relay) -> int:
+    """Re-pushes whatever RequestAccessRelay is holding for this site to
+    `peers` -- the "owner is offline" half of protocols/request_access.py's
+    design (see that module's own docstring). Sibling to publishUpdate()/
+    publishGossip() in shape (site + peers + "push it, count successes"),
+    but pushes relay.getAll() entries instead of site content, and drops
+    an entry locally the moment a push response confirms it actually
+    reached the real owner (stored_by_owner: True) -- no point continuing
+    to carry a copy once delivery is confirmed, though holding a stray
+    extra copy a little longer would be harmless too (addRecipientKey() is
+    idempotent).
+
+    Called from App._announceLoop's existing periodic per-site cycle, not
+    on its own timer -- a relay-held request only needs to be re-offered
+    about as often as this node re-discovers/re-confirms its peer set
+    anyway, so no new schedule was worth adding."""
+    entries = relay.getAll(site.address)
+    if not entries:
+        return 0
+
+    forwarded = 0
+    for auth_address, entry in entries.items():
+        reached_owner = False
+        for peer in peers:
+            try:
+                res = await peer.requestAccess(site.address, auth_address, entry["signature"])
+            except Exception:
+                continue
+            if not isinstance(res, dict) or "error" in res:
+                continue
+            forwarded += 1
+            if res.get("stored_by_owner"):
+                reached_owner = True
+        if reached_owner:
+            relay.remove(site.address, auth_address)
+    return forwarded
+
+
 class PriorityLimiter:
     """Like trio.CapacityLimiter, but waiters are released in priority
     order (highest first) rather than FIFO.

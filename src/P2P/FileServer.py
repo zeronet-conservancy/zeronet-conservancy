@@ -20,8 +20,9 @@ from .Host import Host
 from .ConnectionPolicy import ConnectionPolicy
 from .GossipManager import GossipManager
 from .ProtocolRouter import ProtocolRouter
-from .protocols import getfile, pex, piecefields, ping, update
+from .protocols import getfile, pex, piecefields, ping, request_access, update
 from .Bigfile import piece_count
+from .RequestAccessRelay import RequestAccessRelay
 
 
 class FileServer:
@@ -44,6 +45,21 @@ class FileServer:
         # e.g. a standalone FileServer with no UiServer at all.
         self.on_update_applied = None
 
+        # Same late-bound-attribute story as on_update_applied above, plus
+        # one more: request_access.py's handler needs a SiteManager to check
+        # ownership and persist pending requests to, and FileServer has
+        # never held one (it works purely off the sites dict). Rather than
+        # thread a SiteManager into the constructor (FileServer is built
+        # before SiteManager in app.py -- see app.py's own comment order),
+        # this stays a plain attribute App sets right after both exist,
+        # read dynamically at call time via a closure in _registerProtocols.
+        self.site_manager = None
+        self.on_access_requested = None
+        # Bounded, in-memory, always-on -- see RequestAccessRelay's own
+        # docstring for why this needs no configuration or opt-out to be
+        # safe to run on every node, not just owners.
+        self.request_access_relay = RequestAccessRelay()
+
         # _onUpdateApplied is a bound method, so passing it here (rather
         # than after on_update_applied is set) is fine -- it reads
         # self.on_update_applied dynamically at call time, same as the
@@ -58,6 +74,13 @@ class FileServer:
         self.router.register(pex.PROTOCOL_ID, pex.make_handler(self._knownPeersForSite, self._onPeerReceived))
         self.router.register(piecefields.PROTOCOL_ID, piecefields.make_handler(self._piecefieldsForSite))
         self.router.register(update.PROTOCOL_ID, update.make_handler(self._resolveSite, on_applied=self._onUpdateApplied))
+        self.router.register(
+            request_access.PROTOCOL_ID,
+            request_access.make_handler(
+                self._resolveSite, lambda: self.site_manager,
+                on_request=self._onAccessRequested, relay=self.request_access_relay,
+            ),
+        )
 
     def _resolveSiteStorage(self, site_address: str):
         site = self.sites.get(site_address)
@@ -86,6 +109,10 @@ class FileServer:
     def _onUpdateApplied(self, site, inner_path: str) -> None:
         if self.on_update_applied is not None:
             self.on_update_applied(site, inner_path)
+
+    def _onAccessRequested(self, site, auth_address: str) -> None:
+        if self.on_access_requested is not None:
+            self.on_access_requested(site, auth_address)
 
     async def _piecefieldsForSite(self, site_address: str) -> dict:
         site = self.sites.get(site_address)

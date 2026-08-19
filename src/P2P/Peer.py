@@ -81,3 +81,10 @@ class Peer:
         """Pushes a content.json update to this peer -- see
         protocols/update.py for the receiving side."""
         return await self.request("update", {"site": site_address, "inner_path": inner_path, "body": body})
+
+    async def requestAccess(self, site_address: str, auth_address: str, signature: str) -> dict:
+        """Pushes a private-site access request to this peer -- see
+        protocols/request_access.py for the receiving side."""
+        return await self.request(
+            "requestAccess", {"site": site_address, "auth_address": auth_address, "signature": signature}
+        )

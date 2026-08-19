@@ -729,19 +729,87 @@ async def _cmdSiteRequestAccess(session, params):
     let in). Signs an access request with this user's own auth
     privatekey (the same per-site identity key already used for site
     permissions -- see Site.py's own module docstring on why private-
-    site recipients reuse it rather than a separate dedicated key) and
-    returns it for the frontend to relay to the site owner out-of-band
-    (email, chat, in person, ...) -- there's no in-repo transmission
-    channel for this, matching the original design this re-ports."""
+    site recipients reuse it rather than a separate dedicated key), then
+    pushes it directly to whatever peers this node is already connected
+    to for the site (protocols/request_access.py's PROTOCOL_ID, via the
+    same _sitePeers()/Peer pattern sitePublish uses) so the owner's node
+    -- if it happens to be one of those peers -- can queue it without any
+    out-of-band relay. `delivered` reports how many peers accepted it (0
+    is common and not an error: none of the currently-connected peers may
+    be the owner). The message/signature/auth_address are still returned
+    too, as a fallback the caller can relay manually if delivery fails or
+    the owner isn't reachable yet -- this doesn't replace that path, only
+    adds a better one on top of it."""
     site = _requireSite(session)
     user = await _requireUser(session)
+    auth_address = user.getAuthAddress(site.address)
     auth_privatekey = user.getAuthPrivatekey(site.address)
     message, signature = CryptEcies.signAccessRequest(site.address, auth_privatekey)
+
+    delivered = 0
+    for peer in _sitePeers(session, site):
+        try:
+            res = await peer.requestAccess(site.address, auth_address, signature)
+        except Exception:
+            continue
+        if isinstance(res, dict) and "error" in res:
+            continue
+        delivered += 1
+
     return {
-        "auth_address": user.getAuthAddress(site.address),
+        "auth_address": auth_address,
         "message": message,
         "signature": signature,
+        "delivered": delivered,
     }
+
+
+@command("siteApproveRequest")
+async def _cmdSiteApproveRequest(session, params):
+    """Owner-only: approve a pending request that arrived via
+    protocols/request_access.py (queued by site_manager's own
+    private_pending_requests setting) without the caller needing to
+    already have the requester's raw signature to hand -- it's fetched
+    from the pending entry itself. Otherwise identical to siteAddRecipient
+    (same "call siteSign afterward" convention): moves the address from
+    pending into private_recipients and leaves re-signing/publishing as a
+    separate explicit step."""
+    site = _requireAdmin(session)
+    address = _param(params, "address", 0)
+    if not address:
+        raise CommandError("address required")
+    site_manager = _requireSiteManager(session)
+    pending = site_manager.getSiteSetting(site.address, "private_pending_requests", {})
+    entry = pending.get(address)
+    if not entry:
+        raise CommandError("No pending request from %s" % address)
+
+    recipients = site_manager.getSiteSetting(site.address, "private_recipients", {})
+    updated = site.content_manager.addRecipientKey(recipients, address, entry["signature"])
+    await site_manager.setSiteSetting(site.address, "private_recipients", updated)
+
+    remaining_pending = dict(pending)
+    remaining_pending.pop(address, None)
+    await site_manager.setSiteSetting(site.address, "private_pending_requests", remaining_pending)
+    return "ok"
+
+
+@command("siteDenyRequest")
+async def _cmdSiteDenyRequest(session, params):
+    """Owner-only: dismiss a pending request without approving it -- just
+    removes it from private_pending_requests. The requester isn't
+    notified either way (no channel to notify them over); they'd only
+    find out by requesting access again and seeing it still doesn't
+    work."""
+    site = _requireAdmin(session)
+    address = _param(params, "address", 0)
+    if not address:
+        raise CommandError("address required")
+    site_manager = _requireSiteManager(session)
+    pending = dict(site_manager.getSiteSetting(site.address, "private_pending_requests", {}))
+    pending.pop(address, None)
+    await site_manager.setSiteSetting(site.address, "private_pending_requests", pending)
+    return "ok"
 
 
 @command("siteAddRecipient")

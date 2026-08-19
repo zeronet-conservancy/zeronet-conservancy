@@ -185,7 +185,7 @@ async def _cmdSidebarGetHtmlTag(session, params):
     is_admin = "ADMIN" in site.permissions
     is_own = site_manager.isOwn(site.address) if site_manager else False
     formatted_info = formatSiteInfo(site, site_manager)
-    return renderSidebarHtml(site, formatted_info, is_own, is_admin)
+    return renderSidebarHtml(site, formatted_info, is_own, is_admin, site_manager)
 
 
 @command("siteRecoverPrivatekey")

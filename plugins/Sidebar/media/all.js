@@ -1169,6 +1169,20 @@ window.initScrollable = function () {
           return false;
         };
       })(this));
+      this.tag.find("#button-clone").off("click touchend").on("click touchend", (function(_this) {
+        return function() {
+          _this.tag.find("#button-clone").addClass("loading");
+          _this.wrapper.ws.cmd("siteClone", _this.wrapper.site_info.address, function(res) {
+            _this.tag.find("#button-clone").removeClass("loading");
+            if (res && res.address) {
+              return document.location = "/" + res.address;
+            } else {
+              return _this.wrapper.notifications.add("error-clone", "error", "Clone error: " + (res && res.error ? res.error : "Unknown error"));
+            }
+          });
+          return false;
+        };
+      })(this));
       this.tag.find("#button-favourite").off("click touched").on("click touched", (function(_this) {
 	return function() {
 	  _this.tag.find("#button-favourite").addClass("hidden");
@@ -1243,6 +1257,106 @@ window.initScrollable = function () {
                 return _this.updateHtmlTag();
               }
             });
+          });
+          return false;
+        };
+      })(this));
+      this.tag.find("#button-recipient-add").off("click touchend").on("click touchend", (function(_this) {
+        return function() {
+          var address, signature;
+          address = $("#input-recipient-address").val();
+          signature = $("#input-recipient-signature").val();
+          if (!address || !signature) {
+            _this.wrapper.notifications.add("recipient-add", "error", "Address and signature are both required", 5000);
+            return false;
+          }
+          _this.tag.find("#button-recipient-add").addClass("loading");
+          _this.wrapper.ws.cmd("siteAddRecipient", [address, signature], function(res) {
+            _this.tag.find("#button-recipient-add").removeClass("loading");
+            if (res !== "ok") {
+              return _this.wrapper.notifications.add("recipient-add", "error", "Approve recipient error: " + (res && res.error ? res.error : res));
+            } else {
+              return _this.wrapper.ws.cmd("siteSign", {}, function(res_sign) {
+                if (res_sign === "ok") {
+                  _this.wrapper.notifications.add("recipient-add", "done", "Recipient approved and site re-signed!", 5000);
+                } else {
+                  _this.wrapper.notifications.add("recipient-add", "error", "Recipient approved, but re-sign failed: " + (res_sign && res_sign.error ? res_sign.error : res_sign));
+                }
+                return _this.updateHtmlTag();
+              });
+            }
+          });
+          return false;
+        };
+      })(this));
+      // Delegated (not .find().on()): recipient rows -- and their Remove
+      // buttons -- only exist once at least one recipient's been
+      // approved, and updateHtmlTag()'s morphdom-based re-render never
+      // re-runs onOpened() to rebind a direct handler onto newly-created
+      // ones. Binding on this.tag with a selector matches at click time,
+      // not bind time, so it keeps working across re-renders.
+      this.tag.off("click touchend", ".recipient-remove").on("click touchend", ".recipient-remove", (function(_this) {
+        return function() {
+          var address;
+          address = $(this).data("address");
+          _this.tag.find(".recipient-remove").addClass("loading");
+          _this.wrapper.ws.cmd("siteRemoveRecipient", [address], function(res) {
+            _this.tag.find(".recipient-remove").removeClass("loading");
+            if (res !== "ok") {
+              return _this.wrapper.notifications.add("recipient-remove", "error", "Remove recipient error: " + (res && res.error ? res.error : res));
+            } else {
+              return _this.wrapper.ws.cmd("siteSign", {}, function(res_sign) {
+                if (res_sign === "ok") {
+                  _this.wrapper.notifications.add("recipient-remove", "done", "Recipient removed and site re-signed!", 5000);
+                } else {
+                  _this.wrapper.notifications.add("recipient-remove", "error", "Recipient removed, but re-sign failed: " + (res_sign && res_sign.error ? res_sign.error : res_sign));
+                }
+                return _this.updateHtmlTag();
+              });
+            }
+          });
+          return false;
+        };
+      })(this));
+      // Same delegation reasoning as .recipient-remove above: pending-
+      // request rows only exist once request_access.py has actually
+      // queued one, well after onOpened() first ran.
+      this.tag.off("click touchend", ".request-approve").on("click touchend", ".request-approve", (function(_this) {
+        return function() {
+          var address;
+          address = $(this).data("address");
+          _this.tag.find(".request-approve, .request-deny").addClass("loading");
+          _this.wrapper.ws.cmd("siteApproveRequest", [address], function(res) {
+            _this.tag.find(".request-approve, .request-deny").removeClass("loading");
+            if (res !== "ok") {
+              return _this.wrapper.notifications.add("request-approve", "error", "Approve request error: " + (res && res.error ? res.error : res));
+            } else {
+              return _this.wrapper.ws.cmd("siteSign", {}, function(res_sign) {
+                if (res_sign === "ok") {
+                  _this.wrapper.notifications.add("request-approve", "done", "Request approved and site re-signed!", 5000);
+                } else {
+                  _this.wrapper.notifications.add("request-approve", "error", "Request approved, but re-sign failed: " + (res_sign && res_sign.error ? res_sign.error : res_sign));
+                }
+                return _this.updateHtmlTag();
+              });
+            }
+          });
+          return false;
+        };
+      })(this));
+      this.tag.off("click touchend", ".request-deny").on("click touchend", ".request-deny", (function(_this) {
+        return function() {
+          var address;
+          address = $(this).data("address");
+          _this.tag.find(".request-approve, .request-deny").addClass("loading");
+          _this.wrapper.ws.cmd("siteDenyRequest", [address], function(res) {
+            _this.tag.find(".request-approve, .request-deny").removeClass("loading");
+            if (res !== "ok") {
+              _this.wrapper.notifications.add("request-deny", "error", "Deny request error: " + (res && res.error ? res.error : res));
+            } else {
+              _this.wrapper.notifications.add("request-deny", "done", "Request denied", 5000);
+            }
+            return _this.updateHtmlTag();
           });
           return false;
         };

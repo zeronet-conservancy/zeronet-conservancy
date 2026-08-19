@@ -219,6 +219,97 @@ class TestP2PUiCommandsPrivateSite:
         assert before["result"] == "<h1>secret</h1>"
         assert after["result"]["error"] == "private_site_no_access"
 
+    def testSiteApproveRequestGrantsAccessFromPendingRequest(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as owner_users_dir:
+                data_dir = pathlib.Path(d)
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+
+                site_owner = Site(address, data_dir)
+                site_owner.permissions = ["ADMIN"]
+                await site_owner.storage.write("index.html", b"<h1>secret</h1>")
+
+                from Crypt import CryptEcies
+                requester_privatekey = CryptBitcoin.newPrivatekey()
+                requester_address = CryptBitcoin.privatekeyToAddress(requester_privatekey)
+                _, signature = CryptEcies.signAccessRequest(address, requester_privatekey)
+
+                owner_site_manager = SiteManager(pathlib.Path(owner_users_dir))
+                # Simulates protocols/request_access.py already having
+                # queued this -- see TestP2PProtocolsRequestAccess.py for
+                # the actual wire-delivery half.
+                await owner_site_manager.setSiteSetting(
+                    address, "private_pending_requests", {requester_address: {"signature": signature}},
+                )
+                server_owner = UiServer(sites={address: site_owner}, site_manager=owner_site_manager)
+
+                async with server_owner.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server_owner, site_owner)) as ws:
+                        approve_reply = await _call(ws, "siteApproveRequest", {"address": requester_address})
+                        sign_reply = await _call(ws, "siteSign", {"privatekey": privatekey}, msg_id=2)
+
+                return (
+                    approve_reply, sign_reply,
+                    owner_site_manager.getSiteSetting(address, "private_recipients", {}),
+                    owner_site_manager.getSiteSetting(address, "private_pending_requests", {}),
+                )
+
+        approve_reply, sign_reply, recipients, pending = compat.run(scenario)
+        assert approve_reply["result"] == "ok"
+        assert sign_reply["result"] == "ok"
+        assert list(recipients.keys()) != []
+        assert pending == {}
+
+    def testSiteApproveRequestFailsWithoutPendingEntry(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as owner_users_dir:
+                data_dir = pathlib.Path(d)
+                address = CryptBitcoin.privatekeyToAddress(CryptBitcoin.newPrivatekey())
+                site_owner = Site(address, data_dir)
+                site_owner.permissions = ["ADMIN"]
+
+                owner_site_manager = SiteManager(pathlib.Path(owner_users_dir))
+                server_owner = UiServer(sites={address: site_owner}, site_manager=owner_site_manager)
+
+                async with server_owner.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server_owner, site_owner)) as ws:
+                        return await _call(ws, "siteApproveRequest", {"address": "1NoSuchPendingRequestAAAAAAAA"})
+
+        reply = compat.run(scenario)
+        assert "error" in reply
+
+    def testSiteDenyRequestRemovesPendingEntryWithoutGrantingAccess(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as owner_users_dir:
+                data_dir = pathlib.Path(d)
+                address = CryptBitcoin.privatekeyToAddress(CryptBitcoin.newPrivatekey())
+                site_owner = Site(address, data_dir)
+                site_owner.permissions = ["ADMIN"]
+
+                from Crypt import CryptEcies
+                requester_privatekey = CryptBitcoin.newPrivatekey()
+                requester_address = CryptBitcoin.privatekeyToAddress(requester_privatekey)
+                _, signature = CryptEcies.signAccessRequest(address, requester_privatekey)
+
+                owner_site_manager = SiteManager(pathlib.Path(owner_users_dir))
+                await owner_site_manager.setSiteSetting(
+                    address, "private_pending_requests", {requester_address: {"signature": signature}},
+                )
+                server_owner = UiServer(sites={address: site_owner}, site_manager=owner_site_manager)
+
+                async with server_owner.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server_owner, site_owner)) as ws:
+                        deny_reply = await _call(ws, "siteDenyRequest", {"address": requester_address})
+
+                return deny_reply, owner_site_manager.getSiteSetting(address, "private_pending_requests", {}), \
+                    owner_site_manager.getSiteSetting(address, "private_recipients", {})
+
+        deny_reply, pending, recipients = compat.run(scenario)
+        assert deny_reply["result"] == "ok"
+        assert pending == {}
+        assert recipients == {}
+
     def testSiteRequestAccessReturnsRealVerifiableSignature(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d, tempfile.TemporaryDirectory() as users_dir:

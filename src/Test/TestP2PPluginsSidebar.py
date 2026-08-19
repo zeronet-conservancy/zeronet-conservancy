@@ -331,3 +331,123 @@ class TestP2PPluginsSidebar:
         reply, stored = compat.run(scenario)
         assert reply["result"] == "ok"
         assert stored == "some-privatekey-value"
+
+    def testSidebarShowsAndManagesPrivateSiteRecipients(self):
+        """Owner-facing private-site section, exercised through the real
+        sidebarGetHtmlTag/siteAddRecipient/siteRemoveRecipient/siteSign
+        commands over a real websocket connection, not just render.py's
+        own functions directly -- proves the whole chain (site_manager
+        threaded through renderSidebarHtml, the JS's ws.cmd param shapes
+        matching what these commands actually expect) works together."""
+        from Crypt import CryptBitcoin, CryptEcies
+        from P2P.SiteManager import SiteManager
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                recipient_privatekey = CryptBitcoin.newPrivatekey()
+                recipient_address = CryptBitcoin.privatekeyToAddress(recipient_privatekey)
+                _, signature = CryptEcies.signAccessRequest(address, recipient_privatekey)
+
+                site_manager = SiteManager(data_dir)
+                site = site_manager.add(address, own=True)
+                site.permissions.append("ADMIN")
+                await site.content_manager.sign(privatekey)
+
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                user.getSiteData(address)["privatekey"] = privatekey
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        before = await _call(ws, "sidebarGetHtmlTag")
+
+                        add_reply = await _call(ws, "siteAddRecipient", [recipient_address, signature], msg_id=2)
+                        # No privatekey param -- matches the real JS handler
+                        # (see all.js's #button-recipient-add), which relies
+                        # on siteSign()'s own fallback to the user's stored
+                        # key rather than a "stored" sentinel string (that
+                        # sentinel isn't actually special-cased server-side;
+                        # a pre-existing quirk elsewhere in this plugin's JS,
+                        # not something to replicate here).
+                        sign_reply = await _call(ws, "siteSign", {}, msg_id=3)
+                        after_add = await _call(ws, "sidebarGetHtmlTag", msg_id=4)
+
+                        remove_reply = await _call(ws, "siteRemoveRecipient", [recipient_address], msg_id=5)
+                        await _call(ws, "siteSign", {}, msg_id=6)
+                        after_remove = await _call(ws, "sidebarGetHtmlTag", msg_id=7)
+
+                return before, add_reply, sign_reply, after_add, remove_reply, after_remove, recipient_address
+
+        (before, add_reply, sign_reply, after_add, remove_reply,
+         after_remove, recipient_address) = compat.run(scenario)
+
+        assert "Public" in before["result"]
+        assert recipient_address not in before["result"]
+
+        assert add_reply["result"] == "ok"
+        assert sign_reply["result"] == "ok"
+        assert "Private, 1 recipient" in after_add["result"]
+        assert recipient_address in after_add["result"]
+        assert "recipient-remove" in after_add["result"]
+
+        assert remove_reply["result"] == "ok"
+        assert recipient_address not in after_remove["result"]
+
+    def testSidebarShowsAndApprovesPendingAccessRequest(self):
+        """Same shape as testSidebarShowsAndManagesPrivateSiteRecipients,
+        but for a request that arrived via protocols/request_access.py
+        (simulated here by pre-populating private_pending_requests
+        directly, same shortcut TestP2PUiCommandsPrivateSite.py's approve/
+        deny tests use -- the wire-delivery half is covered separately by
+        TestP2PProtocolsRequestAccess.py) rather than a manually pasted
+        signature."""
+        from Crypt import CryptBitcoin, CryptEcies
+        from P2P.SiteManager import SiteManager
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                requester_privatekey = CryptBitcoin.newPrivatekey()
+                requester_address = CryptBitcoin.privatekeyToAddress(requester_privatekey)
+                _, signature = CryptEcies.signAccessRequest(address, requester_privatekey)
+
+                site_manager = SiteManager(data_dir)
+                site = site_manager.add(address, own=True)
+                site.permissions.append("ADMIN")
+                await site.content_manager.sign(privatekey)
+                await site_manager.setSiteSetting(
+                    address, "private_pending_requests", {requester_address: {"signature": signature}},
+                )
+
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                user.getSiteData(address)["privatekey"] = privatekey
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        before = await _call(ws, "sidebarGetHtmlTag")
+
+                        approve_reply = await _call(ws, "siteApproveRequest", [requester_address], msg_id=2)
+                        await _call(ws, "siteSign", {}, msg_id=3)
+                        after_approve = await _call(ws, "sidebarGetHtmlTag", msg_id=4)
+
+                return before, approve_reply, after_approve, requester_address
+
+        before, approve_reply, after_approve, requester_address = compat.run(scenario)
+
+        assert "Pending access requests <small>(1)</small>" in before["result"]
+        assert requester_address in before["result"]
+        assert "request-approve" in before["result"]
+        assert "request-deny" in before["result"]
+
+        assert approve_reply["result"] == "ok"
+        assert "Private, 1 recipient" in after_approve["result"]
+        assert requester_address in after_approve["result"]
+        assert "Pending access requests" not in after_approve["result"]

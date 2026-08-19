@@ -157,8 +157,9 @@ def _renderControls(body: list, site, is_admin: bool) -> None:
         "<li><label>Site control</label>"
         "<a href='#Pause' class='button %s %s' id='button-pause'>Pause</a>"
         "<a href='#Resume' class='button %s %s' id='button-resume'>Resume</a>"
+        "<a href='#Clone' class='button %s' id='button-clone'>Clone</a>"
         "<a href='#Delete' class='button %s' id='button-delete'>Delete</a></li>"
-        % (class_pause, admin_only, class_resume, admin_only, admin_only)
+        % (class_pause, admin_only, class_resume, admin_only, admin_only, admin_only)
     )
     body.append(
         "<li><label>Site address</label><br><div class='flex'>"
@@ -192,6 +193,67 @@ def _renderOwnSettings(body: list, site) -> None:
     )
 
 
+def _renderPrivateSite(body: list, site, recipients: dict, pending_requests: dict) -> None:
+    """Owner-facing private-site management: current approved recipients
+    (with a Remove button each), a pending-requests list delivered via
+    P2P.protocols.request_access (approve/deny, one click, no signature
+    to copy-paste), and a manual approve-by-signature fallback for the
+    out-of-band case (a request that never reached this node directly,
+    e.g. the requester wasn't connected to it at request time). Purely a
+    settings editor -- approving/removing a recipient here only updates
+    the persisted private_recipients list (P2P.Ui.commands.siteApproveRequest/
+    siteAddRecipient/siteRemoveRecipient); it takes a "Sign and publish"
+    (below) to actually re-wrap the site with the new recipient list, same
+    explicit-separate-step convention siteSign already has everywhere else
+    in this file.
+
+    Status is derived from `recipients` (SiteManager's own persisted
+    setting), NOT site.content_manager.isPrivate() -- that checks
+    self.contents["content.json"], which for the OWNER always holds the
+    decrypted plaintext after sign() (see ContentManager.py's own module
+    docstring), so it never actually reports True for the one person
+    this section is built for. Same "don't trust the possibly-decrypted
+    in-memory cache" lesson Site.unlockPrivate() already had to learn."""
+    if recipients:
+        status = "Private, %d recipient%s" % (len(recipients), "" if len(recipients) == 1 else "s")
+    else:
+        status = "Public"
+    body.append("<li><label>Private site <small>(%s)</small></label>" % html.escape(status))
+    if recipients:
+        body.append("<ul class='recipients'>")
+        for address in sorted(recipients):
+            body.append(
+                "<li class='recipient'>%s "
+                "<a href='#Remove' class='button recipient-remove' data-address='%s'>Remove</a></li>"
+                % (html.escape(address), html.escape(address, quote=True))
+            )
+        body.append("</ul>")
+    body.append("</li>")
+
+    if pending_requests:
+        body.append(
+            "<li><label>Pending access requests <small>(%d)</small></label>"
+            "<ul class='pending-requests'>" % len(pending_requests)
+        )
+        for address in sorted(pending_requests):
+            escaped_address = html.escape(address, quote=True)
+            body.append(
+                "<li class='pending-request'>%s "
+                "<a href='#Approve' class='button request-approve' data-address='%s'>Approve</a> "
+                "<a href='#Deny' class='button request-deny' data-address='%s'>Deny</a></li>"
+                % (html.escape(address), escaped_address, escaped_address)
+            )
+        body.append("</ul></li>")
+
+    body.append(
+        "<li><label for='input-recipient-address'>Approve recipient: address</label>"
+        "<input type='text' class='text' id='input-recipient-address'/></li>"
+        "<li><label for='input-recipient-signature'>...their access request signature</label>"
+        "<input type='text' class='text' id='input-recipient-signature'/></li>"
+        "<li><a href='#Approve' class='button' id='button-recipient-add'>Approve recipient</a></li>"
+    )
+
+
 def _renderContents(body: list, site) -> None:
     raw_content = site.content_manager.contents.get("content.json") or {}
     body.append(
@@ -206,7 +268,7 @@ def _renderContents(body: list, site) -> None:
     body.append("</div></li>")
 
 
-def renderSidebarHtml(site, formatted_info: dict, is_own: bool, is_admin: bool) -> str:
+def renderSidebarHtml(site, formatted_info: dict, is_own: bool, is_admin: bool, site_manager=None) -> str:
     raw_content = site.content_manager.contents.get("content.json") or {}
     title = raw_content.get("title", site.address)
 
@@ -228,6 +290,9 @@ def renderSidebarHtml(site, formatted_info: dict, is_own: bool, is_admin: bool) 
         body.append("<div class='settings-owned'><ul class='fields'>")
         if is_own:
             _renderOwnSettings(body, site)
+            recipients = site_manager.getSiteSetting(site.address, "private_recipients", {}) if site_manager else {}
+            pending_requests = site_manager.getSiteSetting(site.address, "private_pending_requests", {}) if site_manager else {}
+            _renderPrivateSite(body, site, recipients, pending_requests)
         _renderContents(body, site)
         body.append("</ul></div>")
 

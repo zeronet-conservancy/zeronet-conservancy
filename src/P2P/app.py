@@ -155,6 +155,13 @@ class App:
         self.file_server.on_update_applied = lambda site, inner_path: self.ui_server.app.broadcast(
             "siteChanged", site, {"event": "updated"}
         )
+        # request_access.py's handler needs a SiteManager to check ownership
+        # and persist pending requests -- see FileServer.py's own comment on
+        # why this is a late-bound attribute rather than a constructor param.
+        self.file_server.site_manager = self.site_manager
+        self.file_server.on_access_requested = lambda site, auth_address: self.ui_server.app.broadcast(
+            "siteChanged", site, {"event": "access_requested"}
+        )
         self.dht_discovery = None
         self._dht_bootstrap = dht_bootstrap or []
         if enable_dht:
@@ -237,6 +244,30 @@ class App:
             user = self.user_manager.create()
         return user
 
+    def _sitePeers(self, site, need_num: int = 5) -> list:
+        """Same pattern as P2P/actions.py's and P2P/Ui/commands.py's own
+        _sitePeers() helpers: real, dialable Peer objects from
+        site.getConnectablePeers(), registering each record's ip/port into
+        the host's peerstore first. A third copy rather than a shared
+        import because each caller's surrounding object (Actions, a UI
+        session, this App) is a different shape to pull file_server/host
+        off of -- same reasoning those two already gave for not sharing."""
+        from multiaddr import Multiaddr
+
+        from .Peer import Peer
+
+        records = site.getConnectablePeers(need_num=need_num)
+        peerstore = self.file_server.host.get_peerstore()
+        peers = []
+        for record in records:
+            if record.ip and record.port:
+                try:
+                    peerstore.add_addrs(record.peer_id, [Multiaddr("/ip4/%s/tcp/%s" % (record.ip, record.port))], 3600)
+                except Exception:
+                    pass
+            peers.append(Peer(record.peer_id, self.file_server.host, self.file_server.connection_policy))
+        return peers
+
     async def _announceLoop(self, address: str) -> None:
         """Runs for as long as `address` stays wired in -- deleteSite()
         cancels self._announce_scopes[address] to stop it early. The first
@@ -244,7 +275,16 @@ class App:
         (no separate one-shot method needed): whether this task starts at
         run() startup (a site loaded before run()) or from _wireSite()
         (a site added afterward), the very first announce() call happens
-        right away, before the first sleep."""
+        right away, before the first sleep.
+
+        Also re-pushes any RequestAccessRelay-held private-site access
+        requests to this cycle's known peers (WorkerManager.
+        forwardPendingAccessRequests()) -- piggybacking on the existing
+        per-site periodic cycle rather than adding a second timer, since a
+        relay-held request only needs re-offering about as often as this
+        node re-confirms its peer set anyway. A cheap no-op for the very
+        common case where nothing's relayed for this site (relay.getAll()
+        returns empty)."""
         with trio.CancelScope() as scope:
             self._announce_scopes[address] = scope
             announcer = self.announcers[address]
@@ -253,6 +293,15 @@ class App:
                     await announcer.announce(force=True)
                 except Exception:
                     log.exception("Announce failed for %s", address)
+                try:
+                    site = self.sites.get(address)
+                    if site is not None:
+                        peers = self._sitePeers(site)
+                        if peers:
+                            from .WorkerManager import forwardPendingAccessRequests
+                            await forwardPendingAccessRequests(site, peers, self.file_server.request_access_relay)
+                except Exception:
+                    log.exception("Forwarding pending access requests failed for %s", address)
                 await trio.sleep(self.announce_interval)
 
     def requestShutdown(self) -> None:

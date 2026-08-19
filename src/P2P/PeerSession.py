@@ -15,7 +15,7 @@ one connection.
 import time
 
 from . import ProtocolRouter
-from .protocols import getfile, pex, ping, update
+from .protocols import getfile, pex, ping, request_access, update
 
 # cmd name -> protocol ID. Grows as more protocols/*.py handlers land;
 # PeerSession doesn't need all of them to be useful.
@@ -24,6 +24,7 @@ PROTOCOLS = {
     "getFile": getfile.PROTOCOL_ID,
     "pex": pex.PROTOCOL_ID,
     "update": update.PROTOCOL_ID,
+    "requestAccess": request_access.PROTOCOL_ID,
 }
 
 
