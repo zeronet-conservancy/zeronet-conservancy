@@ -1226,6 +1226,13 @@ async def _cmdSiteCreate(session, params):
         site = add_site(address, own=True)
     if site is None:
         raise CommandError("Unable to create site")
+    # SiteManager.add(own=True) only persists the "own" setting -- it
+    # doesn't touch this Site object's own permissions list, so without
+    # this the freshly created site has no ADMIN rights on itself (can't
+    # be signed/republished, sidebar owner controls don't render) until a
+    # restart happens to round-trip permissions through sites.json. Same
+    # fix _cmdProviderCreate already applies for its own site creation.
+    site.permissions = ["ADMIN"]
     await site.storage.write("index.html", ("Hello %s!" % address).encode("utf8"))
     extend = {"postmessage_nonce_security": True}
     if address_index is not None:
@@ -1292,6 +1299,9 @@ async def _cmdSiteClone(session, params):
         target_site = add_site(new_address, own=True) if add_site else site_manager.add(new_address, own=True)
         if target_site is None:
             raise CommandError("Unable to create site")
+        # See _cmdSiteCreate's own comment: add(own=True) doesn't grant
+        # this Site object ADMIN on itself.
+        target_site.permissions = ["ADMIN"]
         target_address = new_address
         is_new = True
 

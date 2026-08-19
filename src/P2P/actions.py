@@ -182,6 +182,10 @@ class Actions:
         if not self.site_manager.loaded:
             await self.site_manager.load()
         site = self.site_manager.add(address, own=True)
+        # add(own=True) only persists the "own" setting -- it doesn't
+        # grant this Site object ADMIN on itself (see P2P/Ui/commands.py's
+        # _cmdSiteCreate for the same fix on the websocket-command path).
+        site.permissions = ["ADMIN"]
         await site.storage.write("index.html", ("Hello %s!" % address).encode("utf8"))
 
         extend = {"postmessage_nonce_security": True}

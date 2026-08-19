@@ -63,6 +63,7 @@ class TestP2PPluginsUiSiteBuilder:
                 return (
                     new_address in site_manager.sites,
                     site_manager.isOwn(new_address),
+                    list(site.permissions),
                     content["title"],
                     "signs" in content and new_address in content["signs"],
                     site.storage.isFile("index.html"),
@@ -72,10 +73,16 @@ class TestP2PPluginsUiSiteBuilder:
                 )
 
         (
-            registered, is_own, title, is_signed, has_index, has_editor, has_data_settings, has_default_settings,
+            registered, is_own, permissions, title, is_signed,
+            has_index, has_editor, has_data_settings, has_default_settings,
         ) = compat.run(scenario)
         assert registered is True
         assert is_own is True
+        # Must have ADMIN on itself right away, not just SiteManager's own
+        # "own" setting -- otherwise the site's own sidebar/owner controls
+        # don't render until a restart round-trips permissions through
+        # sites.json (this was a real bug: add(own=True) never granted it).
+        assert permissions == ["ADMIN"]
         assert title == "My Site"  # From the "blank" starter's own settings.json
         assert is_signed is True  # A real signature, not a stub
         assert has_index is True

@@ -107,6 +107,12 @@ async def _cmdSiteBuilderCreate(session, params):
     site = add_site(address, own=True) if add_site else site_manager.add(address, own=True)
     if site is None:
         raise CommandError("Unable to create site")
+    # SiteManager.add(own=True) only persists the "own" setting -- it
+    # doesn't grant this Site object ADMIN on itself, so without this the
+    # freshly created site has no owner controls until a restart happens
+    # to round-trip permissions through sites.json (see P2P/Ui/commands.py's
+    # _cmdSiteCreate, which has the same fix for the same reason).
+    site.permissions = ["ADMIN"]
 
     starter_dir = _starterDir(starter)
 

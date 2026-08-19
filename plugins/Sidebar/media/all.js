@@ -1736,6 +1736,15 @@ window.initScrollable = function () {
       _this.wrapper.ws.cmd("siteCreate", [], function(res) {
         if (res && res.address) {
           return window.top.location = "/" + res.address + "/";
+        } else {
+          // siteCreate is ADMIN-gated on THIS connection's own site (the
+          // drawer is available site-wide, not just from the dashboard),
+          // so this reliably fails with an error -- not silence -- when
+          // opened from a page that isn't itself ADMIN. Surfacing it
+          // beats leaving the click looking like it did nothing.
+          return _this.wrapper.notifications.add(
+            "newsite", "error", "Could not create site: " + (res && res.error ? res.error : "unknown error")
+          );
         }
       });
       return false;

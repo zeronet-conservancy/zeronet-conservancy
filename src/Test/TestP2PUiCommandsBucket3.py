@@ -547,9 +547,10 @@ class TestP2PUiCommandsSiteManagement:
                     cloned.storage.isFile("index.html"),
                     cloned.storage.isFile("js/all.js"),
                     dict(cloned.content_manager.contents["content.json"]),
+                    list(cloned.permissions),
                 )
 
-        new_address, source_address, has_index, has_js, content = compat.run(scenario)
+        new_address, source_address, has_index, has_js, content, permissions = compat.run(scenario)
         assert new_address != source_address
         assert has_index
         assert has_js
@@ -557,6 +558,12 @@ class TestP2PUiCommandsSiteManagement:
         assert content["title"] == "mySource"
         assert "index.html" in content["files"]
         assert "signs" in content
+        # Must have ADMIN on itself right away -- add(own=True) only
+        # persists the "own" setting, it doesn't grant permissions (a
+        # real bug: without this, the clone's own sidebar/owner controls
+        # didn't render until a restart round-tripped permissions through
+        # sites.json).
+        assert permissions == ["ADMIN"]
 
     def testSiteCloneWithRootInnerPathStripsPrefix(self):
         async def scenario():

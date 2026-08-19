@@ -17,13 +17,19 @@ class TestP2PActionsSite:
                 result = await actions.siteCreate()
                 site = await actions.site_manager.get(result["address"])
                 content = await site.storage.loadJson("content.json")
-                return result, site.storage.isFile("index.html"), content
+                return result, site.storage.isFile("index.html"), content, list(site.permissions)
 
-        result, has_index, content = compat.run(scenario)
+        result, has_index, content, permissions = compat.run(scenario)
         assert CryptBitcoin.privatekeyToAddress(result["privatekey"]) == result["address"]
         assert has_index is True
         assert "index.html" in content["files"]
         assert content["postmessage_nonce_security"] is True
+        # Must have ADMIN on itself right away -- add(own=True) only
+        # persists the "own" setting, it doesn't grant permissions (a real
+        # bug: without this, the new site's own sidebar/owner controls
+        # didn't render until a restart round-tripped permissions through
+        # sites.json).
+        assert permissions == ["ADMIN"]
 
     def testSiteCreateStoresPrivatekeyInUsersJson(self):
         async def scenario():

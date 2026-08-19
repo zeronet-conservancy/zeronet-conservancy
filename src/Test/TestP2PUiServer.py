@@ -107,14 +107,27 @@ class TestP2PUiServer:
                             return json.loads(await ws.get_message())
 
                         created = await call("siteCreate", {"use_master_seed": False}, 1)
+                        created_site = site_manager.sites.get(created["result"]["address"])
+                        created_permissions = list(created_site.permissions) if created_site else None
                         favourite = await call("siteFavourite", {"address": created["result"]["address"]}, 2)
                         unfavourite = await call("siteUnfavourite", {"address": created["result"]["address"]}, 3)
                         directory = await call("serverShowdirectory", {"directory": "backup"}, 4)
                         shutdown = await call("serverShutdown", {}, 5)
-                        return created, favourite, unfavourite, directory, shutdown, shutdown_requested, data_dir
+                        return (
+                            created, created_permissions, favourite, unfavourite, directory,
+                            shutdown, shutdown_requested, data_dir,
+                        )
 
-        created, favourite, unfavourite, directory, shutdown, shutdown_requested, data_dir = compat.run(scenario)
+        (created, created_permissions, favourite, unfavourite, directory,
+         shutdown, shutdown_requested, data_dir) = compat.run(scenario)
         assert "address" in created["result"]
+        # A freshly created own site must have ADMIN on itself right away
+        # -- SiteManager.add(own=True) only persists the "own" setting, it
+        # doesn't grant this Site object permissions (see _cmdSiteCreate's
+        # own comment); without this, the site's own sidebar/owner
+        # controls don't render until a restart round-trips permissions
+        # through sites.json.
+        assert created_permissions == ["ADMIN"]
         assert favourite["result"] == "Added to favourites"
         assert unfavourite["result"] == "Removed from favourites"
         assert pathlib.Path(directory["result"]["path"]) == data_dir.resolve()
