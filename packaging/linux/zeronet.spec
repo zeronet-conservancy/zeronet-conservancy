@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.13
+Version:        1.0.14
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,14 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.14-1
+- Fix: config.user_agent ("conservancy", 11 chars) was too long for
+  ZeroMail's own fixed-width status-line padding (hardcoded to a
+  budget of 18 chars), causing a RangeError that crashed ZeroMail's
+  initial render and made "New message" (and other actions) silently
+  do nothing. Reverted to "zeronet" (7 chars), the value this budget
+  was actually tuned for -- fixes ZeroMail and any other site making
+  the same fixed-width assumption.
 * Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.13-1
 - Overhaul the Configuration/Plugins/New site/Content filters/Files/
   Console admin pages: shared layout, vendored offline-first Pico CSS,

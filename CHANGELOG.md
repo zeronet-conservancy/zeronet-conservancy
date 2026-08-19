@@ -1,3 +1,16 @@
+### zeronet-conservancy 1.0.14
+- Fix: `config.user_agent` (`"conservancy"`, 11 characters) -- exposed
+  to non-ADMIN sites as `serverInfo`'s `version` field -- was too long
+  for ZeroMail's own fixed-width status-line padding, which is
+  hardcoded to a budget of 18 characters (`"<user_agent> r<rev>
+  [OK]"`). The overflow made JS's `String.repeat()` receive a negative
+  count and throw, crashing ZeroMail's initial render before "New
+  message" (or anything else on that screen) could do anything.
+  Reverted to `"zeronet"` (7 characters), the original upstream value
+  this exact budget was tuned for -- fixes ZeroMail, and any other
+  site making the same fixed-width assumption. Verified live against
+  a real, already-downloaded ZeroMail site.
+
 ### zeronet-conservancy 1.0.13
 - Overhaul: the native admin pages (Configuration, Plugins, New site
   [SiteBuilder], Content filters, Files, Console) now share one layout
