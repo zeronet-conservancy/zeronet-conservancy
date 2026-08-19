@@ -1,42 +1,71 @@
-<!doctype html>
-<html lang="en">
-<head>
-  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Console - ZeroNet</title>
-  <style>
-    body { font: 14px/1.45 system-ui, sans-serif; margin: 2rem; background: #111; color: #ddd; }
-    main { max-width: 1200px; margin: auto; } a { color: #8bc8ff; } input, button { padding: .4rem; } input { width: 20rem; }
-    pre { min-height: 70vh; white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; background: #202124; border: 1px solid #444; }
-  </style>
-</head>
-<body><main>
-  <nav><a href="/Config">Configuration</a> · <a href="/Plugins">Plugins</a> · <a href="/Console">Console</a></nav>
-  <h1>Console</h1><p><input id="filter" placeholder="Log filter"><button id="reload">Reload</button></p><pre id="output">Connecting…</pre>
-</main>
-<script>
-(() => {
-  const socket = new WebSocket({{ websocket_url | tojson }}), output = document.getElementById("output"), filter = document.getElementById("filter");
-  let id = 1, streamId = null, pending = new Map();
-  function call(cmd, params = {}) { return new Promise((resolve, reject) => { const requestId = id++; pending.set(requestId, {resolve, reject}); socket.send(JSON.stringify({cmd, params, id: requestId})); }); }
-  function append(lines) { output.textContent += lines.join(""); output.scrollTop = output.scrollHeight; }
+{% extends "_layout.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}Console{% endblock %}
+{% block subheading %}<p class="muted">Live server log, streamed over the same websocket every other admin page uses.</p>{% endblock %}
+
+{% block extra_style %}
+<style>
+  #output { min-height: 60vh; max-height: 70vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .console-controls { display: flex; gap: .5rem; align-items: end; }
+  .console-controls > div:first-child { flex: 1 1 auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="console-controls">
+  <div>
+    <label for="filter">Log filter</label>
+    <input id="filter" placeholder="e.g. ERROR, P2P.SiteManager…">
+  </div>
+  <button id="reload" class="secondary">Reload</button>
+</div>
+<pre id="output">Connecting…</pre>
+{% endblock %}
+
+{% block page_script %}
+  const output = document.getElementById("output");
+  const filter = document.getElementById("filter");
+  let streamId = null;
+
+  function append(lines) {
+    output.textContent += lines.join("");
+    output.scrollTop = output.scrollHeight;
+  }
+
   async function load() {
     output.textContent = "";
+    status.setAttribute("aria-busy", "true");
     try {
       const result = await call("consoleLogRead", {filter: filter.value, limit: 500});
       append(result.lines || []);
       const stream = await call("consoleLogStream", {filter: filter.value});
       streamId = stream.stream_id;
-    } catch (error) { output.textContent = error.message; }
+      status.removeAttribute("aria-busy");
+      status.textContent = "";
+    } catch (error) {
+      status.removeAttribute("aria-busy");
+      status.textContent = error.message;
+    }
   }
-  socket.onopen = load;
-  socket.onmessage = event => {
-    const msg = JSON.parse(event.data);
-    if (msg.cmd === "logLineAdd") { append(msg.params.lines || []); return; }
-    const request = pending.get(msg.to); if (!request) return; pending.delete(msg.to);
-    msg.error ? request.reject(new Error(msg.error)) : request.resolve(msg.result);
+
+  document.getElementById("reload").onclick = async () => {
+    if (streamId) await call("consoleLogStreamRemove", {stream_id: streamId});
+    await load();
   };
-  document.getElementById("reload").onclick = async () => { if (streamId) await call("consoleLogStreamRemove", {stream_id: streamId}); await load(); };
-  window.addEventListener("beforeunload", () => { if (streamId && socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({cmd: "consoleLogStreamRemove", params: {stream_id: streamId}, id: id++})); });
-})();
-</script>
-</body></html>
+{% endblock %}
+
+{% block on_open %}
+  await load();
+{% endblock %}
+
+{% block on_message_extra %}
+    if (message.cmd === "logLineAdd") { append(message.params.lines || []); return; }
+{% endblock %}
+
+{% block on_unload %}
+  window.addEventListener("beforeunload", () => {
+    if (streamId && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({cmd: "consoleLogStreamRemove", params: {stream_id: streamId}, id: nextId++}));
+    }
+  });
+{% endblock %}

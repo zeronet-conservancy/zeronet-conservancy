@@ -78,6 +78,7 @@
     "resources": [
       "src/Ui/media",
       "src/P2P/Ui/templates",
+      "src/P2P/Ui/vendor",
       "src/P2P/plugins",
       "plugins/Sidebar/media"
     ],

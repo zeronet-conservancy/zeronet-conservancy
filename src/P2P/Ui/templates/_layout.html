@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}{% endblock %} - ZeroNet</title>
+  <!-- Vendored Pico CSS, inlined (not linked) -- see vendor/NOTICE.md. This
+       app is offline-first, so every one of these admin pages has to render
+       standalone with zero dependency on another request succeeding. -->
+  <style>{{ pico_css | safe }}</style>
+  <style>
+    /* .left-drawer* rules kept in sync with plugins/Sidebar/media/all.css --
+       not linked directly (that stylesheet's own bare `body{overflow:hidden;
+       height:100%}` etc are written for the full-viewport wrapper shell and
+       would break this page's own scrolling), just the drawer itself, which
+       has no dependency on anything else in that file. */
+    .left-drawer {
+      position: fixed; top: 0; left: -300px; width: 300px; height: 100%;
+      background-color: #1B1B1D; color: #DDD; z-index: 1000;
+      transition: left 0.25s cubic-bezier(.2,.8,.3,1); box-shadow: 4px 0 24px rgba(0,0,0,0.4);
+      font-family: 'Lucida Grande', 'Segoe UI', Helvetica, Arial, sans-serif; -webkit-user-drag: none;
+      border-right: 1px solid rgba(255,255,255,0.06);
+      display: flex; flex-direction: column;
+    }
+    .left-drawer.dragging { transition: none; }
+    .left-drawer.open { left: 0; }
+    .left-drawer-tab {
+      position: absolute; top: 50%; right: -30px; transform: translateY(-50%);
+      width: 30px; height: 64px; background-color: #1B1B1D; color: #888;
+      display: flex; align-items: center; justify-content: center; cursor: pointer;
+      border-radius: 0 8px 8px 0; box-shadow: 3px 0 8px rgba(0,0,0,0.3);
+      border: 1px solid rgba(255,255,255,0.06); border-left: none;
+      -webkit-user-select: none; user-select: none; -webkit-user-drag: none; font-size: 20px;
+      transition: color 0.15s, background-color 0.15s;
+    }
+    .left-drawer-tab:hover { color: #fff; background-color: #262628; }
+    .left-drawer.open .left-drawer-tab { transform: translateY(-50%) rotateY(180deg); }
+    .left-drawer-head {
+      flex: 0 0 auto; padding: 18px 20px; font-size: 14px; letter-spacing: 1.5px; text-transform: uppercase;
+      color: #888; border-bottom: 1px solid rgba(255,255,255,0.07);
+      background: linear-gradient(135deg, rgba(175,59,255,0.12), transparent 60%);
+    }
+    .left-drawer-head b { color: #DDD; font-weight: 600; }
+    .left-drawer-content {
+      flex: 1 1 auto; padding: 8px 20px 24px; overflow-y: auto; box-sizing: border-box; min-height: 0;
+      scrollbar-width: thin; scrollbar-color: #4A4A4E transparent;
+    }
+    .left-drawer-content::-webkit-scrollbar { width: 8px; }
+    .left-drawer-content::-webkit-scrollbar-track { background: transparent; }
+    .left-drawer-content::-webkit-scrollbar-thumb { background-color: #45454A; border-radius: 4px; border: 2px solid transparent; background-clip: padding-box; }
+    .left-drawer-content::-webkit-scrollbar-thumb:hover { background-color: #AF3BFF; background-clip: padding-box; }
+    .left-drawer h2 { font-weight: 600; font-size: 11px; text-transform: uppercase; color: #7A7A80; margin: 22px 0 6px; letter-spacing: 1.5px; }
+    .left-drawer h2:first-child { margin-top: 16px; }
+    .left-drawer #leftdrawer-home { margin-bottom: 6px; padding-bottom: 9px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .left-drawer a.item {
+      display: block; color: #DDD; text-decoration: none; padding: 9px 10px; margin: 0 -10px;
+      border-radius: 5px; font-size: 13.5px; transition: background-color 0.15s, color 0.15s, padding-left 0.15s;
+      border-left: 2px solid transparent;
+    }
+    .left-drawer a.item:hover { color: #fff; background-color: rgba(175,59,255,0.12); border-left-color: #AF3BFF; padding-left: 14px; }
+    .left-drawer a.item.danger { color: #E0736B; }
+    .left-drawer a.item.danger:hover { background-color: rgba(224,91,91,0.12); border-left-color: #E0736B; color: #FF8A82; }
+    .left-drawer .theme-row, .left-drawer .lang-row { display: flex; flex-wrap: wrap; gap: 6px; padding: 6px 0 16px; }
+    .left-drawer .theme-row a, .left-drawer .lang-row a {
+      color: #999; text-decoration: none; padding: 4px 10px; border: 1px solid rgba(255,255,255,0.09);
+      background-color: rgba(255,255,255,0.03); border-radius: 4px; font-size: 11.5px; text-transform: uppercase;
+      letter-spacing: 0.5px; transition: all 0.15s;
+    }
+    .left-drawer .theme-row a:hover, .left-drawer .lang-row a:hover { color: #fff; border-color: #666; }
+    .left-drawer .theme-row a.selected, .left-drawer .lang-row a.selected {
+      color: white; border-color: #AF3BFF; background-color: rgba(175,59,255,0.25);
+      box-shadow: 0 0 0 1px rgba(175,59,255,0.4);
+    }
+    .left-drawer .version { color: #999; font-size: 11px; margin: 22px 0 6px; letter-spacing: 0.3px; }
+
+    /* App-specific tweaks layered on top of Pico's own defaults -- body,
+       main, table, th/td, input, button, and dark-mode switching are all
+       Pico's job now; this is only what Pico doesn't already cover. */
+    main.container { padding-block: 2rem 4rem; }
+    #status[aria-busy="true"] { margin-block: 1rem; }
+    #status:empty { display: none; }
+    .muted { color: var(--pico-muted-color); }
+    .pending-note { color: var(--pico-del-color); font-size: .85em; }
+    table code { overflow-wrap: anywhere; }
+    table td:first-child { white-space: nowrap; }
+    table input[type=text] { min-width: 16rem; }
+    figure.table-wrap { margin: 0; }
+    .starter-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr)); gap: 1rem; }
+    .starter-grid article { margin: 0; }
+    .starter-grid p { min-height: 2.5em; }
+  </style>
+  {% block extra_style %}{% endblock %}
+</head>
+<body>
+{% include "left_drawer.html" %}
+<main class="container">
+  <nav>
+    <ul><li><strong>ZeroNet</strong></li></ul>
+    <ul>
+      <li><a href="/Config">Configuration</a></li>
+      <li><a href="/Plugins">Plugins</a></li>
+      <li><a href="/SiteBuilder">New site</a></li>
+      <li><a href="/ContentFilter">Content filters</a></li>
+      {% if address %}<li><a href="/list/{{ address }}">Files</a></li>{% endif %}
+      <li><a href="/Console">Console</a></li>
+    </ul>
+  </nav>
+  <hgroup>
+    <h1>{% block heading %}{% endblock %}</h1>
+    {% block subheading %}{% endblock %}
+  </hgroup>
+  <p id="status" aria-busy="true">{% block status_initial %}Loading…{% endblock %}</p>
+  {% block content %}<section id="content"></section>{% endblock %}
+</main>
+<script>
+(() => {
+  const socketUrl = {{ websocket_url | tojson }};
+  const status = document.getElementById("status");
+  let socket, nextId = 1, pending = new Map();
+
+  function call(cmd, params = {}) {
+    return new Promise((resolve, reject) => {
+      const id = nextId++;
+      pending.set(id, {resolve, reject});
+      socket.send(JSON.stringify({cmd, params, id}));
+    });
+  }
+
+  function esc(value) {
+    const node = document.createElement("span");
+    node.textContent = String(value ?? "");
+    return node.innerHTML;
+  }
+
+  {% block page_script %}{% endblock %}
+
+  socket = new WebSocket(socketUrl);
+  socket.onopen = async () => {
+    {% block on_open %}
+    status.removeAttribute("aria-busy");
+    status.textContent = "";
+    {% endblock %}
+  };
+  socket.onmessage = event => {
+    const message = JSON.parse(event.data);
+    {% block on_message_extra %}{% endblock %}
+    const request = pending.get(message.to);
+    if (!request) return;
+    pending.delete(message.to);
+    if (message.error) request.reject(new Error(message.error)); else request.resolve(message.result);
+  };
+  socket.onerror = () => {
+    status.removeAttribute("aria-busy");
+    status.textContent = "Could not connect to the native UI websocket.";
+  };
+  {% block on_unload %}{% endblock %}
+
+  // Left drawer + theme -- shared across every one of these pages now
+  // (previously only dashboard.html had it; console.html/file_manager.html
+  // had none at all). See _drawer_script.html's own comment.
+  {% include "_drawer_script.html" %}
+})();
+</script>
+{% block extra_script %}{% endblock %}
+</body>
+</html>
