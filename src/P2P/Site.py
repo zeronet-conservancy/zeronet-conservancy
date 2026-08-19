@@ -31,12 +31,14 @@ conceivable surface (addPeer, isServing, ...) -- add more as a real
 plugin actually needs to hook them, same "wire it up when there's an
 actual caller" discipline SiteStorage.py's own docstring already uses.
 """
+import base64
 import hashlib
+import json
 import time
 
 from libp2p.peer.id import ID
 
-from Crypt import CryptHash
+from Crypt import CryptBitcoin, CryptEcies, CryptHash
 
 from .PluginManager import acceptPlugins
 from .SiteStorage import SiteStorage
@@ -85,6 +87,14 @@ class Site:
         self.permissions: list = list(permissions) if permissions else []
         self.wrapper_key = CryptHash.random()
         self.ajax_key = CryptHash.random()
+
+        # Private-site unlock state -- the decrypted AES content key once
+        # unlocked, None while locked. Never persisted by Site itself
+        # (SiteManager's settings store is the source of truth for
+        # private_key/private_recipients, matching serving/own/peers --
+        # see ContentManager.py's own module docstring); this is purely
+        # an in-memory cache for the lifetime of this Site instance.
+        self.private_key: bytes | None = None
 
     def isServing(self) -> bool:
         return self.serving
@@ -146,3 +156,74 @@ class Site:
         where it's constructed."""
         from .WorkerManager import Scheduler
         return await Scheduler(self).needFile(inner_path, peers, priority=priority, timeout=timeout)
+
+    async def getPrivatekey(self, user, content_key_b64: str | None = None) -> bytes | None:
+        """Returns this site's private-site AES content key, unlocking it
+        first if not already cached. See unlockPrivate() for the actual
+        owner-vs-recipient logic; this just adds the "already unlocked"
+        fast path, matching the original's own getPrivatekey()/
+        unlockPrivate() split."""
+        if self.private_key is not None:
+            return self.private_key
+        return await self.unlockPrivate(user, content_key_b64)
+
+    async def unlockPrivate(self, user, content_key_b64: str | None = None) -> bytes | None:
+        """Unlock this site's private content key for `user`, caching it
+        into self.private_key on success. Returns None on any failure --
+        wrong/missing user, not actually a private site, tampered
+        envelope, no access yet -- never raises: "no access" is an
+        expected, common state on the read path, not an error.
+
+        Reads content.json straight off disk rather than trusting
+        self.content_manager.contents: that cache holds *decrypted*
+        plaintext once anyone (owner or an already-unlocked recipient)
+        has loaded it with a working key (see ContentManager.loadContent()'s
+        own docstring) -- so it no longer carries the "privatekey": true
+        marker that would tell a second, independent unlock attempt this
+        is even a private site. The on-disk envelope is the one place
+        that's always in its real, undecrypted shape.
+
+        content_key_b64 is the owner's own path: if this Site instance's
+        caller already knows the site's own persisted AES content key
+        (SiteManager's setSiteSetting("private_key", ...), b64-encoded),
+        pass it and unlocking is immediate -- no envelope/recipient logic
+        needed, matching the original's owner shortcut. Omit it (or pass
+        None) for the recipient path, which recovers the key via this
+        user's own auth_address/auth_privatekey (already used for site
+        permissions -- see this class's own module docstring on why a
+        private-site recipient doesn't get a separate dedicated key)."""
+        if not self.storage.isFile("content.json"):
+            return None  # Nothing signed yet -- nothing to unlock
+        envelope = await self.storage.loadJson("content.json")
+        if not self.content_manager.isPrivate(envelope):
+            return None
+
+        if content_key_b64:
+            self.private_key = base64.b64decode(content_key_b64)
+            return self.private_key
+
+        keys = envelope.get("keys", {})
+        keys_sign = envelope.get("keys_sign")
+        try:
+            valid = bool(keys_sign) and CryptBitcoin.verify(
+                json.dumps(keys, sort_keys=True), self.address, keys_sign,
+            )
+        except Exception:
+            valid = False
+        if not valid:
+            return None
+
+        auth_address = user.getAuthAddress(self.address)
+        wrapped_b64 = keys.get(auth_address)
+        if not wrapped_b64:
+            return None
+
+        auth_privatekey = user.getAuthPrivatekey(self.address)
+        try:
+            self.private_key = CryptEcies.unwrapKey(base64.b64decode(wrapped_b64), auth_privatekey)
+        except Exception:
+            return None
+        return self.private_key
+
+    def lockPrivate(self) -> None:
+        self.private_key = None

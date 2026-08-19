@@ -103,7 +103,7 @@ from contextlib import asynccontextmanager
 from urllib.parse import urlsplit
 
 import trio
-from Crypt import CryptHash
+from Crypt import CryptAes, CryptHash
 from Translate import translate
 from hypercorn.config import Config
 from hypercorn.trio import serve
@@ -386,6 +386,50 @@ class UiApp:
         if user is None:
             return "light"
         return user.settings.get("theme") or "light"
+
+    def _currentUser(self, request: Request):
+        """Same "peek at whatever user_manager.users already has loaded,
+        no await" convention as _currentTheme() -- this runs inside a
+        plain HTTP handler, not a command coroutine, so it can't do the
+        get-or-create round trip _requireUser() (commands.py) does for
+        websocket sessions. Returns None if nothing's loaded yet (a very
+        early bootstrap edge case) or user_manager isn't configured."""
+        if self.user_manager is None:
+            return None
+        if self.user_manager.multiuser:
+            master_address = request.cookies.get(MULTIUSER_COOKIE)
+            return self.user_manager.users.get(master_address) if master_address else None
+        return next(iter(self.user_manager.users.values()), None)
+
+    async def _decryptIfPrivate(self, site, request: Request, data: bytes) -> bytes | None:
+        """Private-site gate for the raw HTTP file-serving path
+        (_handleSite() above) -- the equivalent of the legacy
+        actionPrivateSiteFile()/actionPrivateSiteNoAccess() split, for
+        every non-content.json file this stack serves directly (images,
+        JS, CSS -- content.json itself is never routed through here,
+        see the caller). Returns the decrypted bytes on success, the
+        original bytes unchanged for an ordinary public site, or None if
+        this is a private site this request can't unlock -- the caller
+        turns that into a 403.
+
+        Ensures content.json is loaded at least once first (same reason
+        commands.py's own _requirePrivateSiteAccess() does): an empty
+        cache would otherwise look indistinguishable from "genuinely
+        public", since an unlocked site's own cache holds decrypted
+        plaintext with no "privatekey" marker left to check (see
+        ContentManager.py's own module docstring)."""
+        if site.content_manager.contents.get("content.json") is None and site.storage.isFile("content.json"):
+            await site.content_manager.loadContent(content_key=site.private_key)
+        if site.private_key is None and not site.content_manager.isPrivate():
+            return data
+
+        if site.private_key is None:
+            user = self._currentUser(request)
+            if user is not None:
+                await site.getPrivatekey(user)
+        if site.private_key is None:
+            return None
+        return CryptAes.decrypt(data, site.private_key)
 
     def _dashboardSite(self):
         """Return the site whose wrapper key scopes dashboard websocket calls."""
@@ -692,6 +736,15 @@ class UiApp:
             data = await site.storage.read(target_path)
         except AccessError:
             return Response(b"Invalid path", status_code=403)
+
+        if target_path != "content.json":
+            data = await self._decryptIfPrivate(site, request, data)
+            if data is None:
+                return Response(
+                    b"Private site: no access. Ask the site owner for access, "
+                    b"giving them your auth address (see siteInfo/siteRequestAccess).",
+                    status_code=403,
+                )
 
         data = await self._maybeTranslate(site, target_path, data)
 

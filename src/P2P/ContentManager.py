@@ -58,18 +58,30 @@ running total on a settings dict that doesn't exist in this scoped model.
 sign()/hashFile()/hashFiles() add write-side support for case 1 only --
 root content.json, matching the read side's own root-vs-non-root split.
 Non-root signing (writing to a "user_contents" subdirectory under a cert)
-isn't ported, and private-site encryption (isPrivate()/wrapContent()/
-encryptFiles()) isn't either -- sign() refuses outright rather than
-silently producing an unencrypted content.json for a site that expects
-one. See sign()'s own docstring for the detail.
+isn't ported.
+
+Private sites (isPrivate()/wrapContent()/unwrapContent()/encryptFiles(),
+addRecipientKey()/removeRecipientKey()) ARE ported -- re-added from the
+original's own design (deleted along with the rest of the legacy stack,
+never carried over when this file was first written) rather than
+designed fresh. Unlike the original, this class owns no recipient/key
+state itself -- content_key and recipients are explicit arguments to
+every private-site method, matching this class's existing "pure logic
+over self.contents + storage, no hidden state" character. The caller
+(Site/UI layer) is responsible for persisting private_key/recipients
+via SiteManager's existing getSiteSetting()/setSiteSetting(), the same
+place serving/own/peers already live -- see CryptEcies.py's own module
+docstring for why ECIES-wrapping reuses CryptBitcoin's existing curve
+object, and Site.py's unlockPrivate() for the read-side key recovery.
 """
+import base64
 import io
 import json
 import pathlib
 import re
 import time
 
-from Crypt import CryptBitcoin, CryptHash
+from Crypt import CryptAes, CryptBitcoin, CryptEcies, CryptHash
 from util import SafeRe
 
 from .Bigfile import DEFAULT_PIECE_SIZE, build_piece_map, digest_piece, merkle_root
@@ -81,6 +93,13 @@ class VerifyError(Exception):
 
 
 class SignError(Exception):
+    pass
+
+
+class PrivateKeyError(Exception):
+    """Raised by unwrapContent() when no content_key is available to
+    decrypt a private site's envelope -- read-side callers (loadContent())
+    treat this as "no access", a normal/expected state, not fatal."""
     pass
 
 
@@ -109,10 +128,23 @@ class ContentManager:
     def isGoodCert(self, cert) -> bool:
         return cert not in self.bad_certs
 
-    async def loadContent(self, content_inner_path: str = "content.json") -> dict:
+    async def loadContent(self, content_inner_path: str = "content.json", content_key: bytes | None = None) -> dict:
         """Parse and cache one content.json. Not the original's recursive
-        includes/bad-file-tracking/user-content-scanning -- just loading."""
+        includes/bad-file-tracking/user-content-scanning -- just loading.
+
+        If what's on disk is a private-site envelope and content_key is
+        given, decrypts and caches the plaintext dict instead of the
+        envelope, so getFileInfo()/getTotalSize()/etc. keep working
+        unmodified. Falls back to caching the envelope as-is (unusable
+        for file listing, but harmless) when content_key is None or
+        decryption fails -- "no access" is an expected, common state on
+        a private site, not an error this should raise."""
         content = await self.storage.loadJson(content_inner_path)
+        if self.isPrivate(content) and content_key is not None:
+            try:
+                content = self.unwrapContent(content, content_key)
+            except Exception:
+                pass
         self.contents[content_inner_path] = content
         return content
 
@@ -375,7 +407,16 @@ class ContentManager:
         via _verifySignature()) and the include-specific size/pattern
         checks (_verifyContentInclude()). Raises VerifyError on anything
         invalid rather than ever silently approving something unchecked.
+
+        A private site's content.json is an encrypted envelope
+        ("privatekey": true at the top level) rather than the plaintext
+        dict the rest of this method walks -- delegates to
+        _verifyPrivateEnvelope() instead, which is all that CAN be
+        checked without content_key (see that method's own docstring).
         """
+        if content.get("privatekey"):
+            return self._verifyPrivateEnvelope(content, inner_path)
+
         if content.get("address") and content["address"] != self.site_address:
             raise VerifyError("Wrong site address: %s != %s" % (content["address"], self.site_address))
         if content.get("inner_path") and content["inner_path"] != inner_path:
@@ -411,6 +452,35 @@ class ContentManager:
             )
             self._verifyContentInclude(inner_path, content, content_size, content_size_optional)
 
+        return True
+
+    def _verifyPrivateEnvelope(self, envelope: dict, inner_path: str) -> bool:
+        """All a private site's envelope can be checked without
+        content_key: that keys_sign is a genuine signature (from this
+        site's own address) over the keys map. The real signs/modified/
+        files fields live inside the encrypted body, unreadable without
+        decrypting -- so replay/rollback protection on the inner content
+        is deferred to whoever actually decrypts it (loadContent() with
+        a content_key). This is an inherited limitation of the private-
+        site design being re-ported here, not a regression: the original
+        implementation had the same gap for non-recipient relaying peers."""
+        if inner_path != "content.json":
+            raise VerifyError("Private sites only support the root content.json")
+        keys = envelope.get("keys")
+        keys_sign = envelope.get("keys_sign")
+        if keys is None or not keys_sign:
+            raise VerifyError("Private site envelope missing keys/keys_sign")
+        # keys_sign comes straight off the wire (an untrusted peer's
+        # envelope) -- CryptBitcoin.verify() can raise on a malformed
+        # signature rather than just returning False, so this needs its
+        # own try/except to keep this method's own documented contract
+        # (raise VerifyError, never let a raw library exception escape).
+        try:
+            valid = CryptBitcoin.verify(json.dumps(keys, sort_keys=True), self.site_address, keys_sign)
+        except Exception as err:
+            raise VerifyError("Invalid keys_sign: %s" % err) from err
+        if not valid:
+            raise VerifyError("Invalid keys_sign")
         return True
 
     def _verifySignature(self, inner_path: str, content: dict) -> bool:
@@ -553,9 +623,104 @@ class ContentManager:
                 }
         return files_node, files_optional_node
 
-    async def sign(self, privatekey: str, extend: dict | None = None, filewrite: bool = True):
+    def isPrivate(self, content: dict | None = None) -> bool:
+        """True if content (or the currently-cached root content.json)
+        is a private-site encrypted envelope -- "privatekey": true at
+        the top level. Note this does NOT mean "this node can read it";
+        an envelope stays isPrivate() whether or not a content_key is
+        available to decrypt it."""
+        if content is None:
+            content = self.contents.get("content.json") or {}
+        return bool(content.get("privatekey"))
+
+    def addRecipientKey(self, recipients: dict, address: str, signature: str) -> dict:
+        """Approve a recipient by recovering their public key from a
+        signed access request (CryptEcies.signAccessRequest() on the
+        requester's side). Returns an updated copy of recipients
+        ({auth_address: b64_raw_pubkey}) -- doesn't mutate the input or
+        persist anything; the caller (Site/UI layer) is responsible for
+        saving the result via SiteManager.setSiteSetting(). Raises
+        SignError if the signature doesn't match address."""
+        message = CryptEcies.ACCESS_REQUEST_MESSAGE % self.site_address
+        publickey = CryptEcies.recoverPublicKey(signature, message)
+        if CryptEcies.publicToAddress(publickey) != address:
+            raise SignError("Access request signature does not match address %s" % address)
+        updated = dict(recipients)
+        updated[address] = base64.b64encode(publickey).decode("ascii")
+        return updated
+
+    def removeRecipientKey(self, recipients: dict, address: str) -> dict:
+        """Revoke a recipient -- returns an updated copy of recipients
+        with address removed. Revocation only takes effect once the
+        site is re-signed with the updated recipients (the already-
+        wrapped key in any previously-published envelope stays wrapped
+        for that address until then, same as the original design)."""
+        updated = dict(recipients)
+        updated.pop(address, None)
+        return updated
+
+    def wrapContent(self, content: dict, content_key: bytes, sign_privatekey: str, recipients: dict) -> dict:
+        """Wrap a signed content.json dict into a private encrypted
+        envelope: ECIES-wrap content_key for each recipient's public key
+        (recipients values are the b64 raw pubkeys addRecipientKey()
+        produces), sign the resulting key map with the site's own key
+        (keys_sign -- lets a relaying peer validate the map without
+        holding content_key itself, see _verifyPrivateEnvelope()), then
+        AES-encrypt the whole content dict as `body`."""
+        keys = {}
+        for address, pubkey_b64 in recipients.items():
+            publickey = base64.b64decode(pubkey_b64)
+            wrapped = CryptEcies.wrapKey(content_key, publickey)
+            keys[address] = base64.b64encode(wrapped).decode("ascii")
+        keys_sign = CryptBitcoin.sign(json.dumps(keys, sort_keys=True), sign_privatekey)
+        body = CryptAes.encrypt(json.dumps(content, sort_keys=True).encode("utf8"), content_key)
+        envelope = {"privatekey": True, "keys": keys, "body": base64.b64encode(body).decode("ascii")}
+        if keys_sign:
+            envelope["keys_sign"] = keys_sign
+        return envelope
+
+    def unwrapContent(self, envelope: dict, content_key: bytes | None) -> dict:
+        """Decrypt a private envelope back into the inner signed
+        content.json dict. Raises PrivateKeyError (not VerifyError) if
+        content_key is None -- see that exception's own docstring for
+        why "no access" is a normal read-side state, not a hard failure."""
+        if content_key is None:
+            raise PrivateKeyError("No content key available to decrypt this private site")
+        body = base64.b64decode(envelope["body"])
+        return json.loads(CryptAes.decrypt(body, content_key).decode("utf8"))
+
+    async def encryptFiles(self, content_key: bytes) -> None:
+        """AES-encrypts every real site file in place with content_key --
+        everything except content.json itself (handled separately by
+        wrapContent()), dotfiles, "-old"/"-new" backups, and anything
+        the DB layer indexes (SiteStorage.getDbFiles() -- re-encrypting
+        those in place would break DB indexing the same way an encrypted
+        content.json itself would). Matches hashFiles()'s own skip list
+        plus the DB-file exclusion. Note: getDbFiles() enumerates files
+        listed in self.contents as currently cached, which on a site's
+        first-ever transition to private is whatever was loaded before
+        this sign() call started -- any brand new DB-indexed file added
+        in the same sign() won't be excluded here, since it doesn't
+        exist in self.contents yet; it'll be covered by the next sign()."""
+        db_inner_paths = {inner_path for inner_path, _ in self.storage.getDbFiles(self)}
+        for file_relative_path in await self.storage.walk(""):
+            file_name = file_relative_path.rsplit("/", 1)[-1]
+            if (file_relative_path == "content.json" or file_name.startswith(".")
+                    or file_name.endswith("-old") or file_name.endswith("-new")):
+                continue
+            if file_relative_path in db_inner_paths:
+                continue
+            data = await self.storage.read(file_relative_path)
+            await self.storage.write(file_relative_path, CryptAes.encrypt(data, content_key))
+
+    async def sign(
+        self, privatekey: str, extend: dict | None = None, filewrite: bool = True,
+        content_key: bytes | None = None, recipients: dict | None = None,
+    ):
         """Create and sign the ROOT content.json. Return: the new content
-        dict (whether or not filewrite happened).
+        dict (always the plaintext, signed dict -- whether or not
+        filewrite happened, and whether or not this is a private site;
+        see the private-site note below for what actually lands on disk).
 
         Deliberately narrower than the original's sign(), matching this
         file's own established root-vs-non-root split (see module
@@ -563,17 +728,50 @@ class ContentManager:
         "user_contents" file -- that needs a cert issued to the signer,
         which requires the User/cert-issuance flow this file's read-side
         (verifyCert/getUserContentRules) supports but nothing here writes
-        yet. No private-site encryption either (isPrivate()/wrapContent()/
-        encryptFiles() aren't ported) -- signing a private site's
-        content.json here would silently skip the envelope wrapping the
-        original applies, so it's refused outright rather than produced
-        wrong.
+        yet.
+
+        Private site: pass recipients (non-empty) to sign+encrypt+wrap
+        instead of a plain sign. content_key is required whenever
+        recipients is given. self.contents[inner_path] always caches the
+        plaintext dict (an improvement over the original, which left the
+        in-memory cache stale after a private sign() -- see this file's
+        own loadContent() for why caching plaintext here is safe: only
+        the owner, who always holds content_key, ever calls sign()).
+
+        Encryption ordering matters and matches the original exactly:
+        on the FIRST transition to private (this site wasn't already an
+        envelope on disk), encryptFiles(content_key) runs BEFORE
+        hashFiles() below, not after -- content.json's sha512 hashes
+        have to match what's actually on disk / what a peer downloads
+        (the ciphertext bytes), not the plaintext that's about to be
+        overwritten by encryption. Getting this order backwards makes
+        every file fail verifyFile()'s hash check for every downloader.
+        On a subsequent re-sign of an already-private site, files stay
+        as-is (already encrypted from the first transition, or already
+        re-encrypted individually by whatever wrote them since -- see
+        Ui/commands.py's fileWrite, which encrypts new content on write
+        rather than waiting for the next sign()) -- encryptFiles() must
+        NOT run again, or it would double-encrypt everything.
         """
         inner_path = "content.json"
+
+        already_private = False
+        if self.storage.isFile(inner_path):
+            try:
+                already_private = bool((await self.storage.loadJson(inner_path)).get("privatekey"))
+            except Exception:
+                already_private = False
 
         if self.contents.get(inner_path):
             content = dict(self.contents[inner_path])
         elif self.storage.isFile(inner_path):
+            if already_private:
+                raise SignError(
+                    "This is an already-private site with nothing decrypted in memory -- "
+                    "call loadContent(content_key=...) (or Site.getPrivatekey()) before "
+                    "re-signing, so sign() has the real plaintext to extend/re-sign rather "
+                    "than the raw on-disk envelope."
+                )
             content = await self.storage.loadJson(inner_path)
             content.setdefault("files", {})
             content.setdefault("signs", {})
@@ -584,13 +782,23 @@ class ContentManager:
                 "description": "", "signs_required": 1, "ignore": "",
             }
 
-        if content.get("private_recipients") or content.get("privatekey"):
-            raise SignError("Private sites are not supported by this sign() -- see its own docstring")
-
         if extend:
             for key, val in extend.items():
                 if not content.get(key):
                     content[key] = val
+
+        # "Is this sign private" is sticky once a site has ever been made
+        # private, not just "recipients is non-empty right now" -- removing
+        # every recipient still re-wraps with an (empty) key map rather
+        # than silently reverting to a plain, unencrypted content.json.
+        # Matches the original design: private status persists until
+        # something explicit un-wraps it (not implemented here or there).
+        is_private_sign = bool(recipients) or already_private
+
+        if is_private_sign and not already_private:
+            if content_key is None:
+                raise SignError("Private site sign() needs content_key to wrap for recipients")
+            await self.encryptFiles(content_key)
 
         files_node, files_optional_node = await self.hashFiles(
             content.get("ignore"), content.get("optional"),
@@ -601,6 +809,12 @@ class ContentManager:
                 files_optional_node[file_relative_path] = file_info
 
         new_content = dict(content)
+        # Defensive: never sign/wrap on top of a stray envelope shape --
+        # self.contents is only ever supposed to hold plaintext for the
+        # owner (see loadContent()'s own docstring), but strip these
+        # unconditionally rather than trust that invariant blindly.
+        for envelope_key in ("privatekey", "keys", "keys_sign", "body"):
+            new_content.pop(envelope_key, None)
         new_content["files"] = files_node
         if files_optional_node:
             new_content["files_optional"] = files_optional_node
@@ -630,7 +844,13 @@ class ContentManager:
         new_content["signs"] = {privatekey_address: sign} if sign else {}
 
         if filewrite:
-            await self.storage.writeJson(inner_path, new_content)
+            if is_private_sign:
+                if content_key is None:
+                    raise SignError("Private site sign() needs content_key to wrap for recipients")
+                envelope = self.wrapContent(new_content, content_key, privatekey, recipients or {})
+                await self.storage.writeJson(inner_path, envelope)
+            else:
+                await self.storage.writeJson(inner_path, new_content)
             self.contents[inner_path] = new_content
 
         return new_content

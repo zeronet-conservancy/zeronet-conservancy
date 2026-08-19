@@ -53,7 +53,21 @@ async def applyContentUpdate(site, inner_path: str, body: bytes, on_applied=None
     update, write it and refresh the in-memory contents. Returns True if
     applied, False for the benign "same content, not updated" case (not
     an error -- the caller already has this version). Raises
-    ContentUpdateError for anything actually invalid."""
+    ContentUpdateError for anything actually invalid.
+
+    Private sites: body is whatever's actually on the wire -- an
+    encrypted envelope for a private site, same as what's written to
+    disk (ciphertext-at-rest is the correct on-disk format regardless of
+    transport). verifyContentJson() already branches on envelope shape
+    (see ContentManager.py's _verifyPrivateEnvelope()) and needs no
+    change here. What DOES change: the in-memory cache is refreshed via
+    site.content_manager.loadContent() (passing this Site's already-
+    unlocked private_key, if any) instead of a direct dict assignment,
+    so a node that already unlocked the site (owner or recipient) gets a
+    decrypted, immediately-usable cache; a node that hasn't (or can't)
+    caches the envelope as-is -- unusable for file listing, but
+    harmless, same "no access is a normal state" contract as everywhere
+    else in the private-site design."""
     try:
         content = json.loads(body.decode("utf8"))
     except Exception as err:
@@ -68,7 +82,7 @@ async def applyContentUpdate(site, inner_path: str, body: bytes, on_applied=None
         return False
 
     await site.storage.write(inner_path, body)
-    site.content_manager.contents[inner_path] = content
+    await site.content_manager.loadContent(inner_path, content_key=site.private_key)
     if on_applied is not None:
         on_applied(site, inner_path)
     return True

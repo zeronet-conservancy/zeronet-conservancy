@@ -228,6 +228,12 @@ class TestP2PWorkerManager:
                 site = Site(site_address, pathlib.Path(root))
                 content = {"address": site_address, "modified": time.time(), "files": {}}
                 signed_content = _sign(content, privatekey)
+                # publishGossip() now reads the body straight off disk (see
+                # its own docstring on why: the in-memory cache is
+                # decrypted plaintext for a private site) -- write it for
+                # real, matching what a real sign(filewrite=True) call
+                # always does, not just the in-memory cache alone.
+                await site.storage.writeJson("content.json", signed_content)
                 site.content_manager.contents["content.json"] = signed_content
 
                 gossip = FakeGossipManager()

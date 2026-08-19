@@ -502,7 +502,14 @@ class TestP2PContentManagerSign:
         assert second["description"] == "original"
         assert second["postmessage_nonce_security"] is True
 
-    def testSignPrivateSiteRefused(self):
+    def testSignIgnoresStrayPrivateRecipientsField(self):
+        """private-site status is driven by sign()'s own content_key/
+        recipients params now (see TestP2PPrivateSiteContentManager.py
+        for the real private-site coverage) -- a leftover
+        "private_recipients" key sitting in an on-disk content.json from
+        somewhere else doesn't make plain sign() (no recipients passed)
+        refuse or do anything special with it; it's just an ordinary
+        extra field that rides along."""
         async def scenario():
             with tempfile.TemporaryDirectory() as d:
                 privatekey = CryptBitcoin.newPrivatekey()
@@ -511,13 +518,11 @@ class TestP2PContentManagerSign:
                 await storage.writeJson("content.json", {"files": {}, "signs": {}, "private_recipients": ["someone"]})
                 cm = ContentManager(storage, address)
                 await cm.loadContent()
-                try:
-                    await cm.sign(privatekey)
-                    return "no-error"
-                except SignError:
-                    return "raised"
+                return await cm.sign(privatekey)
 
-        assert compat.run(scenario) == "raised"
+        new_content = compat.run(scenario)
+        assert "privatekey" not in new_content
+        assert new_content.get("private_recipients") == ["someone"]
 
     def testSignWithFilewriteFalseDoesNotTouchDisk(self):
         async def scenario():

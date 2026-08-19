@@ -288,11 +288,23 @@ async def publishUpdate(site, peers: list, inner_path: str = "content.json") -> 
     Returns how many peers acknowledged it -- the counterpart to
     syncSite()'s pull direction. Requires inner_path to already be loaded
     into site.content_manager.contents (i.e. already signed via
-    ContentManager.sign()); this doesn't sign anything itself."""
-    content = site.content_manager.contents.get(inner_path)
-    if content is None:
+    ContentManager.sign()); this doesn't sign anything itself.
+
+    Reads the body straight off disk (site.storage.read()), not
+    site.content_manager.contents[inner_path] -- for a private site that
+    in-memory cache is the DECRYPTED plaintext (see ContentManager.py's
+    own module docstring on why: only the owner, who always holds the
+    content key, ever calls sign()), while what's actually supposed to
+    go out over the wire is the encrypted envelope sitting on disk.
+    Publishing the cached dict directly would leak the plaintext to
+    every peer regardless of whether they're an approved recipient --
+    found and fixed while wiring up the private-site propagation tests
+    themselves. contents.get(inner_path) is still checked first as the
+    "has this actually been signed/loaded yet" guard; only the body that
+    goes over the wire changes."""
+    if site.content_manager.contents.get(inner_path) is None:
         raise ValueError("No loaded content to publish for %s" % inner_path)
-    body = json.dumps(content).encode("utf8")
+    body = await site.storage.read(inner_path)
 
     published = 0
     for peer in peers:
@@ -312,11 +324,16 @@ async def publishGossip(site, gossip_manager, inner_path: str = "content.json") 
     reaches peers already meshed on this site's topic, so a peer with no
     mesh yet (e.g. right after its very first connection to the swarm)
     still needs the unicast push. Same content-already-loaded precondition
-    as publishUpdate(); this doesn't sign anything either."""
-    content = site.content_manager.contents.get(inner_path)
-    if content is None:
+    as publishUpdate(); this doesn't sign anything either.
+
+    Same disk-not-cache body source as publishUpdate() -- see that
+    function's own docstring for why: publishing site.content_manager.
+    contents[inner_path] directly would send a private site's decrypted
+    plaintext out over the gossip mesh to every subscriber, not just
+    approved recipients."""
+    if site.content_manager.contents.get(inner_path) is None:
         raise ValueError("No loaded content to publish for %s" % inner_path)
-    body = json.dumps(content).encode("utf8")
+    body = await site.storage.read(inner_path)
     await gossip_manager.publish(site.address, body)
 
 

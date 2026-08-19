@@ -261,7 +261,13 @@ or `--target nsis`), or grab the official installer from the
 
 * File transfers support opt-in zlib compression (`--file-compression`),
   but it's off by default
-* No private sites
+* Private sites (AES-encrypted content, per-recipient ECIES-wrapped keys)
+  are supported: `siteRequestAccess`/`siteAddRecipient`/`siteRemoveRecipient`
+  websocket commands, transparent encrypt/decrypt on `fileGet`/`fileWrite`
+  and the site's raw HTTP media path. No browser-side "enter your access
+  key" UI has been built yet -- approval/revocation currently has to go
+  through those commands directly (e.g. via a site's own JS or the API),
+  not a dashboard flow
 * Peer discovery is via a Kademlia DHT (plus local-network discovery and
   peer exchange) -- this is now the primary discovery path for the
   default network stack, not an experimental add-on; BitTorrent-style

@@ -135,7 +135,7 @@ import sys
 from pathlib import Path
 
 from Config import config
-from Crypt import CryptBitcoin, CryptHash
+from Crypt import CryptAes, CryptBitcoin, CryptEcies, CryptHash
 from util import QueryJson, SafeRe
 
 from ..ContentManager import _getDirname
@@ -302,6 +302,32 @@ async def _requireUser(session):
     if user is None:
         user = user_manager.create()
     return user
+
+
+async def _requirePrivateSiteAccess(session, site) -> tuple[bool, bytes | None]:
+    """Shared private-site gate for fileGet/fileWrite: (is_private,
+    content_key). content_key is None whenever is_private is True but
+    this session's user hasn't been approved (or the site owner hasn't
+    unlocked their own key this session yet) -- callers turn that into a
+    no-access response, never an exception (same "no access is a normal,
+    expected state" contract as everywhere else in the private-site
+    design, see ContentManager.PrivateKeyError's own docstring).
+
+    Ensures content.json is loaded at least once before checking
+    isPrivate(): an unlocked site's own in-memory cache holds decrypted
+    plaintext with no "privatekey" marker left on it (see
+    ContentManager.py's module docstring), so an empty/never-loaded
+    cache would otherwise be indistinguishable from "genuinely public" --
+    site.private_key already being set is checked first specifically to
+    avoid re-deriving that from a stale/decrypted cache."""
+    if site.content_manager.contents.get("content.json") is None and site.storage.isFile("content.json"):
+        await site.content_manager.loadContent(content_key=site.private_key)
+    if site.private_key is None and not site.content_manager.isPrivate():
+        return False, None
+    if site.private_key is None:
+        user = await _requireUser(session)
+        await site.getPrivatekey(user)
+    return True, site.private_key
 
 
 def _param(params, key, index, default=None):
@@ -531,7 +557,21 @@ async def _cmdFileGet(session, params):
     fmt = _param(params, "format", 1, "text")
     if not site.storage.isFile(inner_path):
         return None
-    body = await site.storage.read(inner_path, "rb")
+
+    if inner_path.endswith("content.json"):
+        body = await site.storage.read(inner_path, "rb")
+    else:
+        is_private, content_key = await _requirePrivateSiteAccess(session, site)
+        raw = await site.storage.read(inner_path, "rb")
+        if is_private and content_key is None:
+            user = await _requireUser(session)
+            return {
+                "error": "private_site_no_access",
+                "site_address": site.address,
+                "auth_address": user.getAuthAddress(site.address),
+            }
+        body = CryptAes.decrypt(raw, content_key) if is_private else raw
+
     if fmt == "base64":
         return base64.b64encode(body).decode()
     return body.decode()
@@ -617,9 +657,17 @@ async def _cmdFileWrite(session, params):
     inner_path = _param(params, "inner_path", 0)
     content_base64 = _param(params, "content_base64", 1)
     content = base64.b64decode(content_base64)
+
+    if not inner_path.endswith("content.json"):
+        is_private, content_key = await _requirePrivateSiteAccess(session, site)
+        if is_private:
+            if content_key is None:
+                raise CommandError("Private site: no access -- unlock first")
+            content = CryptAes.encrypt(content, content_key)
+
     await site.storage.write(inner_path, content)
     if inner_path.endswith("content.json"):
-        await site.content_manager.loadContent(inner_path)
+        await site.content_manager.loadContent(inner_path, content_key=site.private_key)
     return "ok"
 
 
@@ -633,6 +681,19 @@ async def _cmdFileDelete(session, params):
 
 # -- Site signing / publishing --
 
+async def _getOrCreateContentKey(site_manager, address: str) -> bytes:
+    """The site's own persisted AES content key (SiteManager's settings
+    store, same place private_recipients/serving/own/peers already
+    live -- see ContentManager.py's own module docstring) -- generated
+    once, on first use, and reused for every subsequent private sign()."""
+    content_key_b64 = site_manager.getSiteSetting(address, "private_key")
+    if content_key_b64:
+        return base64.b64decode(content_key_b64)
+    content_key = CryptAes.newKey()
+    await site_manager.setSiteSetting(address, "private_key", base64.b64encode(content_key).decode("ascii"))
+    return content_key
+
+
 @command("siteSign")
 async def _cmdSiteSign(session, params):
     site = _requireAdmin(session)
@@ -644,7 +705,79 @@ async def _cmdSiteSign(session, params):
             privatekey = user.getSiteData(site.address, create=False).get("privatekey")
     if not privatekey:
         raise CommandError("No privatekey given and none stored for this site")
-    await site.content_manager.sign(privatekey)
+
+    site_manager = getattr(session.app, "site_manager", None)
+    recipients = site_manager.getSiteSetting(site.address, "private_recipients", {}) if site_manager is not None else {}
+    content_key = None
+    if site_manager is not None and (recipients or site_manager.getSiteSetting(site.address, "private_key")):
+        # The second condition covers re-signing after every recipient's
+        # been removed: private status is sticky once a site has ever
+        # been made private (see ContentManager.sign()'s own docstring),
+        # so this still needs to re-wrap with an empty key map, not
+        # revert to a plain content.json.
+        content_key = await _getOrCreateContentKey(site_manager, site.address)
+
+    await site.content_manager.sign(privatekey, content_key=content_key, recipients=recipients)
+    if content_key is not None:
+        site.private_key = content_key  # the owner is unlocked too, immediately
+    return "ok"
+
+
+@command("siteRequestAccess")
+async def _cmdSiteRequestAccess(session, params):
+    """Any user (no ADMIN needed -- this is how a non-owner asks to be
+    let in). Signs an access request with this user's own auth
+    privatekey (the same per-site identity key already used for site
+    permissions -- see Site.py's own module docstring on why private-
+    site recipients reuse it rather than a separate dedicated key) and
+    returns it for the frontend to relay to the site owner out-of-band
+    (email, chat, in person, ...) -- there's no in-repo transmission
+    channel for this, matching the original design this re-ports."""
+    site = _requireSite(session)
+    user = await _requireUser(session)
+    auth_privatekey = user.getAuthPrivatekey(site.address)
+    message, signature = CryptEcies.signAccessRequest(site.address, auth_privatekey)
+    return {
+        "auth_address": user.getAuthAddress(site.address),
+        "message": message,
+        "signature": signature,
+    }
+
+
+@command("siteAddRecipient")
+async def _cmdSiteAddRecipient(session, params):
+    """Owner-only: approve a recipient's siteRequestAccess() output
+    (address + signature) for this private site. Only updates the
+    persisted recipients list -- doesn't sign/publish anything, matching
+    siteSign's own existing "explicit, separate step" convention; call
+    siteSign afterward to actually re-wrap the site for the new
+    recipient and publish it."""
+    site = _requireAdmin(session)
+    address = _param(params, "address", 0)
+    signature = _param(params, "signature", 1)
+    if not address or not signature:
+        raise CommandError("address and signature required")
+    site_manager = _requireSiteManager(session)
+    recipients = site_manager.getSiteSetting(site.address, "private_recipients", {})
+    updated = site.content_manager.addRecipientKey(recipients, address, signature)
+    await site_manager.setSiteSetting(site.address, "private_recipients", updated)
+    return "ok"
+
+
+@command("siteRemoveRecipient")
+async def _cmdSiteRemoveRecipient(session, params):
+    """Owner-only: revoke a recipient. Same "call siteSign afterward"
+    convention as siteAddRecipient -- the already-wrapped key in
+    whatever's currently published stays wrapped for that address until
+    the site is actually re-signed with the updated recipients."""
+    site = _requireAdmin(session)
+    address = _param(params, "address", 0)
+    if not address:
+        raise CommandError("address required")
+    site_manager = _requireSiteManager(session)
+    recipients = site_manager.getSiteSetting(site.address, "private_recipients", {})
+    updated = site.content_manager.removeRecipientKey(recipients, address)
+    await site_manager.setSiteSetting(site.address, "private_recipients", updated)
     return "ok"
 
 
