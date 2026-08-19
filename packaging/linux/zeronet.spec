@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.10
+Version:        1.0.11
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,14 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Wed Aug 19 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.11-1
+- Add private-site support: per-recipient AES-encrypted site content
+  with ECIES-wrapped keys, re-ported from the pre-libp2p-migration
+  design. siteRequestAccess/siteAddRecipient/siteRemoveRecipient
+  websocket commands; fileGet/fileWrite and the site's raw HTTP media
+  path transparently encrypt/decrypt for approved recipients. No
+  browser dashboard UI for approval/revocation yet -- goes through
+  those commands directly for now.
 * Tue Aug 18 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.10-1
 - Fix two real gaps in P2P announce/discovery wiring: sites added to an
   already-running node now get their announce loop started immediately

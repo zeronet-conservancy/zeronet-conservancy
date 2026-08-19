@@ -1,3 +1,21 @@
+### zeronet-conservancy 1.0.11
+- New: private-site support, re-ported from the pre-libp2p-migration
+  design (deleted along with the rest of the legacy stack during the
+  rewrite, never carried over until now). A private site's content is
+  AES-encrypted at rest; the content key is ECIES-wrapped for each
+  approved recipient's public key (the site's existing per-user
+  auth address/privatekey, already used for site permissions -- no
+  separate dedicated key). New `siteRequestAccess`/`siteAddRecipient`/
+  `siteRemoveRecipient` websocket commands; `fileGet`/`fileWrite` and
+  the site's raw HTTP media-serving path transparently encrypt/decrypt
+  for anyone who's been approved. content.json itself becomes a signed
+  envelope (`keys`/`keys_sign`/`body`) that propagates over both the
+  existing unicast push and gossipsub paths unchanged -- a peer without
+  access caches the still-encrypted envelope harmlessly rather than
+  erroring. No browser dashboard UI for approval/revocation yet --
+  goes through the websocket commands directly for now, not a "no
+  access" page with a built-in unlock flow.
+
 ### zeronet-conservancy 1.0.10
 - Fix: sites added to an already-running node (via the CLI or the
   native UI's "add site" flow) now get their announce loop started
