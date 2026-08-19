@@ -1,3 +1,27 @@
+### zeronet-conservancy 1.0.12
+- New: private-site access-request management. Owners get a sidebar
+  section listing approved recipients and pending access requests, with
+  one-click approve/deny -- no more pasting a signature relayed out of
+  band. `siteRequestAccess` now pushes the signed request directly to
+  connected peers (`protocols/request_access.py`) instead of only
+  handing the payload back for manual relay. A bounded, TTL'd,
+  in-memory `RequestAccessRelay` on every serving (not just owning)
+  node lets any bystander hold and re-offer a request on each announce
+  cycle, so a request still reaches an owner who's offline at request
+  time.
+- Fix: a freshly created "own" site never actually got `ADMIN`
+  permission on itself. `SiteManager.add(address, own=True)` only
+  persists the `"own"` setting to `sites.json`; nothing granted the
+  `Site` object's own `permissions` list `ADMIN`, so the sidebar's
+  owner controls (and every admin-gated command) looked broken/absent
+  on a brand-new site until a restart happened to round-trip
+  permissions through disk. Affected `siteCreate`, `siteBuilderCreate`
+  (the `/SiteBuilder` "New site" flow), `siteClone`, and the CLI
+  `siteCreate` action. Also fixes the left-drawer's "New site" button
+  silently doing nothing when `siteCreate` errors (e.g. triggered from
+  a page that isn't itself ADMIN, since the drawer is available
+  site-wide) instead of surfacing the failure.
+
 ### zeronet-conservancy 1.0.11
 - New: private-site support, re-ported from the pre-libp2p-migration
   design (deleted along with the rest of the legacy stack during the

@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.11
+Version:        1.0.12
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,19 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Wed Aug 19 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.12-1
+- Add private-site access-request management: owner UI (recipients list,
+  pending-requests list with one-click approve/deny), direct P2P push
+  for siteRequestAccess instead of manual out-of-band relay, and a
+  bounded/TTL'd bystander store-and-forward relay so a request still
+  reaches an owner who's offline at request time.
+- Fix: new sites never got ADMIN on themselves after creation
+  (siteCreate, siteBuilderCreate, siteClone, and the CLI siteCreate
+  action all only persisted SiteManager's own "own" setting, never
+  granted the Site object ADMIN) -- a freshly created site's sidebar
+  owner controls didn't render until a restart round-tripped
+  permissions through sites.json. Also fixes the left-drawer's "New
+  site" button silently doing nothing on error.
 * Wed Aug 19 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.11-1
 - Add private-site support: per-recipient AES-encrypted site content
   with ECIES-wrapped keys, re-ported from the pre-libp2p-migration
