@@ -893,6 +893,37 @@ class TestP2PUiCommandsServerAndAnnouncerInfo:
         assert "peer_id" not in reply["result"]
         assert "platform" in reply["result"]
 
+    def testServerInfoNonAdminVersionFitsZeroMailsFixedWidthBudget(self):
+        """A non-ADMIN connection's serverInfo "version" is config.user_agent
+        (see formatServerInfo's own docstring: deliberately generic, not
+        this build's real version). Found live: ZeroMail's own
+        StartScreen.getTermLines() builds "<user_agent> r<rev> [OK]" and
+        pads it to a hardcoded 18 characters via ".".repeat(18 - length) --
+        "conservancy" (11 chars) pushed that past 18, so repeat() got a
+        negative count and threw, crashing ZeroMail's initial render
+        before "New message" (or anything else) could do anything. This
+        doesn't re-implement ZeroMail's own padding logic; it just pins
+        the same 18-char budget directly so a future user_agent change
+        can't silently regress it for ZeroMail or any other site making
+        the same fixed-width assumption."""
+        from Config import config
+
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestServerInfoNonAdminSiteAA"
+                site = Site(address, pathlib.Path(d))
+                site.permissions = []  # non-ADMIN
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "serverInfo")
+
+        reply = compat.run(scenario)
+        result = reply["result"]
+        assert result["version"] == config.user_agent
+        padded = "%s r%s [OK]" % (result["version"], result["rev"])
+        assert len(padded) <= 18
+
     def testAnnouncerInfoReportsRealTrackerStats(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:

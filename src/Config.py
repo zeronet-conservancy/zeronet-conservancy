@@ -45,7 +45,22 @@ class Config:
             self.build_date = getattr(Build, 'build_date', None)
         self.is_android = hasattr(sys, 'getandroidapilevel')
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
-        self.user_agent = "conservancy"
+        # Exposed to sites as serverInfo's "version" field for non-ADMIN
+        # connections (see P2P/Ui/commands.py's formatServerInfo()) --
+        # deliberately generic/short, not this build's real version, same
+        # "don't expose user version" intent the original ZeroNet's own
+        # ContentManager.sign() comment already documented for this same
+        # field. Found live: ZeroMail's StartScreen.getTermLines() pads
+        # "<user_agent> r<rev> [OK]" to a hardcoded 18 characters via
+        # ".".repeat(18 - s.length) -- "conservancy" (11 chars) pushed the
+        # padded string past 18, so repeat() got a negative count and threw,
+        # crashing ZeroMail's initial render before "New message" (or
+        # anything else) could do anything. "zeronet" is the original
+        # upstream value this budget was actually tuned for (7 + " r" +
+        # 4-digit rev + " [OK]" == 18 exactly), so it's also the safest
+        # choice for compatibility with any other site making the same
+        # fixed-width assumption, not just ZeroMail.
+        self.user_agent = "zeronet"
         # for compatibility
         self.user_agent_rev = 8192
         self.argv = argv
