@@ -856,6 +856,62 @@ class TestP2PUiCommandsDbQuery:
         assert "error" in reply["result"]
 
 
+class TestP2PUiCommandsFileRules:
+    """fileRules was a real, previously-undocumented-as-such gap: found
+    live via ZeroMail's own User.prototype.formatQuota() (a cosmetic
+    quota-display miss), but plugins/Sidebar/media/all.js's own Sign/
+    Publish menu (all.js:1406/1460) calls it too, to decide whether the
+    connected user's auth_address can sign directly or needs a prompted
+    private key -- a real, central feature, not just ZeroMail's."""
+
+    def testFileRulesForUnsignedRootContentJsonReturnsSiteAddressAsSigner(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestFileRulesUnsignedSiteAA"
+                site = Site(address, pathlib.Path(d))
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "fileRules", {"inner_path": "content.json"})
+
+        reply = compat.run(scenario)
+        result = reply["result"]
+        assert result["signers"] == ["1TestFileRulesUnsignedSiteAA"]
+        assert result["current_size"] == 0
+
+    def testFileRulesForSignedContentJsonIncludesCurrentSize(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                site = Site(address, pathlib.Path(d))
+                await site.storage.write("index.html", b"hello")
+                await site.content_manager.sign(privatekey)
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "fileRules", {"inner_path": "content.json"}), address
+
+        reply, address = compat.run(scenario)
+        result = reply["result"]
+        assert result["signers"] == [address]
+        assert result["current_size"] > 0
+
+    def testFileRulesForUncoveredPathReturnsFalse(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestFileRulesUncoveredSiteA"
+                site = Site(address, pathlib.Path(d))
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "fileRules", {"inner_path": "not-listed-anywhere.txt"})
+
+        reply = compat.run(scenario)
+        assert reply["result"] is False
+
+
 class TestP2PUiCommandsServerAndAnnouncerInfo:
     def testServerInfoReportsRealFileServerDetails(self):
         async def scenario():

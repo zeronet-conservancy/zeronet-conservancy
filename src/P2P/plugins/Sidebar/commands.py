@@ -42,11 +42,17 @@ siteBuilderCreate) plus User.getSiteData()'s already-real per-site
 privatekey storage -- no new infrastructure needed, unlike most of what's
 still open elsewhere in this migration.
 
-Still NOT ported: fileRules, and dbReload/dbRebuild as sidebar-
-triggerable actions (dbRebuild exists as a CLI-only action in
-P2P/actions.py, same "destructive, not a great fit for an
-unauthenticated-beyond-wrapper_key websocket command" reasoning
-P2P/Ui/commands.py's own module docstring already gives for it).
+fileRules is ported now too, in P2P/Ui/commands.py -- see that module's
+own _cmdFileRules docstring. The Sidebar plugin's own client JS
+(plugins/Sidebar/media/all.js:1406/1460, optional-file quota display)
+was already calling it; it just silently got "Unknown command" back
+until now.
+
+Still NOT ported: dbReload/dbRebuild as sidebar-triggerable actions
+(dbRebuild exists as a CLI-only action in P2P/actions.py, same
+"destructive, not a great fit for an unauthenticated-beyond-wrapper_key
+websocket command" reasoning P2P/Ui/commands.py's own module docstring
+already gives for it).
 """
 import logging
 import re

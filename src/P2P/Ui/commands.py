@@ -128,6 +128,7 @@ in the original too.)
 import base64
 import copy
 import html
+import json
 import os
 import re
 import stat
@@ -649,6 +650,47 @@ async def _cmdFileQuery(session, params):
     query = _param(params, "query", 1, "") or ""
     dir_path = str(site.storage.getPath(dir_inner_path))
     return list(QueryJson.query(dir_path, query))
+
+
+@command("fileRules")
+async def _cmdFileRules(session, params):
+    """Read-side permission/quota inspector for inner_path -- real port of
+    the original's actionFileRules. Returns ContentManager.getRules()'s
+    result (signers/cert_signers/max_size/...) for the content.json that
+    covers inner_path, with "current_size" added when inner_path itself
+    is a content.json -- current callers only use this for a quota
+    display (e.g. ZeroMail's User.prototype.formatQuota(), found live:
+    "Unknown command" there just made the quota indicator silently blank,
+    not a functional break, but a real, previously undocumented-as-fixed
+    gap in this stack's own command surface), not to gate a write here.
+
+    When inner_path hasn't been signed yet (no content dict on disk),
+    falls back to a synthetic content dict built from the connected
+    user's own selected certificate -- the original's own "what WOULD my
+    about-to-be-created multi-user file need to satisfy" preview, so a
+    multi-user (user_contents) site can show real rules/quota before the
+    user's first file even exists."""
+    site = _requireSite(session)
+    inner_path = _param(params, "inner_path", 0)
+    content = site.content_manager.contents.get(inner_path)
+    if not content and getattr(session.app, "user_manager", None) is not None:
+        user = await _requireUser(session)
+        cert = user.getCert(site.address)
+        if cert and cert["auth_address"] in site.content_manager.getValidSigners(inner_path):
+            content = {
+                "cert_auth_type": cert["auth_type"],
+                "cert_user_id": user.getCertUserId(site.address),
+                "cert_sign": cert["cert_sign"],
+            }
+    rules = site.content_manager.getRules(inner_path, content)
+    if inner_path.endswith("content.json") and rules:
+        if content:
+            rules["current_size"] = len(json.dumps(content)) + sum(
+                file_info.get("size", 0) for file_info in content.get("files", {}).values()
+            )
+        else:
+            rules["current_size"] = 0
+    return rules
 
 
 @command("fileWrite")
