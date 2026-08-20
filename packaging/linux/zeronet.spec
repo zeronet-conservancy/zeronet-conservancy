@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.14
+Version:        1.0.15
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,12 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.15-1
+- Add: fileRules websocket command (a real port of the original
+  actionFileRules) -- fixes the Sidebar plugin's own Sign/Publish menu
+  (content.json chooser dropdown), which silently couldn't determine
+  whether the connected identity could sign directly, and ZeroMail's
+  quota display.
 * Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.14-1
 - Fix: config.user_agent ("conservancy", 11 chars) was too long for
   ZeroMail's own fixed-width status-line padding (hardcoded to a

@@ -1,3 +1,14 @@
+### zeronet-conservancy 1.0.15
+- New: `fileRules` websocket command -- a real port of the original
+  `actionFileRules`, built on the already-existing/already-tested
+  `ContentManager.getRules()`/`getValidSigners()`. Was documented as
+  "not ported yet" in two places but never actually implemented.
+  Fixes the Sidebar plugin's own Sign/Publish menu (the content.json
+  chooser dropdown), which used this to decide whether the connected
+  identity could sign directly or needed a prompted private key --
+  silently broken until now -- and ZeroMail's own quota display.
+  Verified live against a real, already-downloaded ZeroMail site.
+
 ### zeronet-conservancy 1.0.14
 - Fix: `config.user_agent` (`"conservancy"`, 11 characters) -- exposed
   to non-ADMIN sites as `serverInfo`'s `version` field -- was too long
