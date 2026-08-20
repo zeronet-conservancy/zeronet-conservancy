@@ -1,3 +1,34 @@
+### zeronet-conservancy 1.0.16
+- New: a batch of previously-missing websocket commands, found by
+  auditing every bundled site's own calls against this stack's
+  registered commands (the same investigation that found `fileRules`
+  missing for ZeroMail in 1.0.15):
+  - `MuteList` -- registered alongside the existing `muteList`; the
+    real dashboard site's own Mute/Block panel called it under its
+    original, capitalized name.
+  - `uiLogout` -- the dashboard's "Logout" button; pushes a client-side
+    redirect to the existing `/Logout` route.
+  - `OptionalHelp`/`OptionalHelpList`/`OptionalHelpRemove`/
+    `OptionalHelpAll` -- the "help seed this directory" controls in the
+    optional-files manager, extending `OptionalManager`'s existing
+    sidecar storage.
+  - `announcerStats` -- all-sites tracker-stats aggregation, distinct
+    from the existing per-site `announcerInfo`.
+  - `feedSearch` -- full-text search across every known site's own
+    feed queries (`feedQuery` only searches followed ones).
+  - `filterIncludeAdd`/`filterIncludeRemove` -- subscribing to another
+    already-known site's own mute/block list. Enforcement needed no
+    new wiring: `isMuted()`/`isSiteblocked()` are the single check
+    every real enforcement point already calls.
+  - `chartDbQuery` -- a real, queryable `chart.db` for the dashboard's
+    Charts page (built on the same DB engine every site's own db
+    uses). Deliberately not included: `chartGetPeerLocations`
+    (GeoLite2 IP geolocation, already excluded elsewhere in this
+    codebase) and the periodic background sampler that would populate
+    `chart.db` -- both clearly flagged as intentional, separate gaps.
+  All verified live against the real dashboard site with no console
+  errors.
+
 ### zeronet-conservancy 1.0.15
 - New: `fileRules` websocket command -- a real port of the original
   `actionFileRules`, built on the already-existing/already-tested

@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.15
+Version:        1.0.16
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,16 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.16-1
+- Add: MuteList (dashboard's Mute/Block panel), uiLogout (dashboard's
+  Logout button), OptionalHelp/OptionalHelpList/OptionalHelpRemove/
+  OptionalHelpAll ("help seed this directory"), announcerStats
+  (all-sites tracker aggregation), feedSearch (cross-site feed
+  full-text search), filterIncludeAdd/filterIncludeRemove (subscribe
+  to another site's block/mute list), and chartDbQuery (a real,
+  queryable chart.db for the dashboard's Charts page). All found
+  missing auditing every bundled site's own websocket calls against
+  this stack's registered commands.
 * Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.15-1
 - Add: fileRules websocket command (a real port of the original
   actionFileRules) -- fixes the Sidebar plugin's own Sign/Publish menu
