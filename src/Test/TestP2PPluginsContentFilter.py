@@ -91,6 +91,44 @@ class TestP2PPluginsContentFilterStorage:
             second = ContentFilterSiteManager(data_dir)  # Fresh instance, same data_dir
             assert second.add("1PersistedBlockAAAAAAAAAAAAA") is False
 
+    def testIncludeAddMergesMutesFromIncludedSite(self):
+        """Real port of the original's includeAdd/includeUpdateAll --
+        isMuted()/isSiteblocked() are the single enforcement point every
+        real caller (SiteManagerPlugin.add(), SitePlugin.needFile(),
+        SiteStoragePlugin.updateDbFile()) already goes through, so
+        extending them to also check include_filters is the entire
+        enforcement story; see storage.py's own module docstring."""
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            site_manager = ContentFilterSiteManager(data_dir)
+            from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+
+            included_address = "1IncludedSiteAAAAAAAAAAAAAAA"
+            included_site = site_manager.add(included_address)
+            included_path = included_site.storage.getPath("content.json")
+            included_path.parent.mkdir(parents=True, exist_ok=True)
+            included_path.write_text(json.dumps({
+                "mutes": {"1MutedByIncludeAAAAAAAAAAAA": {"reason": "spam"}},
+            }))
+
+            assert smp.filter_storage.isMuted("1MutedByIncludeAAAAAAAAAAAA") is False
+            smp.filter_storage.includeAdd(included_address, "content.json", "test include")
+            assert smp.filter_storage.isMuted("1MutedByIncludeAAAAAAAAAAAA") is True
+
+            smp.filter_storage.includeRemove(included_address, "content.json")
+            assert smp.filter_storage.isMuted("1MutedByIncludeAAAAAAAAAAAA") is False
+
+    def testIncludeUpdateAllSilentlySkipsUnknownSite(self):
+        """No target site locally known -- same silent-skip contract the
+        original's own includeUpdateAll() has, not an error."""
+        with tempfile.TemporaryDirectory() as d:
+            data_dir = pathlib.Path(d)
+            ContentFilterSiteManager(data_dir)
+            from P2P.plugins.ContentFilter import SiteManagerPlugin as smp
+
+            smp.filter_storage.includeAdd("1NeverLoadedSiteAAAAAAAAAAA1", "content.json")
+            assert smp.filter_storage.isMuted("1AnyAddressAAAAAAAAAAAAAAAA") is False
+
 
 class TestP2PPluginsContentFilterCommands:
     def testSiteblockAddListGetRemoveRoundTrip(self):
@@ -166,6 +204,134 @@ class TestP2PPluginsContentFilterCommands:
         assert add_reply["result"] == "ok"
         assert list_reply["result"]["1AuthAddressAAAAAAAAAAAAAAAA"]["cert_user_id"] == "alice@example"
         assert remove_reply["result"] == "ok"
+
+    def testMuteListAlsoRegisteredUnderOriginalCasing(self):
+        """The real bundled dashboard site's own MuteList.coffee calls
+        Page.cmd("MuteList", ...) -- the original legacy-cased name --
+        not the camelCase muteList this port otherwise settled on. Found
+        auditing every bundled site's own Page.cmd() calls against this
+        stack's registered commands (the same investigation that found
+        fileRules missing for ZeroMail). Both names must read the exact
+        same live storage, not two independent copies."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                admin_site = site_manager.add("1TestCfMuteCasingAdminSiteA1")
+                admin_site.permissions = ["ADMIN"]
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        await _call(ws, "muteAdd", {
+                            "auth_address": "1AuthAddressCasingAAAAAAAAAA",
+                            "cert_user_id": "bob@example",
+                            "reason": "spam",
+                        }, msg_id=1)
+                        lower_reply = await _call(ws, "muteList", msg_id=2)
+                        upper_reply = await _call(ws, "MuteList", msg_id=3)
+                        return lower_reply, upper_reply
+
+        lower_reply, upper_reply = compat.run(scenario)
+        assert lower_reply["result"] == upper_reply["result"]
+        assert upper_reply["result"]["1AuthAddressCasingAAAAAAAAAA"]["cert_user_id"] == "bob@example"
+
+    def testFilterIncludeAddListRemoveRoundTrip(self):
+        """Real port of the original's actionFilterIncludeAdd/List/Remove
+        -- ported now that mutes exist (the only real prerequisite the
+        original deferral cited). filters=True expands each include with
+        the referenced site's own current mutes, matching the real
+        dashboard site's own MuteList.updateFilterIncludes() call shape
+        (Page.cmd("FilterIncludeList", {all_sites: true, filters: true}))."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                admin_address = "1TestFilterIncludeAdminSiteA1"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+
+                included_address = "1TestFilterIncludeTargetSite2"
+                included_site = site_manager.add(included_address)
+                included_path = included_site.storage.getPath("content.json")
+                included_path.parent.mkdir(parents=True, exist_ok=True)
+                included_path.write_text(json.dumps({"mutes": {"1FilterIncludedMutedAAAAAAA": {}}}))
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        add_reply = await _call(ws, "filterIncludeAdd", {
+                            "inner_path": "content.json", "description": "test", "address": included_address,
+                        }, msg_id=1)
+                        list_reply = await _call(
+                            ws, "FilterIncludeList", {"all_sites": True, "filters": True}, msg_id=2,
+                        )
+                        remove_reply = await _call(ws, "filterIncludeRemove", {
+                            "inner_path": "content.json", "address": included_address,
+                        }, msg_id=3)
+                        list_after = await _call(ws, "FilterIncludeList", {"all_sites": True}, msg_id=4)
+                        return add_reply, list_reply, remove_reply, list_after
+
+        add_reply, list_reply, remove_reply, list_after = compat.run(scenario)
+        assert add_reply["result"] == "ok"
+        assert len(list_reply["result"]) == 1
+        assert list_reply["result"][0]["address"] == "1TestFilterIncludeTargetSite2"
+        assert list_reply["result"][0]["mutes"] == {"1FilterIncludedMutedAAAAAAA": {}}
+        assert remove_reply["result"] == "ok"
+        assert list_after["result"] == []
+
+    def testFilterIncludeAddOnOwnSiteNeedsNoAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                address = "1TestFilterIncludeSelfSiteAA1"
+                site = site_manager.add(address)  # No ADMIN permission
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        add_reply = await _call(ws, "filterIncludeAdd", {"inner_path": "content.json"}, msg_id=1)
+                        list_reply = await _call(ws, "FilterIncludeList", msg_id=2)
+                        return add_reply, list_reply
+
+        add_reply, list_reply = compat.run(scenario)
+        assert add_reply["result"] == "ok"
+        assert list_reply["result"][0]["address"] == "1TestFilterIncludeSelfSiteAA1"
+
+    def testFilterIncludeAddForDifferentSiteRequiresAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                address = "1TestFilterIncludeNonAdminA1"
+                site = site_manager.add(address)  # No ADMIN permission
+                site_manager.add("1TestFilterIncludeOtherSiteA2")
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "filterIncludeAdd", {
+                            "inner_path": "content.json", "address": "1TestFilterIncludeOtherSiteA2",
+                        })
+
+        reply = compat.run(scenario)
+        assert "error" in reply["result"]
+
+    def testFilterIncludeListAllSitesRequiresAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                address = "1TestFilterIncludeListNonAdmA1"
+                site = site_manager.add(address)  # No ADMIN permission
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "FilterIncludeList", {"all_sites": True})
+
+        reply = compat.run(scenario)
+        assert "error" in reply["result"]
 
     def testContentFilterDashboardPageListsAndRemoves(self):
         """siteblockAdd was reachable (the Sidebar's "Delete site ->

@@ -89,14 +89,13 @@ read-only (fileGet/fileList/dirList), same scope _resolveCorsPath()
 itself is limited to, and there's still no hasSitePermission() cross-site
 bridge or actionPermissionDetails.
 
+announcerStats (the ALL-sites admin aggregation, as opposed to
+announcerInfo's per-site report) is ported now too -- see its own
+docstring for why it's still a genuine no-op until a tracker plugin
+exists, not dead code.
+
 Still NOT ported, because the thing they need doesn't exist in this stack
 (or isn't a good match for a headless command handler):
-  - announcerStats (the ALL-sites admin aggregation, as opposed to
-    announcerInfo's per-site report -- the original filters by
-    self.site.announcer.getTrackers(), which is always [] in this
-    stack's core with no tracker plugins registered yet, so a faithful
-    port would always return {}; not worth the extra surface for
-    something that can't do anything until a tracker plugin exists).
   - serverUpdate (the original's self-update-and-restart flow -- no
     equivalent of the global `main` module server handles this package
     deliberately has, see P2P/app.py's own module docstring, and no
@@ -1873,6 +1872,29 @@ async def _cmdServerShutdown(session, params):
     return "ok"
 
 
+@command("uiLogout")
+async def _cmdUiLogout(session, params):
+    """Real port of the original disabled-UiPassword plugin's own
+    actionUiLogout: the dashboard's "Logout" button (Dashboard.
+    prototype.handleLogoutClick) calls this over the websocket rather than
+    navigating to /Logout directly, so without it the button silently did
+    nothing -- found live, auditing every bundled site's own Page.cmd()
+    calls against this stack's registered commands (the same investigation
+    that found fileRules missing for ZeroMail).
+
+    The original pushes a client-side "redirect" command carrying a
+    session_id query param /Logout then re-checks against the request's
+    own cookie (a CSRF-style guard); this stack's _handleLogout doesn't
+    need that param at all -- it already reads the session cookie directly
+    off the redirected request -- so this only sends "/Logout" verbatim.
+    Same session.push("redirect", ...) mechanism this file already relies
+    on for out-of-band client-side navigation (the wrapper's own "redirect"
+    handling in src/Ui/media/all.js is unconditional, not new)."""
+    _requireAdmin(session)
+    session.push("redirect", "/Logout")
+    return "ok"
+
+
 # -- Db --
 
 @command("dbQuery")
@@ -2042,6 +2064,51 @@ async def _cmdServerErrors(session, params):
 @command("announcerInfo")
 async def _cmdAnnouncerInfo(session, params):
     return formatAnnouncerInfo(session, _requireSite(session))
+
+
+@command("announcerStats")
+async def _cmdAnnouncerStats(session, params):
+    """Real port of the original's actionAnnouncerStats: the ALL-sites
+    admin aggregation (as opposed to announcerInfo's single-site report,
+    the one already ported) the real dashboard site's own Charts/Sites
+    pages use for a combined tracker-health view -- found live, auditing
+    every bundled site's own Page.cmd() calls against this stack's
+    registered commands (the same investigation that found fileRules
+    missing for ZeroMail).
+
+    Scoped to trackers the CONNECTED site's own announcer actually uses
+    (getTrackers()), matching the original's own self.site.announcer.
+    getTrackers() filter -- not literally every tracker any site happens
+    to know about. num_* counters sum across every site sharing a
+    tracker; every other field takes whichever site has the most recent
+    real data (highest time_request with a non-empty status), exactly
+    like the original. A genuine no-op (empty dict) today, not a stub --
+    SiteAnnouncer.getTrackers() returns [] in core until a tracker
+    plugin actually registers one (see that module's own docstring),
+    same "honest, not a lie" contract TrackerStats.all() itself already
+    documents for exactly this use."""
+    site = _requireAdmin(session)
+    announcers = getattr(session.app, "announcers", None) or {}
+    connected_announcer = announcers.get(site.address)
+    trackers = set(connected_announcer.getTrackers()) if connected_announcer else set()
+
+    back: dict = {}
+    sites = getattr(session.app, "sites", None) or {}
+    for other_address in sites:
+        other_announcer = announcers.get(other_address)
+        if other_announcer is None:
+            continue
+        for tracker, stats in other_announcer.stats.all().items():
+            if tracker not in trackers:
+                continue
+            entry = back.setdefault(tracker, {})
+            is_latest_data = bool(stats["time_request"] > entry.get("time_request", 0) and stats["status"])
+            for key, val in stats.items():
+                if key.startswith("num_"):
+                    entry[key] = entry.get(key, 0) + val
+                elif is_latest_data:
+                    entry[key] = val
+    return back
 
 
 @command("siteListModifiedFiles")

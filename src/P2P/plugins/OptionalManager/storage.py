@@ -16,7 +16,7 @@ from pathlib import Path
 class OptionalFilesStorage:
     def __init__(self, file_path: Path):
         self.file_path = file_path
-        self.file_content: dict = {"files": {}, "limit": None}
+        self.file_content: dict = {"files": {}, "limit": None, "optional_help": {}, "autodownload_optional": False}
         self.load()
 
     def load(self) -> None:
@@ -24,9 +24,16 @@ class OptionalFilesStorage:
             try:
                 self.file_content = json.loads(self.file_path.read_text(encoding="utf8"))
             except (OSError, ValueError):
-                self.file_content = {"files": {}, "limit": None}
+                self.file_content = {"files": {}, "limit": None, "optional_help": {}, "autodownload_optional": False}
         self.file_content.setdefault("files", {})
         self.file_content.setdefault("limit", None)
+        # "optional_help" mirrors the original's site.settings["optional_help"]
+        # (directory -> title, the set of directories this node actively
+        # helps seed) and "autodownload_optional" its site.settings
+        # ["autodownloadoptional"] -- see commands.py's own OptionalHelp*
+        # docstrings for why they live in this sidecar instead.
+        self.file_content.setdefault("optional_help", {})
+        self.file_content.setdefault("autodownload_optional", False)
 
     def save(self) -> None:
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
@@ -55,4 +62,25 @@ class OptionalFilesStorage:
 
     def setLimit(self, limit) -> None:
         self.file_content["limit"] = limit
+        self.save()
+
+    def getOptionalHelp(self) -> dict:
+        return self.file_content["optional_help"]
+
+    def setOptionalHelp(self, directory: str, title: str) -> None:
+        self.file_content["optional_help"][directory] = title
+        self.save()
+
+    def removeOptionalHelp(self, directory: str) -> bool:
+        if directory not in self.file_content["optional_help"]:
+            return False
+        del self.file_content["optional_help"][directory]
+        self.save()
+        return True
+
+    def getAutodownloadOptional(self) -> bool:
+        return self.file_content["autodownload_optional"]
+
+    def setAutodownloadOptional(self, value: bool) -> None:
+        self.file_content["autodownload_optional"] = value
         self.save()

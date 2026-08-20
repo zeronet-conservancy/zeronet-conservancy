@@ -20,11 +20,22 @@ nothing is followed anywhere until feedFollow is called for at least one
 site, so the aggregation loop below simply doesn't execute -- this isn't
 a stub, it's what the real logic does with no input.
 
+feedSearch is ported now too, found live auditing every bundled site's
+own Page.cmd() calls against this stack's registered commands (the same
+investigation that found fileRules missing for ZeroMail). Unlike
+feedQuery (aggregates only the CURRENT USER's own followed queries),
+feedSearch is a LIKE-based full-text search across every KNOWN site's
+own dbschema.json "feeds" queries, with optional "site:"/"type:" filter
+prefixes parsed out of the search text (parseSearch(), same regex split
+as the original). Reads each site's schema straight off disk via
+SiteStorage.getDbSchema() -- same "answered directly from disk, not a
+cached copy" choice this stack's own OptionalManager plugin already
+made, for the same reason: no schema-caching layer exists here to keep
+in sync with an already-open db's own in-memory schema.
+
 Deliberately NOT ported from actionFeedQuery: the ":params" placeholder
 substitution via util.helper.sqlquote (an advanced feed-query feature
-none of the queries ZeroHello ships with actually use) and
-actionFeedSearch (a separate, LIKE-based full-text search action nothing
-in this session's live testing exercised).
+none of the queries ZeroHello ships with actually use).
 
 formatSiteInfo()'s feed_follow_num field IS ported, directly in
 P2P/Ui/commands.py's formatSiteInfo() rather than here -- that function
@@ -129,4 +140,91 @@ async def _cmdFeedQuery(session, params):
     return {
         "rows": rows, "stats": stats, "num": len(rows), "sites": num_sites,
         "taken": round(time.time() - total_s, 3),
+    }
+
+
+def _parseSearch(search: str):
+    parts = re.split(r"(site|type):", search)
+    if len(parts) > 1:  # Found a filter
+        search_text = parts[0]
+        parts = [part.strip() for part in parts]
+        filters = dict(zip(parts[1::2], parts[2::2]))
+    else:
+        search_text = search
+        filters = {}
+    return search_text, filters
+
+
+@command("feedSearch")
+async def _cmdFeedSearch(session, params):
+    _requireAdmin(session)
+    site_manager = _requireSiteManager(session)
+    search = _param(params, "search", 0, "") or ""
+    limit = _param(params, "limit", 1, 30)
+    day_limit = _param(params, "day_limit", 2, 30)
+
+    search_text, filters = _parseSearch(search)
+
+    rows = []
+    stats = []
+    num_sites = 0
+    total_s = time.time()
+
+    for address, other_site in list(site_manager.sites.items()):
+        if not other_site.storage.hasDbSchema():
+            continue
+
+        if "site" in filters:
+            title = (other_site.content_manager.contents.get("content.json") or {}).get("title", "")
+            if filters["site"].lower() not in (address.lower(), title.lower()):
+                continue
+
+        try:
+            schema = await other_site.storage.getDbSchema()
+        except Exception:
+            continue
+        feeds = schema.get("feeds")
+        if not feeds:
+            continue
+        num_sites += 1
+
+        for name, query in feeds.items():
+            if filters.get("type") and filters["type"] not in query:
+                continue
+
+            s = time.time()
+            try:
+                db_query = DbQuery(query)
+                query_params = []
+                if search_text:
+                    db_query.wheres.append(
+                        "(%s LIKE ? OR %s LIKE ?)" % (db_query.fields["body"], db_query.fields["title"])
+                    )
+                    search_like = "%" + search_text.replace(" ", "%") + "%"
+                    query_params += [search_like, search_like]
+                if day_limit:
+                    date_field = db_query.fields.get("date_added", "date_added")
+                    db_query.wheres.append(
+                        "%s > strftime('%%s', 'now', '-%s day')" % (date_field, day_limit)
+                    )
+                db_query.parts["ORDER BY"] = "date_added DESC"
+                db_query.parts["LIMIT"] = str(limit)
+                res = await other_site.storage.query(str(db_query), query_params)
+                site_rows = [dict(row) for row in res.fetchall()]
+            except Exception as err:
+                stats.append({"site": address, "feed_name": name, "error": str(err), "query": query})
+                continue
+
+            for row in site_rows:
+                date_added = row.get("date_added")
+                if not date_added or date_added > time.time() + 120:
+                    continue
+                row["site"] = address
+                row["feed_name"] = name
+                rows.append(row)
+            stats.append({"site": address, "feed_name": name, "taken": round(time.time() - s, 3)})
+
+    return {
+        "rows": rows, "num": len(rows), "sites": num_sites,
+        "taken": round(time.time() - total_s, 3), "stats": stats,
     }

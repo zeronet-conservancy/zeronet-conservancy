@@ -23,6 +23,19 @@ async def _call(ws, cmd, params=None, msg_id=1):
     return json.loads(await ws.get_message())
 
 
+async def _callAwaitResponse(ws, cmd, params=None, msg_id=1):
+    """Like _call(), but skips over any unprompted server push (e.g.
+    OptionalHelp's own session.push("notification", ...)) that might
+    arrive before the actual response -- _call() assumes the very next
+    message IS the response, which OptionalHelp alone among this
+    plugin's commands doesn't guarantee."""
+    await ws.send_message(json.dumps({"cmd": cmd, "params": params or {}, "id": msg_id}))
+    while True:
+        message = json.loads(await ws.get_message())
+        if message.get("cmd") == "response" and message.get("to") == msg_id:
+            return message
+
+
 async def _declareOptionalFile(site, inner_path, size, content=b""):
     site.content_manager.contents["content.json"] = {
         "files_optional": {inner_path: {"size": size}}
@@ -168,3 +181,66 @@ class TestP2PPluginsOptionalManager:
 
         reply = compat.run(scenario)
         assert "error" in reply
+
+    def testOptionalHelpTracksDirectoryAndCountsKnownFiles(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestOptManSite8AAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                site.content_manager.contents["content.json"] = {
+                    "files_optional": {
+                        "media/a.bin": {"size": 10},
+                        "media/b.bin": {"size": 20},
+                        "other/c.bin": {"size": 99},
+                    }
+                }
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        help_reply = await _callAwaitResponse(
+                            ws, "OptionalHelp", {"directory": "media/", "title": "My media"}, msg_id=1,
+                        )
+                        list_reply = await _callAwaitResponse(ws, "optionalHelpList", msg_id=2)
+                        return help_reply, list_reply
+
+        help_reply, list_reply = compat.run(scenario)
+        assert help_reply["result"] == {"num": 2, "size": 30}
+        assert list_reply["result"] == {"media/": "My media"}
+
+    def testOptionalHelpRemoveDropsDirectory(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestOptManSite9AAAAAAAAAAAA"
+                site = Site(address, pathlib.Path(d))
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        await _callAwaitResponse(ws, "OptionalHelp", {"directory": "media/", "title": "x"}, msg_id=1)
+                        remove_reply = await _callAwaitResponse(ws, "OptionalHelpRemove", {"directory": "media/"}, msg_id=2)
+                        missing_reply = await _callAwaitResponse(ws, "OptionalHelpRemove", {"directory": "media/"}, msg_id=3)
+                        list_reply = await _callAwaitResponse(ws, "optionalHelpList", msg_id=4)
+                        return remove_reply, missing_reply, list_reply
+
+        remove_reply, missing_reply, list_reply = compat.run(scenario)
+        assert remove_reply["result"] == "ok"
+        assert "error" in missing_reply["result"]
+        assert list_reply["result"] == {}
+
+    def testOptionalHelpAllTogglesAutodownload(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestOptManSiteAAAAAAAAAAA10"
+                site = Site(address, pathlib.Path(d))
+
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        on_reply = await _call(ws, "OptionalHelpAll", {"value": True}, msg_id=1)
+                        off_reply = await _call(ws, "OptionalHelpAll", {"value": False}, msg_id=2)
+                        return on_reply, off_reply
+
+        on_reply, off_reply = compat.run(scenario)
+        assert on_reply["result"] is True
+        assert off_reply["result"] is False

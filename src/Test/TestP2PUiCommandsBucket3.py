@@ -1014,6 +1014,79 @@ class TestP2PUiCommandsServerAndAnnouncerInfo:
         reply = compat.run(scenario)
         assert reply["result"]["stats"] == {}
 
+    def testAnnouncerStatsIsANoOpWithNoTrackersRegistered(self):
+        """SiteAnnouncer.getTrackers() returns [] in core with no tracker
+        plugin loaded (see that module's own docstring) -- announcerStats
+        must stay an honest empty dict in that default case, not fabricate
+        data for a tracker nothing actually announced to."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.SiteAnnouncer import SiteAnnouncer
+
+                address = "1TestAnnouncerStatsNoopSiteA1"
+                site = Site(address, pathlib.Path(d))
+                site.permissions = ["ADMIN"]
+                announcer = SiteAnnouncer(site, file_server=None)
+                server = UiServer(sites={address: site}, announcers={address: announcer})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "announcerStats")
+
+        reply = compat.run(scenario)
+        assert reply["result"] == {}
+
+    def testAnnouncerStatsAggregatesAcrossSitesForConnectedSitesTrackers(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                from P2P.SiteAnnouncer import SiteAnnouncer
+
+                class _FakeTrackerAnnouncer(SiteAnnouncer):
+                    def getTrackers(self):
+                        return ["http://tracker.example.com"]
+
+                address_a = "1TestAnnouncerStatsSiteAAAAA1"
+                address_b = "1TestAnnouncerStatsSiteAAAAA2"
+                site_a = Site(address_a, pathlib.Path(d) / "a")
+                site_b = Site(address_b, pathlib.Path(d) / "b")
+                site_a.permissions = ["ADMIN"]
+
+                announcer_a = _FakeTrackerAnnouncer(site_a, file_server=None)
+                announcer_a.stats.recordRequest("http://tracker.example.com")
+                announcer_a.stats.recordSuccess("http://tracker.example.com")
+
+                announcer_b = _FakeTrackerAnnouncer(site_b, file_server=None)
+                announcer_b.stats.recordRequest("http://tracker.example.com")
+                announcer_b.stats.recordSuccess("http://tracker.example.com")
+                # A tracker site_b happens to know about, but NOT one of the
+                # connected site's own getTrackers() -- must not leak in.
+                announcer_b.stats.recordRequest("http://other-tracker.example.com")
+
+                server = UiServer(
+                    sites={address_a: site_a, address_b: site_b},
+                    announcers={address_a: announcer_a, address_b: announcer_b},
+                )
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site_a)) as ws:
+                        return await _call(ws, "announcerStats")
+
+        reply = compat.run(scenario)
+        result = reply["result"]
+        assert result["http://tracker.example.com"]["num_success"] == 2  # summed across both sites
+        assert "http://other-tracker.example.com" not in result
+
+    def testAnnouncerStatsRequiresAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestAnnouncerStatsNonAdminA1"
+                site = Site(address, pathlib.Path(d))  # No ADMIN permission
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "announcerStats")
+
+        reply = compat.run(scenario)
+        assert "error" in reply["result"]
+
 
 class TestP2PUiCommandsSiteListModifiedFiles:
     def testDetectsSizeChangedFileAndSkipsUnchanged(self):

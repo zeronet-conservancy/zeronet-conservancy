@@ -19,10 +19,12 @@ module's own docstring). Still not enforced: a FileRequest.
 actionUpdate()-equivalent (no per-file update-notification protocol
 exists in this stack at all, only the content.json push protocols/
 update.py covers -- see that module's own docstring).
-Deliberately not ported: filter-includes (subscribing to another site's
-shared block/mute list -- needs mutes to exist first, since an include's
-whole point is importing someone else's mute list too). Also not ported:
-the original's
+Filter-includes (subscribing to another already-known site's own block/
+mute list) are ported now too, in this package's own commands.py/
+storage.py -- see storage.py's own module docstring for scope and what's
+still not ported (live refresh on the included file changing).
+
+Deliberately not ported: the original's
 address-hashing "ignore_block" trick for privacy-preserving blocklist
 sharing -- plain address matching only (see storage.py's own docstring).
 The UiRequestPlugin half (actionWrapper's "this site is blocklisted"
@@ -42,7 +44,7 @@ class SiteManagerPlugin:
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         global filter_storage
-        filter_storage = ContentFilterStorage(self.data_dir)
+        filter_storage = ContentFilterStorage(self.data_dir, site_manager=self)
 
     def add(self, address, own=False, ignore_block=False):
         if not ignore_block and filter_storage.isSiteblocked(address):

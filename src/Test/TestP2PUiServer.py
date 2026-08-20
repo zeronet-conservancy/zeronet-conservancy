@@ -134,6 +134,53 @@ class TestP2PUiServer:
         assert shutdown["result"] == "ok"
         assert shutdown_requested == [True]
 
+    def testUiLogoutPushesRedirectToLogoutRoute(self):
+        """The real dashboard site's own Dashboard.prototype.handleLogoutClick
+        calls Page.cmd("uiLogout") rather than navigating to /Logout
+        directly -- found auditing every bundled site's own Page.cmd()
+        calls against this stack's registered commands (the same
+        investigation that found fileRules missing for ZeroMail). Real
+        port of the original disabled-UiPassword plugin's own
+        actionUiLogout: pushes a client-side "redirect" command (already
+        unconditionally handled by src/Ui/media/all.js) to the existing
+        /Logout HTTP route rather than clearing the session cookie itself
+        (a websocket command has no HTTP response to set it on)."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestUiLogoutSiteAAAAAAAAAA1", pathlib.Path(root), permissions=["ADMIN"])
+                server = UiServer(sites={site.address: site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with trio_websocket.open_websocket_url(
+                        base_url.replace("http://", "ws://") +
+                        "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site.wrapper_key
+                    ) as ws:
+                        await ws.send_message(json.dumps({"cmd": "uiLogout", "params": {}, "id": 1}))
+                        messages = [json.loads(await ws.get_message()) for _ in range(2)]
+                        return messages
+
+        messages = compat.run(scenario)
+        by_cmd = {message.get("cmd"): message for message in messages}
+        assert by_cmd["redirect"]["params"] == "/Logout"
+        assert by_cmd["response"]["result"] == "ok"
+
+    def testUiLogoutRequiresAdmin(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                site = Site("1TestUiLogoutNonAdminSiteAA1", pathlib.Path(root))  # No ADMIN permission
+                server = UiServer(sites={site.address: site})
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with trio_websocket.open_websocket_url(
+                        base_url.replace("http://", "ws://") +
+                        "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site.wrapper_key
+                    ) as ws:
+                        await ws.send_message(json.dumps({"cmd": "uiLogout", "params": {}, "id": 1}))
+                        return json.loads(await ws.get_message())
+
+        reply = compat.run(scenario)
+        assert "error" in reply
+
     def testDashboardPagesExposeNativeWebsocketBootstrap(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as root:

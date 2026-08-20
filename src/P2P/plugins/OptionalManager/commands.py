@@ -26,12 +26,32 @@ first time a downloaded-but-untracked file is listed/inspected, rather
 than needing a write-time hook). Cross-site aggregation (address="all")
 and bigfile piece/peer-seed-leech stats are not ported.
 
-Also NOT ported: optionalHelpList/Help/HelpRemove/HelpAll (the
-"distribute help" seeding-priority feature) -- depends on
-site.settings["optional_help"], a settings dict this stack's Site
-doesn't have; a genuinely separate concern from file tracking itself,
-not a small addition on top of what's here.
+optionalHelpList/OptionalHelp/OptionalHelpRemove/OptionalHelpAll (the
+"distribute help" seeding-priority feature) are ported now too, found
+live auditing every bundled site's own Page.cmd() calls against this
+stack's registered commands (the same investigation that found
+fileRules missing for ZeroMail): the real dashboard site's own optional-
+files manager calls these under their original, capitalized names
+(OptionalHelp, not optionalHelp), unlike every other command here.
+site.settings["optional_help"]/["autodownloadoptional"] (a Site-level
+settings dict this stack's Site doesn't have) become two more fields
+in OptionalFilesStorage's own sidecar instead -- same choice this
+module already made for pin state/size limit, for the same reason.
+
+Narrower than the original two ways, both matching this module's own
+existing scope: no cross-site `address` param (the original lets an
+ADMIN dashboard manage a DIFFERENT site's optional files remotely;
+none of optionalFileList/Info/Pin/etc. support that either, so this
+doesn't introduce a new gap, just stays consistent). And OptionalHelpAll
+skips the original's confirm-dialog round trip for a non-ADMIN
+connection before enabling autodownload -- this stack has no server-
+initiated request/response continuation mechanism yet (same gap
+corsPermission's own docstring notes) -- so turning it on always takes
+effect immediately. Not a bug: the original's confirm() was a UX nicety,
+not an actual permission check (the connected session could already
+read/write this site's own settings either way).
 """
+import html
 import shutil
 
 from P2P.ContentManager import _getDirname
@@ -225,3 +245,56 @@ async def _cmdOptionalLimitSet(session, params):
     limit = _param(params, "limit", 0)
     _storageFor(site).setLimit(limit)
     return "ok"
+
+
+@command("optionalHelpList")
+async def _cmdOptionalHelpList(session, params):
+    site = _requireSite(session)
+    return _storageFor(site).getOptionalHelp()
+
+
+@command("OptionalHelp")
+async def _cmdOptionalHelp(session, params):
+    """Marks `directory` as one this node actively helps seed and returns
+    how many currently-known optional files (and total bytes) fall under
+    it -- the original's own SQL COUNT/SUM over its file_optional table,
+    replaced here with the same _listOptionalFiles() scan every other
+    command in this file already uses instead of that table (see this
+    module's own docstring)."""
+    site = _requireSite(session)
+    directory = _param(params, "directory", 0)
+    title = _param(params, "title", 1)
+    storage = _storageFor(site)
+    storage.setOptionalHelp(directory, title)
+
+    num = 0
+    size = 0
+    for inner_path, file_size in _listOptionalFiles(site):
+        if inner_path.startswith(directory):
+            num += 1
+            size += file_size
+
+    session.push("notification", [
+        "done",
+        "You started to help distribute <b>%s</b>.<br><small>Directory: %s</small>"
+        % (html.escape(title), html.escape(directory)),
+        10000,
+    ])
+    return {"num": num, "size": size}
+
+
+@command("OptionalHelpRemove")
+async def _cmdOptionalHelpRemove(session, params):
+    site = _requireSite(session)
+    directory = _param(params, "directory", 0)
+    if _storageFor(site).removeOptionalHelp(directory):
+        return "ok"
+    return {"error": "Not found"}
+
+
+@command("OptionalHelpAll")
+async def _cmdOptionalHelpAll(session, params):
+    site = _requireSite(session)
+    value = bool(_param(params, "value", 0))
+    _storageFor(site).setAutodownloadOptional(value)
+    return value
