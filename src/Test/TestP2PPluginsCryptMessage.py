@@ -233,6 +233,55 @@ class TestP2PPluginsCryptMessage:
         base64.b64decode(reply["result"][0])
         base64.b64decode(reply["result"][1])
 
+    def testAesEncryptAcceptsListStyleParamsLikeRealSiteJs(self):
+        """Regression: found live driving the zeromail SiteBuilder starter
+        through a real "Encrypt & Send message" -- ZeroMail's own client
+        JS calls these commands with a positional LIST, not a dict (e.g.
+        Page.cmd("eciesEncrypt", [key, publickey], ...)). This plugin's
+        own local _param() only ever handled the dict form, silently
+        treating every list-style call as "no arguments given" -- so
+        eciesEncrypt's text came back None, and encoding it crashed
+        (caught by nothing), landing the raw Python exception string in
+        the message's own ciphertext field. Covers the list form for
+        every command real ZeroNet client JS actually uses it for."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                address = "1TestCryptMsgListStyleAAAAAA"
+                site = Site(address, pathlib.Path(d))
+                server = UiServer(sites={address: site})
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        enc = await _call(ws, "aesEncrypt", ["hello world"], msg_id=1)
+                        key, iv, encrypted = enc["result"]
+                        dec = await _call(ws, "aesDecrypt", [iv, encrypted, key], msg_id=2)
+                        return dec
+
+        reply = compat.run(scenario)
+        assert reply["result"] == "hello world"
+
+    def testEciesEncryptAcceptsListStyleParamsLikeRealSiteJs(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                address = "1TestCryptMsgListStyleEciesAA"
+                site = Site(address, data_dir / address)
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        # Real ZeroMail's own call shape: [text, publickey]
+                        # positional, publickey omitted here to hit the
+                        # "encrypt to my own per-site key" default path.
+                        enc = await _call(ws, "eciesEncrypt", ["a secret message"], msg_id=1)
+                        dec = await _call(ws, "eciesDecrypt", [enc["result"]], msg_id=2)
+                        return enc, dec
+
+        enc, dec = compat.run(scenario)
+        assert "error" not in enc  # Not the leaked exception string this bug used to produce
+        assert dec["result"] == "a secret message"
+
     def testEciesDecryptWithWrongPrivatekeyReturnsNone(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:

@@ -69,6 +69,7 @@ class User:
         self.sites: dict = data.get("sites", {})
         self.certs: dict = data.get("certs", {})
         self.settings: dict = data.get("settings", {})
+        self.local_names: dict = data.get("local_names", {})
         self._dirty = False
         self._save_lock = trio.Lock()
 
@@ -91,6 +92,7 @@ class User:
                 user_data["sites"] = self.sites
                 user_data["certs"] = self.certs
                 user_data["settings"] = self.settings
+                user_data["local_names"] = self.local_names
                 _atomicWriteJson(self.users_json_path, users)
 
             s = time.time()
@@ -257,3 +259,42 @@ class User:
         if cert:
             return "%s@%s" % (cert["auth_user_name"], site_data["cert"])
         return None
+
+    def getCertFields(self, address: str):
+        """Bundle the three fields a non-root content.json needs to embed
+        for verifyCert() -- cert_auth_type/cert_user_id/cert_sign -- for
+        whatever cert is currently selected for address. None if no cert
+        is selected (the "use local identity" case has no cert at all).
+        De-duplicates the assembly Ui/commands.py's fileRules originally
+        inlined; ContentManager.signUserContent()'s caller needs the same
+        three fields."""
+        cert = self.getCert(address)
+        if not cert:
+            return None
+        return {
+            "cert_auth_type": cert["auth_type"],
+            "cert_user_id": self.getCertUserId(address),
+            "cert_sign": cert["cert_sign"],
+        }
+
+    def setLocalName(self, auth_address: str, name: str) -> None:
+        """A purely local override: this user's own name for auth_address,
+        independent of whatever auth_user_name/cert_user_id that identity
+        claims for itself. Never published, never synced -- the whole
+        point is that it can't be spoofed by someone else picking a
+        colliding username (see certIssueLocal's own docstring on why
+        self-issued usernames aren't globally unique at all), because
+        it's keyed by the one thing that IS unique: the address itself."""
+        self.local_names[auth_address] = name
+        self.markDirty()
+
+    def getLocalName(self, auth_address: str):
+        return self.local_names.get(auth_address)
+
+    def removeLocalName(self, auth_address: str) -> None:
+        if auth_address in self.local_names:
+            del self.local_names[auth_address]
+            self.markDirty()
+
+    def listLocalNames(self) -> dict:
+        return dict(self.local_names)

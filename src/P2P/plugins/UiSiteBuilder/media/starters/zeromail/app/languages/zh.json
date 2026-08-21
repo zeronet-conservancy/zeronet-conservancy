@@ -1,0 +1,26 @@
+{
+	"Inbox": "收件箱",
+	"Sent": "发件箱",
+	"Contacts": "通讯录",
+	
+	"Reply to this message": "回复这条消息",
+	"New message": "新消息",
+	"Reply message": "回复消息",
+	"Delete messages": "删除消息",
+	"Encrypt & Send message": "加密并发送消息",
+
+	"Loading...": "加载中...",
+	"Loading known AES keys...": "加载已知的 AES 密钥中...",
+	"Decrypting new secrets...": "解密新密钥中...",
+	"Decrypting new messages...": "解密新消息中...",
+	"Loading messages...": "加载消息中...",
+	"Decrypting sent messages...": "解密已发送的消息中...",
+	
+	"From: ": "来自：",
+	"Username": "用户名",
+	"Subject": "主题",
+	"Message": "消息",
+
+	"Delete message": "删除消息",
+	"No message selected": "未选中消息"
+}

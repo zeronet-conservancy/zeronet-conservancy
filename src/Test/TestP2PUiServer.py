@@ -6,6 +6,7 @@ import tempfile
 import httpx
 import trio_websocket
 
+from Crypt import CryptBitcoin
 from P2P.Ui.UiServer import UiServer
 from P2P.Ui.commands import formatSiteInfo
 from P2P.Site import Site
@@ -81,6 +82,123 @@ class TestP2PUiServer:
         assert "1ProviderSite" in by_cmd["notification"]["params"][1]
         assert "certSet" in by_cmd["injectScript"]["params"]
         assert by_cmd["response"]["result"][0]["selected"] is True
+
+    def testCertificateSelectorOffersSelfIssueForDomainAlreadyUsedByAnotherSite(self):
+        """Regression: found live driving the zeromail SiteBuilder starter
+        (P2P.plugins.UiSiteBuilder's own module docstring) through two
+        real sites that both trust the same "local" self-issue domain --
+        after issuing a cert for domain "local" on site A, selecting an
+        identity on a DIFFERENT site B that also trusts "local" showed
+        neither Register nor Issue-local, because _cmdCertSelect's old
+        `if domain in user.certs: continue` treated any cert under that
+        domain name as already covering site B too, regardless of whose
+        auth_address it was actually issued to (certs are keyed by domain
+        name globally, not per-site -- see User.addCert). Site B's own
+        popup must still offer to self-issue its OWN cert for "local"."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                data_dir = pathlib.Path(root)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+
+                site_a = site_manager.add("1TestCertReuseSiteAAAAAAAAAAAA1")
+                site_a.permissions = ["ADMIN"]
+                site_b = site_manager.add("1TestCertReuseSiteBBBBBBBBBBBB1")
+                site_b.permissions = ["ADMIN"]
+
+                provider_privatekey = CryptBitcoin.newPrivatekey()
+                provider_address = CryptBitcoin.privatekeyToAddress(provider_privatekey)
+                user.settings["local_provider_privatekey"] = provider_privatekey
+                user.settings["local_provider_address"] = provider_address
+
+                for site in (site_a, site_b):
+                    site.content_manager.contents["data/users/content.json"] = {
+                        "user_contents": {"cert_signers": {"local": provider_address}}
+                    }
+
+                # Self-issue a cert for site A -- this is the step that
+                # used to poison site B's own popup.
+                await user.issueCert(site_a.address, "local", "web", "alice")
+
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0].replace("http://", "ws://")
+                    async with trio_websocket.open_websocket_url(
+                        base_url + "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site_b.wrapper_key
+                    ) as ws:
+                        await ws.send_message(json.dumps({
+                            "cmd": "certSelect",
+                            "params": {"accepted_domains": ["local"]},
+                            "id": 1,
+                        }))
+                        messages = [json.loads(await ws.get_message()) for _ in range(2)]
+                        return messages
+
+        messages = compat.run(scenario)
+        by_cmd = {message["cmd"]: message for message in messages}
+        assert "Issue local certificate for local" in by_cmd["notification"]["params"][1]
+
+    def testCertificateSelectorLoadsUserContentsAfterRestart(self):
+        """Regression: found live restarting the P2P process after
+        creating a real zeromail SiteBuilder site -- data/users/
+        content.json sits correctly on disk (written once at site-
+        creation time and never touched again), but nothing auto-loads
+        a non-root "includes" file into site.content_manager.contents at
+        Site startup the way root content.json gets read; only whatever
+        a previous call happened to loadContent() during THAT process's
+        lifetime stayed cached. A fresh process (this test's own Site
+        object, which never calls loadContent("data/users/content.json")
+        itself) must still see the real on-disk cert_signers policy."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as root:
+                data_dir = pathlib.Path(root)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+
+                site = site_manager.add("1TestCertReloadSiteAAAAAAAAAA1")
+                site.permissions = ["ADMIN"]
+
+                provider_privatekey = CryptBitcoin.newPrivatekey()
+                provider_address = CryptBitcoin.privatekeyToAddress(provider_privatekey)
+                user.settings["local_provider_privatekey"] = provider_privatekey
+                user.settings["local_provider_address"] = provider_address
+
+                # Real files on disk, exactly as _cmdSiteBuilderCreate
+                # leaves them -- NOT injected into site.content_manager
+                # .contents directly, so this only passes if something
+                # actually loads data/users/content.json from storage.
+                await site.storage.writeJson("content.json", {
+                    "files": {}, "signs": {},
+                    "includes": {"data/users/content.json": {"signers": [], "signers_required": 1}},
+                })
+                await site.storage.writeJson("data/users/content.json", {
+                    "files": {}, "signs": {}, "ignore": ".*",
+                    "user_contents": {"cert_signers": {"local": provider_address}},
+                })
+
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0].replace("http://", "ws://")
+                    async with trio_websocket.open_websocket_url(
+                        base_url + "/ZeroNet-Internal/Websocket?wrapper_key=%s" % site.wrapper_key
+                    ) as ws:
+                        await ws.send_message(json.dumps({
+                            "cmd": "certSelect",
+                            "params": {"accepted_domains": ["local"]},
+                            "id": 1,
+                        }))
+                        messages = [json.loads(await ws.get_message()) for _ in range(2)]
+                        return messages
+
+        messages = compat.run(scenario)
+        by_cmd = {message["cmd"]: message for message in messages}
+        assert "Issue local certificate for local" in by_cmd["notification"]["params"][1]
 
     def testNativeDashboardMenuCommands(self):
         async def scenario():

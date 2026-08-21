@@ -1,0 +1,27 @@
+
+{
+	"Inbox": "Posta in arrivo",
+	"Sent": "Inviata",
+	"Contacts": "Contatti",
+	
+	"Reply to this message": "Rispondi a questo messaggio",
+	"New message": "Nuovo messaggio",
+	"Reply message": "Rispondi al messaggio",
+	"Delete messages": "Elimina messaggi",
+	"Encrypt & Send message": "Cripta e invia messaggio",
+
+	"Loading...": "Caricamento...",
+	"Loading known AES keys...": "Caricamento chiavi AES note...",
+	"Decrypting new secrets...": "Decriptando nuovi segreti...",
+	"Decrypting new messages...": "Decriptando nuovi messaggi...",
+	"Loading messages...": "Caricamento messaggi...",
+	"Decrypting sent messages...": "Decriptando messaggi inviati...",
+	
+	"From: ": "Da：",
+	"Username": "Nome utente",
+	"Subject": "Oggetto",
+	"Message": "Messaggio",
+
+	"Delete message": "Elimina messaggio",
+	"No message selected": "Nessun messaggio selezionato"
+}

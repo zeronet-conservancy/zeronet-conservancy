@@ -32,9 +32,29 @@ Narrower than the original two ways:
     (the calling session gets the new address directly in the RPC
     response, which is what the real dashboard JS acts on) -- consistent
     with those, not a regression specific to this command.
+
+A starter with its own media/starters/<name>/app/ directory (e.g.
+zeromail/) bypasses the shared page-builder _TEMPLATE_DIR entirely and
+copies that full tree verbatim instead -- for a starter that IS a real
+app (its own index.html/js/dbschema.json), not more page-builder content
+to layer over the generic shell. See zeromail/'s own settings.json for
+why it exists: P2P.ContentManager.signUserContent() (added alongside it)
+is what makes a non-owner contributor's write actually publishable at
+all; this starter is the first real consumer, wired through a patched
+copy of ZeroMail's own client JS (2 x certSelect call sites pointed at a
+"local" domain instead of zeroid.bit, plus saveData() calling the new
+contentSign command before sitePublish). A starter's settings.json can
+also set "trust_local_provider_domain" to have this command pre-populate
+data/users/content.json's cert_signers with the CREATING user's own
+local_provider_address (lazily generated here if none exists yet, same
+as issueCertForAuth() would) -- see user_contents_template.json's own
+__LOCAL_PROVIDER_ADDRESS__ substitution below for why this can't just be
+a static file like everything else a starter provides.
 """
 import json
 from pathlib import Path
+
+from Crypt import CryptBitcoin
 
 from P2P.Ui.commands import CommandError, _param, _requireAdmin, _requireSiteManager, _requireUser, command
 
@@ -115,29 +135,93 @@ async def _cmdSiteBuilderCreate(session, params):
     site.permissions = ["ADMIN"]
 
     starter_dir = _starterDir(starter)
+    app_dir = starter_dir / "app"
 
-    for path in sorted(_TEMPLATE_DIR.rglob("*")):
-        if path.is_dir():
-            continue
-        relative = path.relative_to(_TEMPLATE_DIR).as_posix()
-        if relative in _TEMPLATE_SKIP_NAMES or relative.startswith(_TEMPLATE_SKIP_PREFIXES):
-            continue
-        await site.storage.write(relative, path.read_bytes())
-
-    await _copyTree(site, starter_dir, "data/")
-    await _copyTree(site, starter_dir, "data-default/")
-
-    default_content = json.loads((_TEMPLATE_DIR / "content.json-default").read_text())
     try:
         starter_settings = json.loads((starter_dir / "settings.json").read_text())
     except Exception:
         starter_settings = {}
+
+    if app_dir.is_dir():
+        # Full custom app starter (e.g. zeromail): brings its own complete
+        # site tree instead of the shared page-builder template -- see
+        # this starter's own settings.json/README for why (a real
+        # messaging app's index.html/js/dbschema.json, not a generic
+        # blog/portfolio shell the page-builder template provides).
+        for path in sorted(app_dir.rglob("*")):
+            if path.is_dir():
+                continue
+            relative = path.relative_to(app_dir).as_posix()
+            if relative in _TEMPLATE_SKIP_NAMES:
+                continue
+            await site.storage.write(relative, path.read_bytes())
+        default_content = json.loads((app_dir / "content.json-default").read_text())
+    else:
+        for path in sorted(_TEMPLATE_DIR.rglob("*")):
+            if path.is_dir():
+                continue
+            relative = path.relative_to(_TEMPLATE_DIR).as_posix()
+            if relative in _TEMPLATE_SKIP_NAMES or relative.startswith(_TEMPLATE_SKIP_PREFIXES):
+                continue
+            await site.storage.write(relative, path.read_bytes())
+
+        await _copyTree(site, starter_dir, "data/")
+        await _copyTree(site, starter_dir, "data-default/")
+
+        default_content = json.loads((_TEMPLATE_DIR / "content.json-default").read_text())
+
     for key in ("title", "description"):
         value = starter_settings.get(key)
         if value:
             default_content[key] = value
+
+    # A starter can ask to pre-trust THIS node's own local identity
+    # provider (P2P.Ui.commands providerCreate/certIssueLocal) for one
+    # of its own user_contents domains -- the provider address is
+    # generated per-node (lazily, same as issueCertForAuth() does), so
+    # it can't be a static value baked into the starter's own files; it
+    # has to be substituted here, at creation time, into a template.
+    #
+    # The domain name itself also can't stay the starter's own static
+    # "local" -- User.certs is keyed by domain name ALONE, with no
+    # site/auth_address scoping (see User.addCert()), so two DIFFERENT
+    # sites both created from a starter that hardcodes "local" would
+    # collide: issuing a cert for the second site raises "Certificate
+    # already exists with different data for local", since the first
+    # site's cert is already sitting under that exact key. Found live
+    # creating two zeromail sites in the same session -- self-issue
+    # worked for the first, then silently failed for the second even
+    # though the UI offered it. Suffixing the starter's base domain
+    # with a slice of this new site's own address makes it unique per
+    # created site while staying stable for that one site across
+    # restarts (the address never changes once created).
+    user_contents_template_path = starter_dir / "user_contents_template.json"
+    trust_domain = starter_settings.get("trust_local_provider_domain")
+    if user_contents_template_path.is_file() and trust_domain:
+        local_domain = "%s-%s" % (trust_domain, address[1:9].lower())
+        local_provider_address = user.settings.get("local_provider_address")
+        if not local_provider_address:
+            local_provider_privatekey = CryptBitcoin.newPrivatekey()
+            local_provider_address = CryptBitcoin.privatekeyToAddress(local_provider_privatekey)
+            user.settings["local_provider_privatekey"] = local_provider_privatekey
+            user.settings["local_provider_address"] = local_provider_address
+            await user.save()
+        user_contents = json.loads(
+            user_contents_template_path.read_text()
+            .replace("__LOCAL_PROVIDER_ADDRESS__", local_provider_address)
+            .replace("__LOCAL_DOMAIN__", local_domain)
+        )
+        await site.storage.writeJson("data/users/content.json", user_contents)
+        if site.storage.isFile("index.html"):
+            index_html = (await site.storage.read("index.html", mode="r")).replace(
+                "__LOCAL_DOMAIN__", local_domain
+            )
+            await site.storage.write("index.html", index_html.encode("utf-8"))
+
     await site.storage.writeJson("content.json", default_content)
     await site.content_manager.loadContent("content.json")
+    if user_contents_template_path.is_file() and trust_domain:
+        await site.content_manager.loadContent("data/users/content.json")
 
     extend = {"postmessage_nonce_security": True}
     if address_index is not None:

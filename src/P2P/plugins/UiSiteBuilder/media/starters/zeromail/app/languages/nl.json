@@ -1,0 +1,27 @@
+
+{
+    "Inbox": "Postvak In",
+    "Sent": "Postvak Uit",
+    "Contacts": "Contacten",
+
+    "Reply to this message": "Antwoord op dit bericht",
+    "New message": "Nieuw bericht",
+    "Reply message": "Beantwoord bericht",
+    "Delete messages": "Verwijder berichten",
+    "Encrypt & Send message": "Versleutel & verstuur bericht",
+
+    "Loading...": "Laden...",
+    "Loading known AES keys...": "Laden van bekende AES sleutels",
+    "Decrypting new secrets...": "Ontsleutelen van nieuwe geheimen",
+    "Decrypting new messages...": "Ontsleutelen van nieuwe berichten",
+    "Loading messages...": "Laden van berichten...",
+    "Decrypting sent messages...": "Ontsleutelen van verzonden berichten...",
+
+    "From: ": "Van: ",
+    "Username": "Gebruikersnaam",
+    "Subject": "Onderwerp",
+    "Message": "Bericht",
+
+    "Delete message": "Verwijder bericht",
+    "No message selected": "Geen bericht geselecteerd"
+}

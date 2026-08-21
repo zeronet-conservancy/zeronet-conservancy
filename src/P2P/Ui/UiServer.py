@@ -387,6 +387,21 @@ class UiApp:
             return "light"
         return user.settings.get("theme") or "light"
 
+    def _currentSessionUser(self, session: "UiSession"):
+        """Same "peek at whatever user_manager.users already has loaded,
+        no await" convention as _currentUser()/_currentTheme() -- for
+        broadcast() below, which has to stay callable from sync contexts
+        (two lambda callbacks in P2P/app.py can't await it) and iterates
+        potentially many sessions, each possibly a different user in
+        multiuser mode. Keyed by the SESSION's own master_address (set at
+        connect time, see UiSession's own docstring), not a request
+        cookie -- broadcast() has no HTTP request to read one from."""
+        if self.user_manager is None:
+            return None
+        if self.user_manager.multiuser:
+            return self.user_manager.users.get(session.master_address) if session.master_address else None
+        return next(iter(self.user_manager.users.values()), None)
+
     def _currentUser(self, request: Request):
         """Same "peek at whatever user_manager.users already has loaded,
         no await" convention as _currentTheme() -- this runs inside a
@@ -994,7 +1009,23 @@ class UiApp:
                 site = args[0]
                 if session.site is not site:
                     continue
-                info = commands.formatSiteInfo(site)
+                # Real bug, found live: formatSiteInfo(site) with no
+                # site_manager/user silently omits auth_address/
+                # cert_user_id/privatekey (see that function's own
+                # docstring -- those only get added "when a user is
+                # supplied"). Every OTHER setSiteInfo push in this
+                # codebase (certSet, certIssueLocal, contentSign's
+                # sibling commands, ...) passes both; this broadcast
+                # path didn't, so any siteChanged event (sitePublish's
+                # own file_done broadcast, in particular) silently wiped
+                # out a session's already-correct cert_user_id the
+                # instant it fired -- reproduced live: ZeroMail's own
+                # "Create my mailbox" flow calls sitePublish as its very
+                # last step, so the client's site_info lost cert_user_id
+                # moments after a successful registration, snapping the
+                # UI back to "Select username" until a full page reload
+                # re-fetched it correctly from scratch.
+                info = commands.formatSiteInfo(site, self.site_manager, self._currentSessionUser(session))
                 if len(args) > 1 and args[1]:
                     info.update(args[1])
                 session.push("setSiteInfo", info)

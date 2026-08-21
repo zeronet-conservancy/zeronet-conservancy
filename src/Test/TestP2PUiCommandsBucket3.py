@@ -1,3 +1,4 @@
+import base64
 import json
 import pathlib
 import tempfile
@@ -214,6 +215,45 @@ class TestP2PUiCommandsSiteSignPublish:
         assert push["cmd"] == "setSiteInfo"
         assert push["params"]["serving"] is True  # real formatSiteInfo() output, not a stub
         assert unjoined_timed_out is True  # Never joined the channel -- no push
+
+    def testSitePublishBroadcastPreservesCertUserId(self):
+        """Regression: found live driving the zeromail SiteBuilder starter
+        (P2P.plugins.UiSiteBuilder.commands's own module docstring) --
+        "Create my mailbox" ends with a sitePublish call, whose own
+        UiApp.broadcast("siteChanged", ...) used to call
+        formatSiteInfo(site) with no site_manager/user at all, silently
+        omitting cert_user_id/auth_address from the pushed setSiteInfo
+        (see that function's own docstring: those fields are only added
+        "when a user is supplied"). The client's own site_info.cert_user_id
+        -- set correctly moments earlier by certSet's own push -- got
+        wiped out the instant sitePublish's broadcast landed, snapping the
+        UI back to its "no identity selected" state until a full reload."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+
+                privatekey = CryptBitcoin.newPrivatekey()
+                address = CryptBitcoin.privatekeyToAddress(privatekey)
+                site = Site(address, data_dir / address)
+                site.permissions = ["ADMIN"]
+
+                await user.issueCert(address, "local", "web", "alice")
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        await _call(ws, "channelJoin", {"channels": ["siteChanged"]}, msg_id=1)
+                        await ws.send_message(json.dumps(
+                            {"cmd": "sitePublish", "params": {"privatekey": privatekey}, "id": 2}
+                        ))
+                        messages = [json.loads(await ws.get_message()) for _ in range(2)]
+                        push = next(m for m in messages if m.get("cmd") == "setSiteInfo")
+                        return push
+
+        push = compat.run(scenario)
+        assert push["params"]["cert_user_id"] == "alice@local"
 
     def testUpdatePushFromPeerBroadcastsSiteChangedOnReceiver(self):
         """Network-driven push, not a UI command: peer A publishes over
@@ -816,6 +856,69 @@ class TestP2PUiCommandsUserSettings:
         assert global_get["result"] == {"lang": "en"}
 
 
+class TestP2PUiCommandsLocalNames:
+    """User.setLocalName()'s own docstring explains why this exists: a
+    purely local, user-owned override for how an auth_address displays,
+    independent of any cert's self-claimed auth_user_name -- and why
+    localNameSet/Remove are ADMIN-gated while List/Get aren't (matching
+    userSetGlobalSettings's own read/write split)."""
+
+    def testLocalNameSetGetListRemoveRoundTrip(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+
+                address = "1TestLocalNamesSiteAAAAAAAA1"
+                site = Site(address, data_dir / address)
+                site.permissions = ["ADMIN"]
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        set_reply = await _call(ws, "localNameSet", {
+                            "auth_address": "1SomeAuthAddress", "name": "Alice (real one)",
+                        }, msg_id=1)
+                        get_reply = await _call(ws, "localNameGet", {"auth_address": "1SomeAuthAddress"}, msg_id=2)
+                        list_reply = await _call(ws, "localNameList", {}, msg_id=3)
+                        remove_reply = await _call(ws, "localNameRemove", {"auth_address": "1SomeAuthAddress"}, msg_id=4)
+                        list_after_remove = await _call(ws, "localNameList", {}, msg_id=5)
+                        return set_reply, get_reply, list_reply, remove_reply, list_after_remove
+
+        set_reply, get_reply, list_reply, remove_reply, list_after_remove = compat.run(scenario)
+        assert set_reply["result"] == "ok"
+        assert get_reply["result"] == "Alice (real one)"
+        assert list_reply["result"] == {"1SomeAuthAddress": "Alice (real one)"}
+        assert remove_reply["result"] == "ok"
+        assert list_after_remove["result"] == {}
+
+    def testLocalNameSetRequiresAdminButGetAndListDoNot(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+
+                address = "1TestLocalNamesNoAdminSiteAA1"
+                site = Site(address, data_dir / address)  # No ADMIN permission
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        set_reply = await _call(ws, "localNameSet", {
+                            "auth_address": "1SomeAuthAddress", "name": "Injected label",
+                        }, msg_id=1)
+                        get_reply = await _call(ws, "localNameGet", {"auth_address": "1SomeAuthAddress"}, msg_id=2)
+                        list_reply = await _call(ws, "localNameList", {}, msg_id=3)
+                        return set_reply, get_reply, list_reply
+
+        set_reply, get_reply, list_reply = compat.run(scenario)
+        assert "error" in set_reply
+        assert get_reply["result"] is None
+        assert list_reply["result"] == {}
+
+
 class TestP2PUiCommandsDbQuery:
     def testDbQueryReturnsRealRows(self):
         async def scenario():
@@ -910,6 +1013,106 @@ class TestP2PUiCommandsFileRules:
 
         reply = compat.run(scenario)
         assert reply["result"] is False
+
+
+class TestP2PUiCommandsContentSign:
+    """The write-side counterpart to fileRules above: lets a multi-user
+    site's own contributor (a cert, not ADMIN) stage files under their
+    own data/users/<their auth_address>/ directory via fileWrite, then
+    publish a signed content.json for it via contentSign -- see
+    ContentManager.signUserContent()'s own docstring for why this
+    exists (sign()/fileWrite's ADMIN gate deliberately excluded this
+    case until now)."""
+
+    async def _setupContributor(self, data_dir, site_address, site):
+        """A real, unprivileged (no ADMIN) session's worth of state: a
+        user with an auth_address for this site, a self-issued cert for
+        it, and a parent user_contents content.json that already trusts
+        that cert's issuer -- everything contentSign's own permission
+        checks need to succeed, built the same way providerCreate/
+        certIssueLocal actually produce it, not hand-waved."""
+        user_manager = UserManager(data_dir)
+        user = user_manager.create()
+        auth_address = user.getAuthAddress(site_address)
+        cert = await user.issueCert(site_address, "example.bit", "web", "alice")
+        site.content_manager.contents["data/users/content.json"] = {
+            "inner_path": "data/users/content.json",
+            "user_contents": {"permissions": {}, "cert_signers": {"example.bit": cert["provider_address"]}},
+        }
+        return user_manager, auth_address
+
+    def testContentSignEndToEndWithFileWrite(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                address = "1TestContentSignSiteAAAAAAAA"
+                site = Site(address, data_dir / address)
+                site.permissions = []  # Not ADMIN -- a mere contributor
+
+                user_manager, auth_address = await self._setupContributor(data_dir, address, site)
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        write_reply = await _call(ws, "fileWrite", {
+                            "inner_path": "data/users/%s/message.txt" % auth_address,
+                            "content_base64": base64.b64encode(b"hello world").decode(),
+                        }, msg_id=1)
+                        sign_reply = await _call(ws, "contentSign", {
+                            "inner_path": "data/users/%s/content.json" % auth_address,
+                        }, msg_id=2)
+                return write_reply, sign_reply, site.storage.isFile("data/users/%s/content.json" % auth_address)
+
+        write_reply, sign_reply, on_disk = compat.run(scenario)
+        assert write_reply["result"] == "ok"
+        result = sign_reply["result"]
+        assert result["cert_user_id"] == "alice@example.bit"
+        assert "message.txt" in result["files"]
+        assert on_disk is True
+
+    def testContentSignRejectsAnotherUsersDirectory(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                address = "1TestContentSignOtherDirAAAA"
+                site = Site(address, data_dir / address)
+                site.permissions = []
+
+                user_manager, _auth_address = await self._setupContributor(data_dir, address, site)
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "contentSign", {
+                            "inner_path": "data/users/1SomeoneElseEntirely/content.json",
+                        })
+
+        reply = compat.run(scenario)
+        assert "own user directory" in reply["error"]
+
+    def testFileWriteRejectsNonAdminWritingAContentJson(self):
+        """contentSign, not a raw fileWrite, is how a non-ADMIN contributor
+        publishes a content.json -- writing one directly still needs
+        ADMIN, same as before contentSign existed."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                address = "1TestFileWriteNoAdminCJAAAAA"
+                site = Site(address, data_dir / address)
+                site.permissions = []
+
+                user_manager, auth_address = await self._setupContributor(data_dir, address, site)
+
+                server = UiServer(sites={address: site}, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws:
+                        return await _call(ws, "fileWrite", {
+                            "inner_path": "data/users/%s/content.json" % auth_address,
+                            "content_base64": base64.b64encode(b"{}").decode(),
+                        })
+
+        reply = compat.run(scenario)
+        assert "permission" in reply["error"]
 
 
 class TestP2PUiCommandsServerAndAnnouncerInfo:

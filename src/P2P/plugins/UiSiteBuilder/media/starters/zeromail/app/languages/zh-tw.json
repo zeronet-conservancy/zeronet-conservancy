@@ -1,0 +1,26 @@
+{
+	"Inbox": "收件箱",
+	"Sent": "发件箱",
+	"Contacts": "通訊錄",
+	
+	"Reply to this message": "回復這條訊息",
+	"New message": "新訊息",
+	"Reply message": "回復這條訊息",
+	"Delete messages": "刪除訊息",
+	"Encrypt & Send message": "加密並傳送訊息",
+
+	"Loading...": "載入中...",
+	"Loading known AES keys...": "載入已知的 AES 金鑰中...",
+	"Decrypting new secrets...": "解密新密鑰中...",
+	"Decrypting new messages...": "解密新訊息中...",
+	"Loading messages...": "載入訊息中...",
+	"Decrypting sent messages...": "解密已傳送的訊息中...",
+	
+	"From: ": "來自：",
+	"Username": "使用者名稱",
+	"Subject": "主題",
+	"Message": "訊息",
+
+	"Delete message": "刪除訊息",
+	"No message selected": "未選中訊息"
+}

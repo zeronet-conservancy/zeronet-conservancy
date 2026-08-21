@@ -14,6 +14,7 @@ from P2P.plugins.ContentFilter.SiteManagerPlugin import SiteManagerPlugin
 from P2P.plugins.ContentFilter.SitePlugin import SitePlugin, MutedError
 from P2P.plugins.ContentFilter.SiteStoragePlugin import SiteStoragePlugin
 from P2P.plugins.ContentFilter import commands as _cf_commands  # noqa: F401 -- registers siteblock* commands
+from P2P.UserManager import UserManager
 from P2P.Ui.UiServer import UiServer
 from P2P import compat
 
@@ -377,6 +378,49 @@ class TestP2PPluginsContentFilterCommands:
         assert "1TestCfDashMutedAuthAAAAAA3" in before_mutes["result"]
         assert "1TestCfDashBlockedSiteAAAA2" not in after_blocks["result"]
         assert "1TestCfDashMutedAuthAAAAAA3" not in after_mutes["result"]
+
+    def testContentFilterDashboardPageManagesLocalNames(self):
+        """This page grew a third section alongside blocked sites/muted
+        users: User.local_names (P2P.User's own docstring on
+        setLocalName -- a purely local, user-owned display-name override
+        for an address, independent of any cert's self-claimed username).
+        Covers the page rendering localNameList/localNameSet/
+        localNameRemove, and that Add+Remove really mutate User.local_names,
+        not just return "ok"."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = ContentFilterSiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user_manager.create()
+                admin_address = "1TestCfDashNamesAdminSiteAA1"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+                server = UiServer(
+                    sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager,
+                    homepage=admin_address,
+                )
+                async with server.run():
+                    base_url = server.bound_addresses[0]
+                    async with httpx.AsyncClient() as client:
+                        page = await client.get("%s/ContentFilter" % base_url)
+
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        await _call(ws, "localNameSet", {
+                            "auth_address": "1TestCfDashNamedAddressAA2", "name": "Alice (real one)",
+                        }, msg_id=1)
+                        before = await _call(ws, "localNameList", msg_id=2)
+                        await _call(ws, "localNameRemove", {"auth_address": "1TestCfDashNamedAddressAA2"}, msg_id=3)
+                        after = await _call(ws, "localNameList", msg_id=4)
+                        return page.status_code, page.text, before, after
+
+        status, body, before, after = compat.run(scenario)
+        assert status == 200
+        assert "localNameList" in body
+        assert "localNameSet" in body
+        assert "localNameRemove" in body
+        assert before["result"] == {"1TestCfDashNamedAddressAA2": "Alice (real one)"}
+        assert after["result"] == {}
 
 
 class TestP2PPluginsContentFilterEnforcement:

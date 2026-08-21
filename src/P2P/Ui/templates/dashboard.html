@@ -71,7 +71,11 @@
     });
   }
 
-  function renderContentFilter(siteblocks, mutes) {
+  function renderContentFilter(siteblocks, mutes, localNames) {
+    const nameRows = Object.entries(localNames).sort(([a], [b]) => a.localeCompare(b)).map(([address, name]) =>
+      `<tr><td><code>${esc(address)}</code></td><td>${esc(name)}</td>` +
+      `<td><button class="secondary" data-unname="${esc(address)}">Remove</button></td></tr>`
+    ).join("");
     const blockRows = Object.entries(siteblocks).sort(([a], [b]) => a.localeCompare(b)).map(([address, info]) =>
       `<tr><td><code>${esc(address)}</code></td><td>${esc(info.reason ?? "")}</td>` +
       `<td><button class="secondary" data-unblock="${esc(address)}">Remove</button></td></tr>`
@@ -81,6 +85,18 @@
       `<td><button class="secondary" data-unmute="${esc(auth_address)}">Remove</button></td></tr>`
     ).join("");
     content.innerHTML =
+      `<article><header><strong>Local names</strong></header>` +
+      `<p class="muted">Your own label for an address, shown by any app that reads it instead of ` +
+      `whatever username that identity claims for itself. Never published or synced -- yours alone.</p>` +
+      (nameRows
+        ? `<figure class="table-wrap"><table><thead><tr><th>Address</th><th>Name</th><th></th></tr></thead><tbody>${nameRows}</tbody></table></figure>`
+        : `<p class="muted">No local names set.</p>`) +
+      `<div class="grid">` +
+      `<input type="text" id="localname-address" placeholder="Address">` +
+      `<input type="text" id="localname-name" placeholder="Name">` +
+      `<button data-add-localname>Add</button>` +
+      `</div>` +
+      `</article>` +
       `<article><header><strong>Blocked sites</strong></header>` +
       (blockRows
         ? `<figure class="table-wrap"><table><thead><tr><th>Address</th><th>Reason</th><th></th></tr></thead><tbody>${blockRows}</tbody></table></figure>`
@@ -91,6 +107,21 @@
         ? `<figure class="table-wrap"><table><thead><tr><th>Auth address</th><th>Cert user id</th><th>Reason</th><th></th></tr></thead><tbody>${muteRows}</tbody></table></figure>`
         : `<p class="muted">No muted users.</p>`) +
       `</article>`;
+    content.querySelector("button[data-add-localname]").onclick = async () => {
+      const address = content.querySelector("#localname-address").value.trim();
+      const name = content.querySelector("#localname-name").value.trim();
+      if (!address || !name) { setStatus("Address and name are both required.", true); return; }
+      try {
+        const result = await call("localNameSet", {auth_address: address, name});
+        if (result && result.error) { setStatus(result.error, true); return; }
+        setStatus("Name saved.");
+        load();
+      } catch (error) { setStatus(error.message, true); }
+    };
+    content.querySelectorAll("button[data-unname]").forEach(button => button.onclick = async () => {
+      try { await call("localNameRemove", {auth_address: button.dataset.unname}); setStatus("Name removed."); load(); }
+      catch (error) { setStatus(error.message, true); }
+    });
     content.querySelectorAll("button[data-unblock]").forEach(button => button.onclick = async () => {
       try { await call("siteblockRemove", {site_address: button.dataset.unblock}); setStatus("Site unblocked."); load(); }
       catch (error) { setStatus(error.message, true); }
@@ -105,7 +136,7 @@
     config: async () => renderConfig(await call("configList")),
     plugins: async () => renderPlugins(await call("pluginList")),
     sitebuilder: async () => renderSiteBuilder(await call("siteBuilderStarters")),
-    contentfilter: async () => renderContentFilter(await call("siteblockList"), await call("muteList")),
+    contentfilter: async () => renderContentFilter(await call("siteblockList"), await call("muteList"), await call("localNameList")),
   };
 
   async function load() {

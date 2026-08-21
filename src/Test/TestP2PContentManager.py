@@ -538,3 +538,103 @@ class TestP2PContentManagerSign:
         assert new_content["signs"]
         assert file_exists is False
         assert in_contents is False
+
+
+class TestP2PContentManagerSignUserContent:
+    """signUserContent()'s own docstring explains why these round-trip
+    through the real verify side rather than just asserting on the
+    signed dict's shape: there's no legacy implementation left in this
+    repo to translate from, so agreement with verifyContentJson()/
+    verifyCert()/getUserContentRules() (already covered by
+    TestP2PContentManagerCertChain above) IS the spec."""
+
+    async def _setup(self, d):
+        site_privatekey = CryptBitcoin.newPrivatekey()
+        site_address = CryptBitcoin.privatekeyToAddress(site_privatekey)
+        issuer_privatekey = CryptBitcoin.newPrivatekey()
+        issuer_address = CryptBitcoin.privatekeyToAddress(issuer_privatekey)
+        user_privatekey = CryptBitcoin.newPrivatekey()
+        user_address = CryptBitcoin.privatekeyToAddress(user_privatekey)
+
+        storage = SiteStorage(pathlib.Path(d))
+        cm = ContentManager(storage, site_address)
+        cm.contents["data/users/content.json"] = {
+            "inner_path": "data/users/content.json",
+            "user_contents": {"permissions": {}, "cert_signers": {"example.bit": issuer_address}},
+        }
+        cert_sign = CryptBitcoin.sign("%s#web/alice" % user_address, issuer_privatekey)
+        inner_path = "data/users/%s/content.json" % user_address
+        return cm, storage, inner_path, user_privatekey, user_address, cert_sign, issuer_privatekey
+
+    def testSignUserContentRoundTripsThroughVerify(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                cm, storage, inner_path, user_privatekey, user_address, cert_sign, _ = await self._setup(d)
+                await storage.write("data/users/%s/message.txt" % user_address, b"hello world")
+
+                new_content = await cm.signUserContent(
+                    inner_path, user_privatekey, "web", "alice@example.bit", cert_sign,
+                )
+                on_disk = await storage.loadJson(inner_path)
+                return new_content, on_disk, cm, inner_path
+
+        new_content, on_disk, cm, inner_path = compat.run(scenario)
+        assert on_disk == new_content
+        assert "message.txt" in new_content["files"]
+        assert new_content["cert_user_id"] == "alice@example.bit"
+        # Fresh ContentManager, re-verifying from scratch (only the parent
+        # policy pre-loaded, same precondition as any other getRules()
+        # caller) -- proves signUserContent() and verifyContentJson()
+        # actually agree with each other, not just with themselves.
+        cm2 = ContentManager(storage=None, site_address=cm.site_address)
+        cm2.contents["data/users/content.json"] = cm.contents["data/users/content.json"]
+        assert cm2.verifyContentJson(new_content, inner_path=inner_path) is True
+
+    def testSignUserContentDoesNotLeakSiblingUsersFiles(self):
+        """hashFiles()'s base_path scoping -- a user's own content.json
+        must only ever list files inside their own directory, never a
+        different user's, even though both live under the same parent
+        data/users/ tree."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                cm, storage, inner_path, user_privatekey, user_address, cert_sign, _ = await self._setup(d)
+                await storage.write("data/users/%s/message.txt" % user_address, b"mine")
+                await storage.write("data/users/1SomeoneElseEntirely/message.txt", b"not mine")
+
+                return await cm.signUserContent(inner_path, user_privatekey, "web", "alice@example.bit", cert_sign)
+
+        new_content = compat.run(scenario)
+        assert set(new_content["files"].keys()) == {"message.txt"}
+
+    def testSignUserContentWithWrongPrivatekeyRaisesSignError(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                cm, storage, inner_path, _user_privatekey, _user_address, cert_sign, _ = await self._setup(d)
+                wrong_privatekey = CryptBitcoin.newPrivatekey()  # Not this directory's own address
+                try:
+                    await cm.signUserContent(inner_path, wrong_privatekey, "web", "alice@example.bit", cert_sign)
+                    return "no-error"
+                except SignError:
+                    return "raised"
+
+        assert compat.run(scenario) == "raised"
+
+    def testSignUserContentWithUntrustedCertRaisesVerifyError(self):
+        """A cert signed by an address the parent's cert_signers policy
+        doesn't name for that domain must fail self-verification and
+        never reach disk -- signUserContent() must not silently publish
+        something every peer would then reject."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                cm, storage, inner_path, user_privatekey, user_address, _cert_sign, _issuer_privatekey = await self._setup(d)
+                impostor_privatekey = CryptBitcoin.newPrivatekey()
+                bad_cert_sign = CryptBitcoin.sign("%s#web/alice" % user_address, impostor_privatekey)
+                try:
+                    await cm.signUserContent(inner_path, user_privatekey, "web", "alice@example.bit", bad_cert_sign)
+                    return "no-error", storage.isFile(inner_path)
+                except VerifyError:
+                    return "raised", storage.isFile(inner_path)
+
+        result, file_exists = compat.run(scenario)
+        assert result == "raised"
+        assert file_exists is False

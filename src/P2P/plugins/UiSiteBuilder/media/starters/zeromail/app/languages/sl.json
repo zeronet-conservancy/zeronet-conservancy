@@ -1,0 +1,36 @@
+{
+	"Inbox": "Prejeto",
+	"Sent": "Poslano",
+	"Contacts": "Stiki",
+	": No messages": ": Ni sporočil",
+	"Reply to this message": "Odgovori na to sporočilo",
+	"New message": "Novo sporočilo",
+	"Reply message": "Ponovno odpri sporočilo",
+	"Delete messages": "Izbriši sporočilo",
+	"Encrypt & Send message": "Šifriraj & Pošlji sporočilo",
+
+	"Loading...": "Nalaganje ...",
+	"Loading known AES keys...": "Nalaganje znanih AES ključev...",
+	"Decrypting new secrets...": "Dešifriranje novih podatkov ...",
+	"Decrypting new messages...": "Dešifriranje novih sporočil ...",
+	"Loading messages...": "Nalaganje sporočil ...",
+	"Decrypting sent messages...": "Dešifriranje poslanih sporočil ...",
+	"Message sent!": "Sporočilo je poslano!",
+	"Reply to message": "Odgovori na sporočilo",
+
+	"From: ": "Od: ",
+	"To: ": "Za: ",
+	"To:": "Za:",
+	"Username": "Uporabniško ime",
+	"Subject": "Zadeva",
+	"Message": "Sporočilo",
+
+	"Delete message": "Izbriši sporočilo",
+	"No message selected": "Ni izbranih sporočil",
+
+	"Logout": "Odjava",
+
+	" minutes ago": " minut nazaj",
+	" hours ago": " ur nazaj",
+	" days ago": " dni nazaj"
+}

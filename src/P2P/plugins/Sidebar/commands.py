@@ -191,7 +191,14 @@ async def _cmdSidebarGetHtmlTag(session, params):
     is_admin = "ADMIN" in site.permissions
     is_own = site_manager.isOwn(site.address) if site_manager else False
     formatted_info = formatSiteInfo(site, site_manager)
-    return renderSidebarHtml(site, formatted_info, is_own, is_admin, site_manager)
+    provider_info = None
+    if is_admin and getattr(session.app, "user_manager", None) is not None:
+        user = await _requireUser(session)
+        provider_info = {
+            "domain": user.settings.get("local_provider_domain"),
+            "provider_address": user.settings.get("local_provider_address"),
+        }
+    return renderSidebarHtml(site, formatted_info, is_own, is_admin, site_manager, provider_info)
 
 
 @command("siteRecoverPrivatekey")

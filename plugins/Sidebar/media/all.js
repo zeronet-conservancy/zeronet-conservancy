@@ -1289,6 +1289,54 @@ window.initScrollable = function () {
           return false;
         };
       })(this));
+      // Delegated: creating a provider morphdom-swaps the create-form for
+      // the issue-form (different element ids), so a direct .find().on()
+      // bound here at onOpened time would miss #button-provider-issue
+      // after that swap. Same reasoning as the recipient-remove handler
+      // just below.
+      this.tag.off("click touchend", "#button-provider-create").on("click touchend", "#button-provider-create", (function(_this) {
+        return function() {
+          var domain;
+          domain = _this.tag.find("#input-provider-domain").val();
+          if (!domain) {
+            _this.wrapper.notifications.add("provider-create", "error", "Provider domain is required", 5000);
+            return false;
+          }
+          _this.tag.find("#button-provider-create").addClass("loading");
+          _this.wrapper.ws.cmd("providerCreate", [domain], function(res) {
+            _this.tag.find("#button-provider-create").removeClass("loading");
+            if (res && res.error) {
+              _this.wrapper.notifications.add("provider-create", "error", "Provider creation error: " + res.error);
+            } else {
+              _this.wrapper.notifications.add("provider-create", "done", "Identity provider created for " + domain, 5000);
+              _this.updateHtmlTag();
+            }
+          });
+          return false;
+        };
+      })(this));
+      this.tag.off("click touchend", "#button-provider-issue").on("click touchend", "#button-provider-issue", (function(_this) {
+        return function() {
+          var auth_address, domain, username;
+          auth_address = _this.tag.find("#input-provider-issue-address").val();
+          domain = _this.tag.find("#input-provider-issue-domain").val();
+          username = _this.tag.find("#input-provider-issue-username").val();
+          if (!auth_address || !domain || !username) {
+            _this.wrapper.notifications.add("provider-issue", "error", "Address, domain and username are all required", 5000);
+            return false;
+          }
+          _this.tag.find("#button-provider-issue").addClass("loading");
+          _this.wrapper.ws.cmd("certProviderIssue", [auth_address, domain, "web", username], function(res) {
+            _this.tag.find("#button-provider-issue").removeClass("loading");
+            if (res && res.error) {
+              _this.wrapper.notifications.add("provider-issue", "error", "Certificate issue error: " + res.error);
+            } else {
+              _this.wrapper.notifications.add("provider-issue", "done", "Certificate issued! cert_sign: " + res.cert_sign, 0);
+            }
+          });
+          return false;
+        };
+      })(this));
       // Delegated (not .find().on()): recipient rows -- and their Remove
       // buttons -- only exist once at least one recipient's been
       // approved, and updateHtmlTag()'s morphdom-based re-render never

@@ -138,7 +138,7 @@ from Config import config
 from Crypt import CryptAes, CryptBitcoin, CryptEcies, CryptHash
 from util import QueryJson, SafeRe
 
-from ..ContentManager import _getDirname
+from ..ContentManager import SignError, VerifyError, _getDirname
 from ..PluginManager import plugin_manager
 from .UiServer import COMMAND_HANDLERS, command
 
@@ -158,6 +158,64 @@ def _requireAdmin(session):
     if "ADMIN" not in site.permissions:
         raise CommandError("You don't have permission to run this command")
     return site
+
+
+async def _ensureIncludesLoaded(site) -> None:
+    """Non-root "includes"/"user_contents" content.json files (e.g. a
+    multi-user site's data/users/content.json) aren't auto-loaded at
+    site startup the way root content.json is -- only whatever a
+    previous call happened to loadContent() during THIS process's
+    lifetime stays cached in site.content_manager.contents, which is
+    empty for every one of these right after a server restart (Site.py
+    itself never loads them; only code that explicitly needs one, like
+    _cmdSiteBuilderCreate right after writing it, does). Found live:
+    certSelect's own cert_signers lookup silently saw {} for a real,
+    correctly-configured multi-user site (the zeromail SiteBuilder
+    starter) immediately after restarting the server -- nothing had
+    loaded data/users/content.json back into memory yet, even though it
+    was sitting on disk exactly as written. Cheap and idempotent:
+    loadContent() only costs a disk read for paths not already cached,
+    and this only walks root's own declared "includes", not attempting
+    a fuller multi-level sync. Every load is guarded by isFile() first
+    and wrapped defensively -- a site with no content.json on disk yet
+    (a bare fixture, a site still mid-download) must fall through to a
+    no-op here, not raise: an uncaught exception from a missing file
+    crashed the whole websocket connection when this was first added
+    (found live via the test suite itself, not just in-browser)."""
+    root_content = site.content_manager.contents.get("content.json")
+    if root_content is None and site.storage.isFile("content.json"):
+        try:
+            root_content = await site.content_manager.loadContent("content.json")
+        except Exception:
+            root_content = None
+    for include_path in (root_content or {}).get("includes", {}):
+        if include_path not in site.content_manager.contents and site.storage.isFile(include_path):
+            try:
+                await site.content_manager.loadContent(include_path)
+            except Exception:
+                pass
+
+
+async def _requireOwnUserContent(session, site, inner_path: str):
+    """Non-ADMIN write/sign access is scoped to exactly one thing: the
+    connected user's own directory inside a "user_contents" (multi-user)
+    site, named after their own auth_address for this site -- everything
+    else still needs ADMIN (_requireAdmin), same as before fileWrite/
+    contentSign existed. Raises CommandError if inner_path isn't
+    (obviously, by directory name) that user's own; the real permission
+    decision -- whether that address may actually sign for this
+    content.json at all, per the site's own user_contents policy --
+    happens inside ContentManager.signUserContent() itself (via
+    getUserContentRules()), not here."""
+    await _ensureIncludesLoaded(site)
+    user = await _requireUser(session)
+    auth_address = user.getAuthAddress(site.address, create=False)
+    auth_privatekey = user.getAuthPrivatekey(site.address, create=False)
+    if not auth_address or not auth_privatekey:
+        raise CommandError("No local identity for this site")
+    if "/%s/" % auth_address not in ("/" + inner_path):
+        raise CommandError("inner_path is not your own user directory")
+    return user, auth_address, auth_privatekey
 
 
 def _requireSiteManager(session):
@@ -675,12 +733,9 @@ async def _cmdFileRules(session, params):
     if not content and getattr(session.app, "user_manager", None) is not None:
         user = await _requireUser(session)
         cert = user.getCert(site.address)
-        if cert and cert["auth_address"] in site.content_manager.getValidSigners(inner_path):
-            content = {
-                "cert_auth_type": cert["auth_type"],
-                "cert_user_id": user.getCertUserId(site.address),
-                "cert_sign": cert["cert_sign"],
-            }
+        cert_fields = user.getCertFields(site.address)
+        if cert and cert_fields and cert["auth_address"] in site.content_manager.getValidSigners(inner_path):
+            content = cert_fields
     rules = site.content_manager.getRules(inner_path, content)
     if inner_path.endswith("content.json") and rules:
         if content:
@@ -694,10 +749,29 @@ async def _cmdFileRules(session, params):
 
 @command("fileWrite")
 async def _cmdFileWrite(session, params):
-    site = _requireAdmin(session)
+    """ADMIN may write anywhere, same as always. A non-ADMIN connection
+    may still write -- but only a plain file (never a content.json:
+    that needs a cert embedded and a signature, which is contentSign's
+    job, not a raw byte write) inside their own data/users/<their auth_
+    address>/ directory (_requireOwnUserContent) -- the write a multi-
+    user site's own contributor needs to stage a message/post's files
+    before contentSign publishes the content.json listing them."""
+    site = _requireSite(session)
     inner_path = _param(params, "inner_path", 0)
     content_base64 = _param(params, "content_base64", 1)
     content = base64.b64decode(content_base64)
+
+    if "ADMIN" not in site.permissions:
+        if inner_path.endswith("content.json"):
+            raise CommandError("You don't have permission to run this command")
+        try:
+            await _requireOwnUserContent(session, site, inner_path)
+        except CommandError:
+            # Normalize to the same message _requireAdmin's own callers
+            # get -- "no user manager"/"not your own directory" are both
+            # still just "you may not write this", not new information
+            # worth exposing differently than the ADMIN gate always has.
+            raise CommandError("You don't have permission to run this command")
 
     if not inner_path.endswith("content.json"):
         is_private, content_key = await _requirePrivateSiteAccess(session, site)
@@ -710,6 +784,38 @@ async def _cmdFileWrite(session, params):
     if inner_path.endswith("content.json"):
         await site.content_manager.loadContent(inner_path, content_key=site.private_key)
     return "ok"
+
+
+@command("contentSign")
+async def _cmdContentSign(session, params):
+    """Sign a non-root ("user_contents") content.json -- the write-side
+    counterpart to ContentManager.signUserContent(), letting a
+    contributor who only holds a cert (not ADMIN on the site) publish
+    their own data/users/<their auth_address>/content.json, instead of
+    requiring the site owner's siteSign/fileWrite ADMIN gate. Files the
+    new content.json lists must already be written first, via fileWrite
+    (now scoped to allow this same user's own directory too -- see that
+    command's own docstring)."""
+    site = _requireSite(session)
+    inner_path = _param(params, "inner_path", 0)
+    extend = _param(params, "extend", 1, {}) or {}
+    if not inner_path or not inner_path.endswith("content.json"):
+        return {"error": "inner_path must be a content.json path"}
+
+    user, auth_address, auth_privatekey = await _requireOwnUserContent(session, site, inner_path)
+    cert_fields = user.getCertFields(site.address)
+    if not cert_fields:
+        return {"error": "No certificate selected for this site -- issue or select one first"}
+
+    try:
+        content = await site.content_manager.signUserContent(
+            inner_path, auth_privatekey,
+            cert_fields["cert_auth_type"], cert_fields["cert_user_id"], cert_fields["cert_sign"],
+            extend=extend,
+        )
+    except (SignError, VerifyError) as err:
+        return {"error": str(err)}
+    return content
 
 
 @command("fileDelete")
@@ -1047,6 +1153,7 @@ async def _cmdProviderCreate(session, params):
 
     user.settings["local_provider_privatekey"] = provider_privatekey
     user.settings["local_provider_address"] = provider_address
+    user.settings["local_provider_domain"] = domain
     await user.save()
     await site_manager.save()
 
@@ -1061,6 +1168,23 @@ async def _cmdProviderCreate(session, params):
         "provider_address": provider_address,
         "privatekey": provider_privatekey,
         "announced": announced,
+    }
+
+
+@command("providerGet")
+async def _cmdProviderGet(session, params):
+    """Read-only lookup of this node's own local identity-provider, if any.
+
+    Separate from providerCreate (admin-gated, mutating) so the sidebar can
+    poll for existing provider state without ADMIN permission.
+    """
+    user = await _requireUser(session)
+    provider_address = user.settings.get("local_provider_address")
+    domain = user.settings.get("local_provider_domain")
+    return {
+        "has_provider": bool(provider_address),
+        "domain": domain,
+        "provider_address": provider_address,
     }
 
 
@@ -1187,27 +1311,58 @@ async def _cmdCertSelect(session, params):
     # locally without breaking the site's signer trust model. Match the
     # legacy selector's first-use path by linking to each provider's
     # registration site when an accepted domain is not present yet.
+    await _ensureIncludesLoaded(site)
     cert_signers = {}
     for content in site.content_manager.contents.values():
         user_contents = content.get("user_contents", {})
         cert_signers.update(user_contents.get("cert_signers", {}) or {})
         if cert_signers:
             break
+    local_provider_address = user.settings.get("local_provider_address")
     for domain in accepted_domains:
-        if domain in user.certs:
+        # domain in user.certs alone isn't enough: certs are stored keyed
+        # by domain name globally, not per-site, so a domain like "local"
+        # (the convention self-issued certs use -- see certIssueLocal's
+        # own docstring) can already be taken by a DIFFERENT site's cert
+        # under the same name. Found live: signing into a second site
+        # that also uses the "local" domain silently offered neither
+        # "Register" nor "Issue local certificate" for it, because this
+        # check alone treated any same-named cert as already covering
+        # this site too, regardless of whose auth_address it was issued
+        # to -- the accounts list above already gets this right via its
+        # own auth_address comparison; this loop needs the same one.
+        existing_cert = user.certs.get(domain)
+        if existing_cert and existing_cert.get("auth_address") == auth_address:
             continue
         if domain.endswith(".bit") and domain not in cert_signers:
             provider_path = domain
+            signer_address = None
         elif domain in cert_signers:
             provider = cert_signers[domain]
             provider_path = provider[0] if isinstance(provider, (list, tuple)) else provider
+            signer_address = provider_path
         else:
             continue
-        body += (
-            "<a href='/%s' target='_top' class='select cert-register'>"
-            "<b>Register %s</b><small> (create an account)</small></a>"
-            % (html.escape(str(provider_path), quote=True), html.escape(domain))
-        )
+        if local_provider_address and signer_address == local_provider_address:
+            # This site already trusts our own local provider identity as a
+            # signer for this domain, so we can self-issue instead of
+            # registering with an external provider site. An inline input
+            # instead of window.prompt(): a native dialog blocks the whole
+            # tab (confirmed live -- it froze the page under browser
+            # automation), and nothing else in this UI uses one.
+            body += (
+                "<div class='issue-local' data-domain='%s'>"
+                "<b>Issue local certificate for %s</b><small> (using your own identity provider)</small>"
+                "<div class='flex'><input type='text' class='text issue-local-username' placeholder='username'/>"
+                "<a href='#Issue' class='button issue-local-submit'>Issue</a></div></div>"
+                % (html.escape(domain, quote=True), html.escape(domain))
+            )
+        else:
+            body += (
+                "<a href='/%s' target='_top' class='select cert-register'>"
+                "<b>Register %s</b><small> (create an account)</small></a>"
+                % (html.escape(str(provider_path), quote=True), html.escape(domain))
+            )
 
     session.push("notification", ["ask", body])
     session.push("injectScript", """
@@ -1219,6 +1374,26 @@ async def _cmdCertSelect(session, params):
             zeroframe.cmd('certSet', {domain: domain}, function() {
               var notification = item.closest('.notification');
               if (notification) notification.remove();
+            });
+          });
+        });
+        document.querySelectorAll('.notification .issue-local-submit').forEach(function(item) {
+          item.addEventListener('click', function(event) {
+            event.preventDefault();
+            var container = item.closest('.issue-local');
+            var domain = container.getAttribute('data-domain') || '';
+            var input = container.querySelector('.issue-local-username');
+            var username = input ? input.value : '';
+            if (!username) { input.focus(); return; }
+            zeroframe.cmd('certIssueLocal', [domain, 'web', username], function(cert) {
+              if (cert && cert.error) {
+                container.querySelector('small').textContent = ' ' + cert.error;
+                return;
+              }
+              zeroframe.cmd('certSet', {domain: domain}, function() {
+                var notification = item.closest('.notification');
+                if (notification) notification.remove();
+              });
             });
           });
         });
@@ -1665,6 +1840,56 @@ async def _cmdUserSetGlobalSettings(session, params):
     user = await _requireUser(session)
     settings = _param(params, "settings", 0)
     user.settings = settings
+    await user.save()
+    return "ok"
+
+
+@command("localNameList")
+async def _cmdLocalNameList(session, params):
+    """This user's own auth_address -> display-name overrides -- see
+    User.setLocalName()'s own docstring for why this exists instead of
+    (or alongside) a cert's self-claimed auth_user_name/cert_user_id.
+    Read-only and not ADMIN-gated: any site (even one the connected user
+    only holds a cert on, not ADMIN) needs this to render a sender's
+    overridden name, the same way certList's own read is ungated."""
+    user = await _requireUser(session)
+    return user.listLocalNames()
+
+
+@command("localNameGet")
+async def _cmdLocalNameGet(session, params):
+    user = await _requireUser(session)
+    auth_address = _param(params, "auth_address", 0)
+    return user.getLocalName(auth_address)
+
+
+@command("localNameSet")
+async def _cmdLocalNameSet(session, params):
+    """ADMIN-gated (matches userSetGlobalSettings's own gate) even though
+    this data isn't site-specific: local_names is global, so an
+    unprivileged site (one this user merely holds a cert on, not their
+    own) must not be able to silently plant a label on some OTHER
+    address -- e.g. captioning an attacker's own address "Trusted admin"
+    -- that later shows up rendered by a completely different site the
+    same user visits next. Only a site the user actually owns (ADMIN)
+    may write into it."""
+    _requireAdmin(session)
+    user = await _requireUser(session)
+    auth_address = _param(params, "auth_address", 0)
+    name = _param(params, "name", 1)
+    if not auth_address or not name:
+        return {"error": "auth_address and name are required"}
+    user.setLocalName(auth_address, name)
+    await user.save()
+    return "ok"
+
+
+@command("localNameRemove")
+async def _cmdLocalNameRemove(session, params):
+    _requireAdmin(session)
+    user = await _requireUser(session)
+    auth_address = _param(params, "auth_address", 0)
+    user.removeLocalName(auth_address)
     await user.save()
     return "ok"
 

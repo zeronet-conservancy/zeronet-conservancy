@@ -55,10 +55,16 @@ DB-backed caching is a separate, later concern. Likewise getTotalSize()
 here recomputes from self.contents rather than tracking an incremental
 running total on a settings dict that doesn't exist in this scoped model.
 
-sign()/hashFile()/hashFiles() add write-side support for case 1 only --
-root content.json, matching the read side's own root-vs-non-root split.
-Non-root signing (writing to a "user_contents" subdirectory under a cert)
-isn't ported.
+sign()/hashFile()/hashFiles() add write-side support for case 1 (root
+content.json). signUserContent() below adds case 2 (non-root, a
+"user_contents" subdirectory under a cert): unlike sign(), it has no
+original implementation left in this repo's history to port from (the
+pre-trio Content/ContentManager.py was deleted wholesale along with the
+rest of the legacy stack -- see Test/TestP2PContentManager.py's own
+fixtures for the closest thing to a spec, the read-side round-trip
+tests), so its correctness rests on round-tripping through the read
+side's own verifyContentJson()/verifyCert()/getUserContentRules() rather
+than a translation -- see signUserContent()'s own docstring.
 
 Private sites (isPrivate()/wrapContent()/unwrapContent()/encryptFiles(),
 addRecipientKey()/removeRecipientKey()) ARE ported -- re-added from the
@@ -595,15 +601,22 @@ class ContentManager:
             })
         return file_info
 
-    async def hashFiles(self, ignore_pattern=None, optional_pattern=None) -> tuple[dict, dict]:
-        """Hashes every real file under storage into a files_node dict.
-        Root-content.json signing scope only, see sign()'s docstring. Files
-        matching content.json's optional regexp are returned separately, so
-        native signing preserves the original files/files_optional contract.
+    async def hashFiles(self, ignore_pattern=None, optional_pattern=None, base_path: str = "") -> tuple[dict, dict]:
+        """Hashes every real file under storage into a files_node dict,
+        scoped to base_path (site root by default -- root content.json
+        signing scope, see sign()'s docstring). base_path lets
+        signUserContent() scope hashing to one user's own subdirectory:
+        non-root "files" dict keys are relative to the content.json's OWN
+        directory, not the site root (see getFileInfo()'s directory-walk
+        logic), so the walk itself has to be rooted there too -- storage
+        reads still need the full site-relative path, hence full_path
+        below. Files matching content.json's optional regexp are returned
+        separately, so native signing preserves the original files/
+        files_optional contract.
         """
         files_node = {}
         files_optional_node = {}
-        for file_relative_path in await self.storage.walk("", ignore=ignore_pattern):
+        for file_relative_path in await self.storage.walk(base_path, ignore=ignore_pattern):
             file_name = file_relative_path.rsplit("/", 1)[-1]
             if file_name == "content.json":
                 continue
@@ -611,16 +624,19 @@ class ContentManager:
                 continue
             if not self.isValidRelativePath(file_relative_path):
                 continue
-            file_info = await self.hashFile(file_relative_path)
+            full_path = base_path + file_relative_path if base_path else file_relative_path
+            file_info = await self.hashFile(full_path)
             target = files_optional_node if optional_pattern and SafeRe.match(optional_pattern, file_relative_path) else files_node
             target[file_relative_path] = file_info
             piecemap_path = file_info.get("piecemap")
-            if piecemap_path and piecemap_path not in files_node and piecemap_path not in files_optional_node:
-                piecemap_bytes = await self.storage.read(piecemap_path)
-                target[piecemap_path] = {
-                    "sha512": CryptHash.sha512sum(io.BytesIO(piecemap_bytes)),
-                    "size": len(piecemap_bytes),
-                }
+            if piecemap_path:
+                piecemap_key = piecemap_path[len(base_path):] if base_path else piecemap_path
+                if piecemap_key not in files_node and piecemap_key not in files_optional_node:
+                    piecemap_bytes = await self.storage.read(piecemap_path)
+                    target[piecemap_key] = {
+                        "sha512": CryptHash.sha512sum(io.BytesIO(piecemap_bytes)),
+                        "size": len(piecemap_bytes),
+                    }
         return files_node, files_optional_node
 
     def isPrivate(self, content: dict | None = None) -> bool:
@@ -851,6 +867,116 @@ class ContentManager:
                 await self.storage.writeJson(inner_path, envelope)
             else:
                 await self.storage.writeJson(inner_path, new_content)
+            self.contents[inner_path] = new_content
+
+        return new_content
+
+    async def signUserContent(
+        self, inner_path: str, auth_privatekey: str,
+        cert_auth_type: str, cert_user_id: str, cert_sign: str,
+        extend: dict | None = None, filewrite: bool = True,
+    ) -> dict:
+        """Create and sign a NON-root ("user_contents") content.json --
+        the multi-user write path sign() itself deliberately excludes
+        (see that method's own docstring and this file's module
+        docstring for why there's no legacy implementation to port from
+        instead).
+
+        Mirrors sign()'s own load-existing-or-start-fresh / hash / sign /
+        write structure, generalized to an arbitrary inner_path instead
+        of the hardcoded root, with two real differences: file hashing is
+        scoped to inner_path's own directory (hashFiles()'s base_path,
+        matching the non-root "files" dict convention), and the signer
+        proves identity via an embedded cert (cert_auth_type/cert_user_id
+        /cert_sign, what verifyCert() checks) instead of the root's
+        site-address signers_sign.
+
+        Preconditions the caller must arrange (not checked defensively
+        here beyond getRules() returning falsy -- see SignError raised
+        below): the covering "user_contents" content.json (inner_path's
+        immediate parent directory) must already be loaded into
+        self.contents via loadContent(), same as every other getRules()
+        caller requires; auth_privatekey must be the privatekey for the
+        address inner_path's own directory names (getUserContentRules()
+        derives the permitted signer from that directory name, not from
+        any argument here).
+
+        Self-verifies via verifyContentJson() before writing: this is the
+        single highest-value correctness safeguard, since
+        getUserContentRules()'s resolution (permission_rules merging,
+        cert_signers_pattern, banned users) is intricate enough that a
+        hand-built dict could satisfy the signer check below yet still
+        be silently rejected by every peer that verifies it on read --
+        better to fail loudly here, on the writer's own node, than
+        publish something that only fails elsewhere. Raises SignError for
+        this method's own preconditions (no rules, wrong privatekey) and
+        VerifyError (propagated from verifyContentJson()) for anything
+        that would fail peer-side verification -- callers should treat
+        both as "did not publish."
+        """
+        base_path = _getDirname(inner_path)
+
+        if self.contents.get(inner_path):
+            content = dict(self.contents[inner_path])
+        elif self.storage.isFile(inner_path):
+            content = await self.storage.loadJson(inner_path)
+            content.setdefault("files", {})
+            content.setdefault("signs", {})
+        else:
+            content = {"files": {}, "signs": {}, "title": "", "description": ""}
+
+        if extend:
+            for key, val in extend.items():
+                if not content.get(key):
+                    content[key] = val
+
+        files_node, files_optional_node = await self.hashFiles(
+            content.get("ignore"), content.get("optional"), base_path=base_path,
+        )
+        for file_relative_path, file_info in content.get("files_optional", {}).items():
+            if file_relative_path not in files_optional_node:
+                files_optional_node[file_relative_path] = file_info
+
+        new_content = dict(content)
+        for envelope_key in ("privatekey", "keys", "keys_sign", "body"):
+            new_content.pop(envelope_key, None)
+        new_content["files"] = files_node
+        if files_optional_node:
+            new_content["files_optional"] = files_optional_node
+        else:
+            new_content.pop("files_optional", None)
+        new_content["modified"] = int(time.time())
+        new_content["address"] = self.site_address
+        new_content["inner_path"] = inner_path
+        new_content["cert_auth_type"] = cert_auth_type
+        new_content["cert_user_id"] = cert_user_id
+        new_content["cert_sign"] = cert_sign
+
+        rules = self.getRules(inner_path, new_content)
+        if not rules:
+            raise SignError(
+                "No rules found for %s -- is the covering user_contents "
+                "content.json loaded?" % inner_path
+            )
+
+        auth_address = CryptBitcoin.privatekeyToAddress(auth_privatekey)
+        valid_signers = list(rules.get("signers", []))
+        if auth_address not in valid_signers:
+            raise SignError(
+                "Private key invalid! Valid signers: %s, Private key address: %s" %
+                (valid_signers, auth_address)
+            )
+
+        new_content.pop("signs", None)
+        new_content.pop("sign", None)
+        sign_content = json.dumps(new_content, sort_keys=True)
+        sign = CryptBitcoin.sign(sign_content, auth_privatekey)
+        new_content["signs"] = {auth_address: sign} if sign else {}
+
+        self.verifyContentJson(new_content, inner_path=inner_path)
+
+        if filewrite:
+            await self.storage.writeJson(inner_path, new_content)
             self.contents[inner_path] = new_content
 
         return new_content

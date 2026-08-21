@@ -193,6 +193,39 @@ def _renderOwnSettings(body: list, site) -> None:
     )
 
 
+def _renderIdentityProvider(body: list, provider_info: dict) -> None:
+    """Local ZeroID-replacement workflow (P2P.Ui.commands providerCreate/
+    certProviderIssue): lets a node act as its own identity provider
+    instead of registering with an external site like zeroid.bit. This is
+    the admin-facing counterpart to certSelect's self-issue option
+    (P2P.Ui.commands._cmdCertSelect) -- that popup only offers self-issue
+    once a site already trusts this provider's address; creating the
+    provider and handing out certificates for it happens here."""
+    domain = provider_info.get("domain")
+    provider_address = provider_info.get("provider_address")
+    body.append("<li><label>Identity provider</label>")
+    if provider_address:
+        body.append(
+            "<div class='flex'><span class='input text disabled'>%s (%s)</span></div></li>"
+            % (html.escape(domain or ""), html.escape(provider_address))
+        )
+        body.append(
+            "<li><label for='input-provider-issue-address'>Issue certificate: their auth address</label>"
+            "<input type='text' class='text' id='input-provider-issue-address'/></li>"
+            "<li><label for='input-provider-issue-domain'>...for domain</label>"
+            "<input type='text' class='text' value='%s' id='input-provider-issue-domain'/></li>"
+            "<li><label for='input-provider-issue-username'>...username</label>"
+            "<input type='text' class='text' id='input-provider-issue-username'/></li>"
+            "<li><a href='#Issue' class='button' id='button-provider-issue'>Issue certificate</a></li>"
+            % html.escape(domain or "", quote=True)
+        )
+    else:
+        body.append(
+            "<div class='flex'><input type='text' class='text' placeholder='example.bit' id='input-provider-domain'/>"
+            "<a href='#Create' class='button' id='button-provider-create'>Create identity provider</a></div></li>"
+        )
+
+
 def _renderPrivateSite(body: list, site, recipients: dict, pending_requests: dict) -> None:
     """Owner-facing private-site management: current approved recipients
     (with a Remove button each), a pending-requests list delivered via
@@ -268,7 +301,7 @@ def _renderContents(body: list, site) -> None:
     body.append("</div></li>")
 
 
-def renderSidebarHtml(site, formatted_info: dict, is_own: bool, is_admin: bool, site_manager=None) -> str:
+def renderSidebarHtml(site, formatted_info: dict, is_own: bool, is_admin: bool, site_manager=None, provider_info: dict = None) -> str:
     raw_content = site.content_manager.contents.get("content.json") or {}
     title = raw_content.get("title", site.address)
 
@@ -283,6 +316,8 @@ def renderSidebarHtml(site, formatted_info: dict, is_own: bool, is_admin: bool, 
     has_optional = _renderOptionalFileStats(body, site)
     _renderDbInfo(body, site)
     _renderControls(body, site, is_admin)
+    if is_admin and provider_info is not None:
+        _renderIdentityProvider(body, provider_info)
     body.append("</ul>")
 
     if is_admin:

@@ -42,11 +42,17 @@ _PAGE_TEMPLATES = {
 # nothing in context ever supplying it, so <title>/<h1> silently rendered
 # blank) -- found while unifying these pages onto one shared _layout.html,
 # which made every page's title block impossible to ignore.
+#
+# "contentfilter" -> "User management": renamed (route/page key left as
+# "contentfilter" -- no reason to touch routing/tests for a label) once
+# this page grew a Local names section alongside the existing blocked-
+# sites/muted-users tables; blocking was never really the page's own
+# subject, just the first per-address action it happened to expose.
 _PAGE_TITLES = {
     "config": "Configuration",
     "plugins": "Plugins",
     "sitebuilder": "New site",
-    "contentfilter": "Content filters",
+    "contentfilter": "User management",
     "files": "Files",
     "console": "Console",
 }

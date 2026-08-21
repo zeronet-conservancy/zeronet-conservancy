@@ -166,6 +166,50 @@ class TestP2PUser:
         ) is True
 
 
+    def testLocalNamePersistsAcrossReload(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                users_json_path = pathlib.Path(d) / "users.json"
+                user = User(users_json_path)
+                user.setLocalName("1SomeAuthAddress", "Alice (real one)")
+                await user.save()
+                reloaded = User(users_json_path, master_address=user.master_address, data=json.load(users_json_path.open())[user.master_address])
+                return reloaded.getLocalName("1SomeAuthAddress"), reloaded.listLocalNames()
+
+        name, names = compat.run(scenario)
+        assert name == "Alice (real one)"
+        assert names == {"1SomeAuthAddress": "Alice (real one)"}
+
+    def testLocalNameIsIndependentOfCertUserId(self):
+        """The whole point: an address's local name is keyed by the
+        address itself, not whatever auth_user_name a cert (self-issued
+        or otherwise) claims -- two different certs claiming the exact
+        same username can't collide here, and this user's own label
+        survives regardless of what the OTHER side calls themselves."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                user = User(pathlib.Path(d) / "users.json")
+                cert = await user.issueCert(SITE_ADDRESS, "zeronet.local", "web", "alice")
+                user.setLocalName(cert["auth_address"], "The real Alice, not the impostor")
+                return user.getLocalName(cert["auth_address"]), user.getCertUserId(SITE_ADDRESS)
+
+        local_name, cert_user_id = compat.run(scenario)
+        assert local_name == "The real Alice, not the impostor"
+        assert cert_user_id == "alice@zeronet.local"  # Unaffected -- the cert's own claim is untouched
+
+    def testRemoveLocalNameClearsIt(self):
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                user = User(pathlib.Path(d) / "users.json")
+                user.setLocalName("1SomeAuthAddress", "Temp label")
+                user.removeLocalName("1SomeAuthAddress")
+                return user.getLocalName("1SomeAuthAddress"), user.listLocalNames()
+
+        name, names = compat.run(scenario)
+        assert name is None
+        assert names == {}
+
+
 class TestP2PUserManager:
     def testLoadWithNoUsersJsonLeavesEmpty(self):
         async def scenario():
