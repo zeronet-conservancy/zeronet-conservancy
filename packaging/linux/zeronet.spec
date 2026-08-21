@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.16
+Version:        1.0.17
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,29 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Fri Aug 21 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.17-1
+- Add: a self-hosted local identity provider, now actually surfaced in
+  the UI (certSelect popup + Sidebar panel) -- issue and select your
+  own certificates without registering with zeroid.bit.
+- Add: ContentManager.signUserContent(), the missing write path for
+  non-root (multi-user "user_contents") content.json -- lets a site
+  contributor without ADMIN actually publish, via a new contentSign
+  command and a scoped fileWrite relaxation.
+- Add: a real "ZeroMail (local identity)" starter template in the New
+  Site page, a working fork of ZeroMail wired to the new local
+  identity provider instead of zeroid.bit.
+- Add: User.local_names -- a local, per-user address-to-name override,
+  independent of any site's self-claimed username -- with management
+  UI on the renamed "User management" dashboard page (was "Content
+  filters").
+- Fix: several bugs found only by actually driving the new ZeroMail
+  fork live -- a missing wrapper_nonce broke every postMessage from a
+  site, a missing data/archived.json crashed the contacts list, the
+  CryptMessage plugin's own param parsing silently dropped every
+  real (positional) site call, a one-shot Promise meant a fresh
+  mailbox registration never appeared without a manual reload, and
+  the site's cert identity could be silently wiped by an unrelated
+  broadcast right after publishing.
 * Thu Aug 20 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.16-1
 - Add: MuteList (dashboard's Mute/Block panel), uiLogout (dashboard's
   Logout button), OptionalHelp/OptionalHelpList/OptionalHelpRemove/

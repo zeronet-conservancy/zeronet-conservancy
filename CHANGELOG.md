@@ -1,3 +1,65 @@
+### zeronet-conservancy 1.0.17
+- New: a self-hosted local identity provider, now actually reachable
+  from the UI. `providerCreate`/`certIssueLocal` existed as backend
+  commands with no caller anywhere -- the `certSelect` popup now
+  offers "Issue local certificate" whenever a site already trusts your
+  own provider address, and the Sidebar panel gained a section to
+  create a provider and issue certificates for others, for admin
+  sessions. Each site gets a domain unique to itself
+  (`local-<address>`), since certs are stored keyed by domain name
+  alone and a shared fixed domain would collide across sites.
+- New: `ContentManager.signUserContent()` -- the missing write path
+  for a multi-user site's own non-root ("user_contents")
+  content.json. Previously only the root content.json could be
+  signed, so a site contributor holding a cert but not ADMIN could
+  never actually publish anything. Comes with a new `contentSign`
+  command and a scoped relaxation of `fileWrite` so a non-ADMIN
+  session may write (not read) files under their own
+  `data/users/<their auth_address>/` directory.
+- New: a real "ZeroMail (local identity)" starter in the New Site
+  page's template picker -- a working fork of ZeroMail's own client
+  code, patched to self-issue certificates via the new local identity
+  provider instead of requiring zeroid.bit registration. Verified live
+  end to end: create the site, self-issue a certificate, create a
+  mailbox, and send a real encrypted message, all without any external
+  registrar.
+- New: `User.local_names` -- a local, per-user override letting you
+  attach your own display name to any address, independent of
+  whatever username that identity claims for itself via a cert. Never
+  published or synced. New `localNameSet`/`localNameGet`/
+  `localNameList`/`localNameRemove` commands, wired into the ZeroMail
+  fork's own contact/username rendering, with management UI (an
+  Address+Name form and list) added to the dashboard page previously
+  named "Content filters," renamed "User management" to reflect that
+  blocking is only one of the things it now manages.
+- Fix: several real bugs found only by actually driving the new
+  ZeroMail fork live in a browser, none specific to this fork:
+  - ZeroFrame's own `wrapper_nonce` was never sent on outgoing
+    messages, so this stack's own postMessage nonce check silently
+    rejected every message from any site still running the original,
+    pre-nonce ZeroFrame client -- `Page.site_info` never populated.
+  - `data/archived.json` was assumed to always exist by ZeroMail's own
+    `getArchived()`; missing it crashed with a raw exception the first
+    time a username lookup fell back to it.
+  - `P2P.plugins.CryptMessage`'s own local `_param()` helper only
+    understood dict-shaped params, silently treating every real
+    (positional-list) call -- the actual shape every site's own client
+    JS uses -- as "no arguments given." `eciesEncrypt`'s resulting
+    crash string was landing directly in a message's own ciphertext
+    field instead of being caught.
+  - A Promise-like helper's `.then()` callback only ever fires on its
+    *first* resolution; a fresh mailbox registration resolved it a
+    second time and silently never re-rendered, leaving the UI stuck
+    on "Create my mailbox" until a full page reload.
+  - `UiApp.broadcast()`'s `siteChanged` push built `site_info` with no
+    user context at all, so `sitePublish` (which every mailbox
+    registration ends with) was overwriting a session's correct
+    `cert_user_id` with a blank one moments after it was set.
+  - `certSelect`'s "already have a cert for this domain" check didn't
+    scope by `auth_address`, so self-issuing a certificate on one site
+    silently suppressed both the "issue" and "register" options for a
+    second site using the same domain.
+
 ### zeronet-conservancy 1.0.16
 - New: a batch of previously-missing websocket commands, found by
   auditing every bundled site's own calls against this stack's
