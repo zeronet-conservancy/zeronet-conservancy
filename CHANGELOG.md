@@ -1,3 +1,21 @@
+### zeronet-conservancy 1.0.18
+- New: a real "ZeroTalk (local identity)" starter in the New Site
+  page's template picker, alongside 1.0.17's ZeroMail one -- a real
+  vendored copy of ZeroTalk's own client code, patched the same way:
+  `certSelect` redirected to a per-site-unique `local-<addr>` domain
+  instead of `zeroid.bit`/`kxoid.bit`, and `writePublish` (ZeroTalk's
+  own single choke point for topics, comments, and votes -- one
+  function, unlike ZeroMail's own `saveData()`) now calls the
+  `contentSign` command added in 1.0.17 before `sitePublish`.
+  Needed one less fix than ZeroMail: ZeroTalk's own bundled `ZeroFrame`
+  already sent `wrapper_nonce` correctly, and it has no
+  `archived.json`-style missing-file assumption. Verified live end to
+  end: created via SiteBuilder, triggered the real `certSelect`
+  popup, self-issued a certificate, and published a real topic through
+  the actual `publishData` -> `writePublish` -> `contentSign` ->
+  `sitePublish` chain -- confirmed the resulting content.json is
+  signed and correctly attributed on disk.
+
 ### zeronet-conservancy 1.0.17
 - New: a self-hosted local identity provider, now actually reachable
   from the UI. `providerCreate`/`certIssueLocal` existed as backend

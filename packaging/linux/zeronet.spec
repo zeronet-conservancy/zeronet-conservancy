@@ -1,5 +1,5 @@
 Name:           zeronet-conservancy
-Version:        1.0.17
+Version:        1.0.18
 Release:        1%{?dist}
 Summary:        ZeroNet Conservancy desktop application
 License:        GPL-3.0-or-later
@@ -20,6 +20,13 @@ ln -s /opt/zeronet-conservancy/ZeroNet %{buildroot}/usr/bin/zeronet-conservancy
 /usr/bin/zeronet-conservancy
 
 %changelog
+* Fri Aug 21 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.18-1
+- Add: a real "ZeroTalk (local identity)" starter template in the New
+  Site page, alongside 1.0.17's ZeroMail one -- a working fork of
+  ZeroTalk wired to the local identity provider instead of
+  zeroid.bit/kxoid.bit, using the same contentSign-based publish path.
+  Needed one less fix than ZeroMail: ZeroTalk's own bundled ZeroFrame
+  already sent wrapper_nonce correctly.
 * Fri Aug 21 2026 ZeroNet Conservancy <maintainers@zeronetconservancy.org> - 1.0.17-1
 - Add: a self-hosted local identity provider, now actually surfaced in
   the UI (certSelect popup + Sidebar panel) -- issue and select your
