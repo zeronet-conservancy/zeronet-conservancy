@@ -1,0 +1,36 @@
+{
+    "Inbox": " صندوق ورودی",
+    "Sent": " صندوق ارسالی",
+    "Contacts": "مخاطبین",
+    ": No messages": "پیامی نیست",
+    "Reply to this message": "به این پیام پاسخ دهید",
+    "New message": "پیام جدید",
+    "Reply message": "پاسخ به پیام",
+    "Delete messages": "حذف پیام‌ها",
+    "Encrypt & Send message": "رمزگذاری و ارسال پیام",
+    "Loading...": "در حال بارگذاری...",
+    "Loading known AES keys...": "بارگذاری کلید‌های AES شناخته‌شده...",
+    "Decrypting new secrets...": "رمزگشایی رمزهای جدید...",
+    "Decrypting new messages...": "رمزگشایی پیام‌های جدید...",
+    "Loading messages...": "بارگذاری پیام‌ها...",
+    "Decrypting sent messages...": "رمزگشایی پیام‌های ارسالی...",
+    "Message sent!": "پیام ارسال شد!",
+    "Reply to message": "پاسخ به پیام",
+    
+    "From: ": "از:",
+    "To: ": "به:",
+    "To:": "به:",
+    "Username": "نام کاربری",
+    "Subject": "موضوع:",
+    "Message": "پیام",
+    
+    "Delete message": "حذف پیام",
+    "No message selected": "هیچ پیامی انتخاب نشده است",
+    
+    "Logout": "خروج",
+
+    " minutes ago": "دقایقی پیش",
+    " hours ago": "ساعاتی پیش",
+    " days ago": "چندین روز پیش",
+    "Just Now": "همین الان"
+}

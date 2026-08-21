@@ -1,0 +1,42 @@
+{
+	"Follow in Newsfeed": "Følg i nyhedsstrøm",
+	"Following": "Følger",
+	"Comments in this topic": "Kommentarer i dette emne",
+	"New topics": "Nye emner",
+	"New topics in this group": "Nye emner i denne gruppe",
+	"Username mentions": "Dit brugernavn nævnes",
+	"All comments": "Alle kommentarer",
+
+	"Main": "Hjem",
+	"Loading...": "Indlæser...",
+	" + Start new topic": " + Start emne",
+	"new topic": " nyt emne",
+	"Topic title": " Titel",
+	"Topic description": " Beskrivelse",
+	"Add new topic": "Tilføj nyt emne",
+
+	"Newest topics": "Nyeste emner",
+    "More topics": "Flere emner",
+    "More comments": "Flere kommentarer",
+	"Sign in as...": "Log ind som ...",
+	"Submit comment": "Opret kommentar",
+	"Please sign in": "Log venligst ind!",
+	"new comment": "ny kommentar",
+
+	"Reply": "Svar",
+
+	"stickied": "låst",
+	" posted ": " oprettet ",
+	"last ": "sidste ",
+	" comment": " kommentar",
+	" comments": " kommentar",
+	"0 comments": "0 kommentarer",
+	"last activity": "sidste aktivitet",
+	"&#9473; started by ": "&#9473; started af: ",
+
+	" minutes ago": " minut(ter) siden",
+	" hours ago": " time(r) siden",
+	" days ago": " dag(e) siden",
+	"on ": "",
+	"Just now": "Netop nu"
+}

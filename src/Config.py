@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 from rich import print
 
-VERSION = "0.7.10+"
+VERSION = "1.0.18"
 
 class StartupError(RuntimeError):
     def __init__(self, message, *paths):
@@ -35,15 +35,32 @@ class Config:
             self.commit = Git.commit() or 'unknown'
             self.version = VERSION
             self.platform = 'source'
+            self.build_date = None
         else:
             self.build_type = Build.build_type
             self.branch = Build.branch
             self.commit = Build.commit
             self.version = Build.version or VERSION
             self.platform = Build.platform
+            self.build_date = getattr(Build, 'build_date', None)
         self.is_android = hasattr(sys, 'getandroidapilevel')
         self.version_full = f'{self.version} ({self.build_type} from {self.branch}-{self.commit})'
-        self.user_agent = "conservancy"
+        # Exposed to sites as serverInfo's "version" field for non-ADMIN
+        # connections (see P2P/Ui/commands.py's formatServerInfo()) --
+        # deliberately generic/short, not this build's real version, same
+        # "don't expose user version" intent the original ZeroNet's own
+        # ContentManager.sign() comment already documented for this same
+        # field. Found live: ZeroMail's StartScreen.getTermLines() pads
+        # "<user_agent> r<rev> [OK]" to a hardcoded 18 characters via
+        # ".".repeat(18 - s.length) -- "conservancy" (11 chars) pushed the
+        # padded string past 18, so repeat() got a negative count and threw,
+        # crashing ZeroMail's initial render before "New message" (or
+        # anything else) could do anything. "zeronet" is the original
+        # upstream value this budget was actually tuned for (7 + " r" +
+        # 4-digit rev + " [OK]" == 18 exactly), so it's also the safest
+        # choice for compatibility with any other site making the same
+        # fixed-width assumption, not just ZeroMail.
+        self.user_agent = "zeronet"
         # for compatibility
         self.user_agent_rev = 8192
         self.argv = argv
@@ -180,7 +197,7 @@ class Config:
                 elif no_migrate:
                     return StartupError("Migration refused, but new directory should be migrated (old_dir == new_dir)", old_dir)
                 else:
-                    return askMigrate(old_dir, new_dir, silent_migrate)
+                    return self.askMigrate(old_dir, new_dir, silent)
             else:
                 if self.checkDir(new_dir):
                     if not no_migrate:
@@ -195,7 +212,7 @@ class Config:
                 self.createNewConfig(new_dir)
                 return new_dir
             else:
-                return self.askMigrate(old_dir, new_dir, silent_migrate)
+                return self.askMigrate(old_dir, new_dir, silent)
         elif new_dir.exists():
             if self.checkDir(new_dir):
                 return new_dir
@@ -259,20 +276,30 @@ class Config:
 
         # Main
         action = self.subparsers.add_parser("main", help='Start UiServer and FileServer (default)')
+        action.add_argument(
+            '--p2p', help='Run the new trio/libp2p-native stack (P2P/app.py) instead of the legacy '
+            'gevent server. Default since the Phase 10 cutover -- pass --no-p2p for the legacy '
+            'server (needed for the repo-root plugins/ ecosystem, Multiuser, UiPassword, or Tor '
+            'SOCKS5 dial-out, none of which the new stack covers yet)',
+            action=BooleanOptionalAction, default=True,
+        )
 
         # SiteCreate
         action = self.subparsers.add_parser("siteCreate", help='Create a new site')
         action.register('type', 'bool', self.strToBool)
         action.add_argument('--use-master_seed', help="Allow created site's private key to be recovered using the master seed in users.json (default: True)", type="bool", choices=[True, False], default=True)
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteNeedFile
         action = self.subparsers.add_parser("siteNeedFile", help='Get a file from site')
         action.add_argument('address', help='Site address')
         action.add_argument('inner_path', help='File inner path')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteDownload
         action = self.subparsers.add_parser("siteDownload", help='Download a new site')
         action.add_argument('address', help='Site address')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteSign
         action = self.subparsers.add_parser("siteSign", help='Update and sign content.json: address [privatekey]')
@@ -282,6 +309,7 @@ class Config:
                             default="content.json", metavar="inner_path")
         action.add_argument('--remove-missing_optional', help='Remove optional files that is not present in the directory', action='store_true')
         action.add_argument('--publish', help='Publish site after the signing', action='store_true')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SitePublish
         action = self.subparsers.add_parser("sitePublish", help='Publish site to other peers: address')
@@ -294,67 +322,88 @@ class Config:
                             default="content.json", metavar="inner_path")
         action.add_argument('--recursive', help="Whether to publish all of site's content.json. "
                             "Overrides --inner-path. (default: false)", action='store_true', dest='recursive')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteVerify
         action = self.subparsers.add_parser("siteVerify", help='Verify site files using sha512: address')
         action.add_argument('address', help='Site to verify')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # SiteCmd
         action = self.subparsers.add_parser("siteCmd", help='Execute a ZeroFrame API command on a site')
         action.add_argument('address', help='Site address')
         action.add_argument('cmd', help='API command name')
         action.add_argument('parameters', help='Parameters of the command', nargs='?')
+        action.add_argument('--wrapper-key', help='Wrapper key for the running native UI server')
+        action.add_argument('--ui-host', help='Native UI server host', default='127.0.0.1')
+        action.add_argument('--ui-port', help='Native UI server port', type=int, default=43110)
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # Import bundled sites
         action = self.subparsers.add_parser("importBundle", help='Import sites from a .zip bundle')
         action.add_argument('bundle', help='Path to a data bundle')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # dbRebuild
         action = self.subparsers.add_parser("dbRebuild", help='Rebuild site database cache')
         action.add_argument('address', help='Site to rebuild')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # dbQuery
         action = self.subparsers.add_parser("dbQuery", help='Query site sql cache')
         action.add_argument('address', help='Site to query')
         action.add_argument('query', help='Sql query')
+        action.add_argument('--p2p', help='Use the new trio/libp2p-native stack (default) -- pass --no-p2p to use the legacy gevent implementation instead', action=BooleanOptionalAction, default=True)
 
         # PeerPing
         action = self.subparsers.add_parser("peerPing", help='Send Ping command to peer')
-        action.add_argument('peer_ip', help='Peer ip')
-        action.add_argument('peer_port', help='Peer port', nargs='?')
+        action.add_argument('peer_ip', help='Native peer ID (or legacy peer IP with --no-p2p)')
+        action.add_argument('peer_port', help='Native peer multiaddr (or legacy peer port with --no-p2p)', nargs='?')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # PeerGetFile
         action = self.subparsers.add_parser("peerGetFile", help='Request and print a file content from peer')
-        action.add_argument('peer_ip', help='Peer ip')
-        action.add_argument('peer_port', help='Peer port')
+        action.add_argument('peer_ip', help='Native peer ID (or legacy peer IP with --no-p2p)')
+        action.add_argument('peer_port', help='Native peer multiaddr (or legacy peer port with --no-p2p)')
         action.add_argument('site', help='Site address')
         action.add_argument('filename', help='File name to request')
         action.add_argument('--benchmark', help='Request file 10x then displays the total time', action='store_true')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # PeerCmd
         action = self.subparsers.add_parser("peerCmd", help='Request and print a file content from peer')
-        action.add_argument('peer_ip', help='Peer ip')
-        action.add_argument('peer_port', help='Peer port')
+        action.add_argument('peer_ip', help='Native peer ID (or legacy peer IP with --no-p2p)')
+        action.add_argument('peer_port', help='Native peer multiaddr (or legacy peer port with --no-p2p)')
         action.add_argument('cmd', help='Command to execute')
         action.add_argument('parameters', help='Parameters to command', nargs='?')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
+
+        # CryptSign
+        action = self.subparsers.add_parser("cryptPrivatekeyToAddress", help='Get the Bitcoin address for a private key')
+        action.add_argument('privatekey', help='Private key', nargs='?')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # CryptSign
         action = self.subparsers.add_parser("cryptSign", help='Sign message using Bitcoin private key')
         action.add_argument('message', help='Message to sign')
         action.add_argument('privatekey', help='Private key')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # Crypt Verify
         action = self.subparsers.add_parser("cryptVerify", help='Verify message using Bitcoin public address')
         action.add_argument('message', help='Message to verify')
         action.add_argument('sign', help='Signiture for message')
         action.add_argument('address', help='Signer\'s address')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         # Crypt GetPrivatekey
         action = self.subparsers.add_parser("cryptGetPrivatekey", help='Generate a privatekey from master seed')
         action.add_argument('master_seed', help='Source master seed')
         action.add_argument('site_address_index', help='Site address index', type=int)
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
 
         action = self.subparsers.add_parser("getConfig", help='Return json-encoded info')
+        action.add_argument('--p2p', help='Use the native stack by default; pass --no-p2p for the legacy implementation', action=BooleanOptionalAction, default=True)
         action = self.subparsers.add_parser("testConnection", help='Testing')
         action = self.subparsers.add_parser("testAnnounce", help='Testing')
 
@@ -390,11 +439,15 @@ class Config:
         self.parser.add_argument('--ui-port', help='Web interface bind port', default=43110, type=int, metavar='port')
         self.parser.add_argument('--ui-site-port', help='Port for serving site content, defaults to ui_port+1', default=None, metavar='port')
         self.parser.add_argument('--ui-restrict', help='Restrict web access', default=False, metavar='ip', nargs='*')
+        self.parser.add_argument('--ui-password', help='Password to access the web UI (P2P/--p2p stack only for now)', default=None, metavar='password')
+        self.parser.add_argument('--multiuser', help='Each visiting browser gets its own account, cookie-identified (P2P/--p2p stack only for now)', action='store_true')
         self.parser.add_argument('--ui-host', help='Allow access using this hosts', metavar='host', nargs='*')
         self.parser.add_argument('--ui-trans-proxy', help='Allow access using a transparent proxy', action='store_true')
 
         self.parser.add_argument('--open-browser', help='Open homepage in web browser automatically',
                                  nargs='?', const="default_browser", metavar='browser_name')
+        self.parser.add_argument('--webview', help='Open homepage in an optional native webview window',
+                                 action='store_true')
         self.parser.add_argument('--homepage', help='Web interface Homepage', default='191CazMVNaAcT9Y1zhkxd9ixMBPs59g2um',
                                  metavar='address')
         # self.parser.add_argument('--updatesite', help='Source code update site', default='1uPDaT3uSyWAPdCv1WkMb5hBQjWSNNACf',
@@ -417,6 +470,8 @@ class Config:
         self.parser.add_argument('--offline', help='Disable network communication', action='store_true')
         self.parser.add_argument('--disable-port-check', help='Disable checking port', action='store_true')
         self.parser.add_argument('--dht', help='Use DHT for peer discovery (experimental)', action=argparse.BooleanOptionalAction, default=True)
+        self.parser.add_argument('--dht-port', help='DHT bind port (0: randomize)', default=0, type=int, metavar='port')
+        self.parser.add_argument('--dht-port-range', help='DHT randomization range', default="40000-60000", metavar='port')
         self.parser.add_argument('--use-trackers', help="Use classic trackers for peer discovery", action=argparse.BooleanOptionalAction, default=True)
 
         self.parser.add_argument('--disable-udp', help='Disable UDP connections', action='store_true')
@@ -443,6 +498,8 @@ class Config:
         self.parser.add_argument('--use-tempfiles', help='Use temporary files when downloading (experimental)',
                                  type='bool', choices=[True, False], default=False)
         self.parser.add_argument('--stream-downloads', help='Stream download directly to files (experimental)',
+                                 type='bool', choices=[True, False], default=False)
+        self.parser.add_argument('--file-compression', help='Compress file transfers between peers (zlib)',
                                  type='bool', choices=[True, False], default=False)
         self.parser.add_argument('--msgpack-purepython', help='Use less memory, but a bit more CPU power',
                                  type='bool', choices=[True, False], default=False)
@@ -479,7 +536,14 @@ class Config:
 
         self.trackers = self.arguments.trackers[:]
 
-        for trackers_file in self.trackers_file:
+        tracker_files = self.trackers_file
+        if isinstance(tracker_files, str):
+            tracker_files = [tracker_files]
+
+        for trackers_file in tracker_files:
+            # Older generated config files stored argparse list defaults using
+            # Python repr syntax, e.g. "['{data_dir}/...']".
+            trackers_file = trackers_file.strip().strip('[]').strip("'\"")
             try:
                 if trackers_file.startswith("/"):  # Absolute
                     trackers_file_path = trackers_file
@@ -609,6 +673,8 @@ class Config:
                 self.arguments = {}
         else:
             self.arguments = self.parser.parse_args(argv[1:])
+        if getattr(self.arguments, 'webview', False):
+            self.arguments.open_browser = 'webview'
         if self.arguments.ui_site_port is None:
             self.arguments.ui_site_port = self.arguments.ui_port + 1
         if self.arguments.ui_ip_protect == 'always':
@@ -730,7 +796,7 @@ class Config:
         open(self.config_file, "w").write("\n".join(lines))
 
     def getServerInfo(self):
-        from Plugin import PluginManager
+        from P2P.PluginManager import plugin_manager as p2p_plugin_manager
         import main
 
         info = {
@@ -743,7 +809,7 @@ class Config:
             "rev": self.rev,
             "language": self.language,
             "debug": self.debug,
-            "plugins": PluginManager.plugin_manager.plugin_names,
+            "plugins": p2p_plugin_manager.plugin_names,
 
             "log_dir": os.path.abspath(self.log_dir),
             "data_dir": os.path.abspath(self.data_dir),

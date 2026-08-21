@@ -1,3 +1,381 @@
+### zeronet-conservancy 1.0.18
+- New: a real "ZeroTalk (local identity)" starter in the New Site
+  page's template picker, alongside 1.0.17's ZeroMail one -- a real
+  vendored copy of ZeroTalk's own client code, patched the same way:
+  `certSelect` redirected to a per-site-unique `local-<addr>` domain
+  instead of `zeroid.bit`/`kxoid.bit`, and `writePublish` (ZeroTalk's
+  own single choke point for topics, comments, and votes -- one
+  function, unlike ZeroMail's own `saveData()`) now calls the
+  `contentSign` command added in 1.0.17 before `sitePublish`.
+  Needed one less fix than ZeroMail: ZeroTalk's own bundled `ZeroFrame`
+  already sent `wrapper_nonce` correctly, and it has no
+  `archived.json`-style missing-file assumption. Verified live end to
+  end: created via SiteBuilder, triggered the real `certSelect`
+  popup, self-issued a certificate, and published a real topic through
+  the actual `publishData` -> `writePublish` -> `contentSign` ->
+  `sitePublish` chain -- confirmed the resulting content.json is
+  signed and correctly attributed on disk.
+
+### zeronet-conservancy 1.0.17
+- New: a self-hosted local identity provider, now actually reachable
+  from the UI. `providerCreate`/`certIssueLocal` existed as backend
+  commands with no caller anywhere -- the `certSelect` popup now
+  offers "Issue local certificate" whenever a site already trusts your
+  own provider address, and the Sidebar panel gained a section to
+  create a provider and issue certificates for others, for admin
+  sessions. Each site gets a domain unique to itself
+  (`local-<address>`), since certs are stored keyed by domain name
+  alone and a shared fixed domain would collide across sites.
+- New: `ContentManager.signUserContent()` -- the missing write path
+  for a multi-user site's own non-root ("user_contents")
+  content.json. Previously only the root content.json could be
+  signed, so a site contributor holding a cert but not ADMIN could
+  never actually publish anything. Comes with a new `contentSign`
+  command and a scoped relaxation of `fileWrite` so a non-ADMIN
+  session may write (not read) files under their own
+  `data/users/<their auth_address>/` directory.
+- New: a real "ZeroMail (local identity)" starter in the New Site
+  page's template picker -- a working fork of ZeroMail's own client
+  code, patched to self-issue certificates via the new local identity
+  provider instead of requiring zeroid.bit registration. Verified live
+  end to end: create the site, self-issue a certificate, create a
+  mailbox, and send a real encrypted message, all without any external
+  registrar.
+- New: `User.local_names` -- a local, per-user override letting you
+  attach your own display name to any address, independent of
+  whatever username that identity claims for itself via a cert. Never
+  published or synced. New `localNameSet`/`localNameGet`/
+  `localNameList`/`localNameRemove` commands, wired into the ZeroMail
+  fork's own contact/username rendering, with management UI (an
+  Address+Name form and list) added to the dashboard page previously
+  named "Content filters," renamed "User management" to reflect that
+  blocking is only one of the things it now manages.
+- Fix: several real bugs found only by actually driving the new
+  ZeroMail fork live in a browser, none specific to this fork:
+  - ZeroFrame's own `wrapper_nonce` was never sent on outgoing
+    messages, so this stack's own postMessage nonce check silently
+    rejected every message from any site still running the original,
+    pre-nonce ZeroFrame client -- `Page.site_info` never populated.
+  - `data/archived.json` was assumed to always exist by ZeroMail's own
+    `getArchived()`; missing it crashed with a raw exception the first
+    time a username lookup fell back to it.
+  - `P2P.plugins.CryptMessage`'s own local `_param()` helper only
+    understood dict-shaped params, silently treating every real
+    (positional-list) call -- the actual shape every site's own client
+    JS uses -- as "no arguments given." `eciesEncrypt`'s resulting
+    crash string was landing directly in a message's own ciphertext
+    field instead of being caught.
+  - A Promise-like helper's `.then()` callback only ever fires on its
+    *first* resolution; a fresh mailbox registration resolved it a
+    second time and silently never re-rendered, leaving the UI stuck
+    on "Create my mailbox" until a full page reload.
+  - `UiApp.broadcast()`'s `siteChanged` push built `site_info` with no
+    user context at all, so `sitePublish` (which every mailbox
+    registration ends with) was overwriting a session's correct
+    `cert_user_id` with a blank one moments after it was set.
+  - `certSelect`'s "already have a cert for this domain" check didn't
+    scope by `auth_address`, so self-issuing a certificate on one site
+    silently suppressed both the "issue" and "register" options for a
+    second site using the same domain.
+
+### zeronet-conservancy 1.0.16
+- New: a batch of previously-missing websocket commands, found by
+  auditing every bundled site's own calls against this stack's
+  registered commands (the same investigation that found `fileRules`
+  missing for ZeroMail in 1.0.15):
+  - `MuteList` -- registered alongside the existing `muteList`; the
+    real dashboard site's own Mute/Block panel called it under its
+    original, capitalized name.
+  - `uiLogout` -- the dashboard's "Logout" button; pushes a client-side
+    redirect to the existing `/Logout` route.
+  - `OptionalHelp`/`OptionalHelpList`/`OptionalHelpRemove`/
+    `OptionalHelpAll` -- the "help seed this directory" controls in the
+    optional-files manager, extending `OptionalManager`'s existing
+    sidecar storage.
+  - `announcerStats` -- all-sites tracker-stats aggregation, distinct
+    from the existing per-site `announcerInfo`.
+  - `feedSearch` -- full-text search across every known site's own
+    feed queries (`feedQuery` only searches followed ones).
+  - `filterIncludeAdd`/`filterIncludeRemove` -- subscribing to another
+    already-known site's own mute/block list. Enforcement needed no
+    new wiring: `isMuted()`/`isSiteblocked()` are the single check
+    every real enforcement point already calls.
+  - `chartDbQuery` -- a real, queryable `chart.db` for the dashboard's
+    Charts page (built on the same DB engine every site's own db
+    uses). Deliberately not included: `chartGetPeerLocations`
+    (GeoLite2 IP geolocation, already excluded elsewhere in this
+    codebase) and the periodic background sampler that would populate
+    `chart.db` -- both clearly flagged as intentional, separate gaps.
+  All verified live against the real dashboard site with no console
+  errors.
+
+### zeronet-conservancy 1.0.15
+- New: `fileRules` websocket command -- a real port of the original
+  `actionFileRules`, built on the already-existing/already-tested
+  `ContentManager.getRules()`/`getValidSigners()`. Was documented as
+  "not ported yet" in two places but never actually implemented.
+  Fixes the Sidebar plugin's own Sign/Publish menu (the content.json
+  chooser dropdown), which used this to decide whether the connected
+  identity could sign directly or needed a prompted private key --
+  silently broken until now -- and ZeroMail's own quota display.
+  Verified live against a real, already-downloaded ZeroMail site.
+
+### zeronet-conservancy 1.0.14
+- Fix: `config.user_agent` (`"conservancy"`, 11 characters) -- exposed
+  to non-ADMIN sites as `serverInfo`'s `version` field -- was too long
+  for ZeroMail's own fixed-width status-line padding, which is
+  hardcoded to a budget of 18 characters (`"<user_agent> r<rev>
+  [OK]"`). The overflow made JS's `String.repeat()` receive a negative
+  count and throw, crashing ZeroMail's initial render before "New
+  message" (or anything else on that screen) could do anything.
+  Reverted to `"zeronet"` (7 characters), the original upstream value
+  this exact budget was tuned for -- fixes ZeroMail, and any other
+  site making the same fixed-width assumption. Verified live against
+  a real, already-downloaded ZeroMail site.
+
+### zeronet-conservancy 1.0.13
+- Overhaul: the native admin pages (Configuration, Plugins, New site
+  [SiteBuilder], Content filters, Files, Console) now share one layout
+  template instead of five copies of duplicated head/nav/drawer/socket
+  boilerplate, styled with a vendored, offline-first copy of Pico CSS
+  (MIT licensed, inlined into each page -- no CDN dependency, no build
+  step). Real dark/light/system theming, a proper nav bar, restyled
+  tables/forms/buttons, and a card-grid layout for the "New site"
+  starter picker.
+- Fix: the left-drawer's light/dark/system theme switcher never
+  actually applied to the page itself, only saved a server-side
+  preference -- it's now applied immediately. Theme/version/language
+  also weren't fetched until the drawer was opened once; now fetched
+  as soon as the page connects.
+- Fix: `{{ title }}` was referenced in every admin page's `<title>`/
+  `<h1>` with nothing in context ever supplying it, so titles silently
+  rendered blank. Also: Console and Files previously had no left drawer
+  at all (no way back to the rest of the admin UI without the browser's
+  own back button).
+
+### zeronet-conservancy 1.0.12
+- New: private-site access-request management. Owners get a sidebar
+  section listing approved recipients and pending access requests, with
+  one-click approve/deny -- no more pasting a signature relayed out of
+  band. `siteRequestAccess` now pushes the signed request directly to
+  connected peers (`protocols/request_access.py`) instead of only
+  handing the payload back for manual relay. A bounded, TTL'd,
+  in-memory `RequestAccessRelay` on every serving (not just owning)
+  node lets any bystander hold and re-offer a request on each announce
+  cycle, so a request still reaches an owner who's offline at request
+  time.
+- Fix: a freshly created "own" site never actually got `ADMIN`
+  permission on itself. `SiteManager.add(address, own=True)` only
+  persists the `"own"` setting to `sites.json`; nothing granted the
+  `Site` object's own `permissions` list `ADMIN`, so the sidebar's
+  owner controls (and every admin-gated command) looked broken/absent
+  on a brand-new site until a restart happened to round-trip
+  permissions through disk. Affected `siteCreate`, `siteBuilderCreate`
+  (the `/SiteBuilder` "New site" flow), `siteClone`, and the CLI
+  `siteCreate` action. Also fixes the left-drawer's "New site" button
+  silently doing nothing when `siteCreate` errors (e.g. triggered from
+  a page that isn't itself ADMIN, since the drawer is available
+  site-wide) instead of surfacing the failure.
+
+### zeronet-conservancy 1.0.11
+- New: private-site support, re-ported from the pre-libp2p-migration
+  design (deleted along with the rest of the legacy stack during the
+  rewrite, never carried over until now). A private site's content is
+  AES-encrypted at rest; the content key is ECIES-wrapped for each
+  approved recipient's public key (the site's existing per-user
+  auth address/privatekey, already used for site permissions -- no
+  separate dedicated key). New `siteRequestAccess`/`siteAddRecipient`/
+  `siteRemoveRecipient` websocket commands; `fileGet`/`fileWrite` and
+  the site's raw HTTP media-serving path transparently encrypt/decrypt
+  for anyone who's been approved. content.json itself becomes a signed
+  envelope (`keys`/`keys_sign`/`body`) that propagates over both the
+  existing unicast push and gossipsub paths unchanged -- a peer without
+  access caches the still-encrypted envelope harmlessly rather than
+  erroring. No browser dashboard UI for approval/revocation yet --
+  goes through the websocket commands directly for now, not a "no
+  access" page with a built-in unlock flow.
+
+### zeronet-conservancy 1.0.10
+- Fix: sites added to an already-running node (via the CLI or the
+  native UI's "add site" flow) now get their announce loop started
+  immediately, with its first iteration doubling as the immediate
+  announce. Previously only sites present when the app itself started
+  ever got a periodic re-announce; a dynamically-added site got an
+  announcer object but nothing ever ran for it, and the UI's
+  siteAdd/mergerSiteAdd commands' attempt to trigger a one-off announce
+  was silently broken (it looked up `session.app._announceOnce`, a
+  method that only ever existed on a different object and so was
+  always `None`). Removing a site now also stops its announce loop,
+  closing a related leak.
+- New: `--dht-bootstrap <multiaddr> [<multiaddr> ...]` lets a node seed
+  its DHT routing table with known peers on startup. Previously nothing
+  in production code ever called the DHT layer's own peer-seeding
+  method, so a fresh node's routing table started empty with no way to
+  ever discover a first peer via DHT -- it could only ever expand a
+  swarm already reached some other way (LAN/PEX), never bootstrap into
+  one from nothing.
+- Fix the packaged desktop app missing the Newsfeed plugin's `Db`
+  dependency (`Plugin Newsfeed load error: No module named 'Db'`).
+  The legacy `src/Db/` package it imports is only ever reached through
+  dynamic plugin loading, which PyInstaller's static analysis can't
+  see, so it was never bundled into the packaged app -- only present
+  in dev checkouts where `src/` sits on disk. Same category of gap as
+  1.0.8's Sidebar-assets fix, this time for a Python package rather
+  than media files.
+
+### zeronet-conservancy 1.0.9
+- New: gossipsub-based content.json propagation, alongside the existing
+  unicast push. Each site now gets its own gossipsub topic
+  (`GossipManager`, one shared `GossipSub`/`Pubsub` pair per node);
+  peers subscribed to a site's topic hear about updates through mesh
+  gossip, not only from peers that happen to be in their direct
+  unicast list. A topic validator rejects invalid/stale content before
+  it propagates further, sharing the exact same verification and
+  write/apply logic (`applyContentUpdate`) as the unicast RPC path, so
+  both transports enforce identical trust. Unicast push is kept as a
+  fallback/complement, not replaced -- a peer with no mesh yet (e.g.
+  right after its first connection to a swarm) still needs it.
+  `strict_signing` is disabled on the gossip layer since content.json
+  already carries its own site-address-keyed signature, which remains
+  the real trust root.
+
+### zeronet-conservancy 1.0.8
+- Fix the Sidebar plugin's own JS/CSS (the fixbutton drag-to-open
+  gesture, the Console panel, and the new left-edge nav drawer) being
+  completely missing from every packaged desktop and Android build
+  since 1.0.0 -- a pre-1.0.0 cleanup dropped `plugins/Sidebar/media`
+  from the PyInstaller bundle's resources list on the mistaken
+  assumption the whole legacy `plugins/` directory was dead code.
+  Found live from a real screenshot: the left drawer rendered
+  completely unstyled in the packaged app, stacked in plain document
+  flow above the site content instead of as a fixed off-canvas panel.
+  Verified with a real local PyInstaller build that the fix actually
+  lands the files at the path the server's own fallback resolution
+  expects
+
+### zeronet-conservancy 1.0.7
+- New: a persistent left-edge nav drawer (click or drag the peek-tab to
+  open), present on every page including `/Config`, `/Plugins`,
+  `/SiteBuilder`, `/ContentFilter`, and `/Console`, not just site
+  pages. Recreates the full item set of ZeroHello's own `⋮` menu --
+  New site, Content filters, Configuration, Plugins, Theme, Language,
+  Update all sites, Show data directory, Shut down -- in our own chrome
+  instead of someone else's signed site content, whose key we don't
+  hold
+- Fix `language`/`theme` settings silently not taking effect: both
+  were hardcoded in the wrapper's own render (`lang="en"`,
+  `theme="light"`) regardless of `config.language` or the user's saved
+  theme preference, so changing either already persisted correctly but
+  never actually reached the next page load
+- Fix the new drawer's peek-tab needing a drag to close after a click
+  opened it -- the "was this a drag, not a click" guard compared
+  elapsed time since mousedown, which fires before every click
+  (dragged or not), so it silently ate every second click
+
+### zeronet-conservancy 1.0.6
+- Fix `/uimedia/all.js`/`all.css` never cache-busting across versions:
+  the wrapper page's own `?rev=` query param was hardcoded to `""`
+  instead of the app version, so a WebView (or browser) that had
+  already cached that URL from a previous release kept serving the
+  stale bundle forever after an upgrade -- silently masking every
+  client-JS fix shipped since (including the 1.0.4 sidebar drag fix).
+  Now wired to the real app version
+- Fix right-click doing nothing in the packaged desktop app on every
+  platform: pywebview2 tied the entire native context menu (copy/paste,
+  etc.) to its `debug` flag, not just devtools, so packaged builds
+  (`debug=False`) had no working right-click at all. Fixed in the
+  pywebview2 fork with a new setting that decouples the context menu
+  from devtools exposure, and wired on here. Verified live driving a
+  real WebKitGTK window: right-click now shows the normal
+  Back/Forward/Stop/Reload menu with no Inspect Element leaked
+
+### zeronet-conservancy 1.0.5
+- New: `/SiteBuilder` dashboard page -- a "New site" flow that lists
+  starter templates and creates a signed, owned site from one. The
+  backend (`siteBuilderStarters`/`siteBuilderCreate`) has always worked
+  over the websocket API; it just had no UI anywhere calling it
+- New: `/ContentFilter` dashboard page -- view and remove blocked sites
+  and muted users. Blocking a site was already reachable (the Sidebar's
+  "Delete site -> Blacklist" flow), but there was no way to see your
+  block list, undo a block, or manage mutes at all
+- Both found auditing every P2P plugin for the same "the backend loads
+  and works fine, nothing in the UI ever calls it" gap after a user
+  report that SiteBuilder "wasn't showing up" -- not a plugin-loading
+  bug in either case, just missing UI wiring
+
+### zeronet-conservancy 1.0.4
+- Fix the sidebar drag-to-open gesture (the top-right fixbutton you drag
+  left to reveal the sidebar) not working in the packaged desktop app.
+  Root cause found live, driving a real WebKitGTK WebView with actual
+  X11 mouse input: WebKitGTK coalesces an entire drag gesture down to a
+  single DOM `mousemove` event, but the gesture's code structurally
+  needed at least two (one to bootstrap, a second to actually animate
+  the button and cross the open threshold) -- the second never arrived,
+  so the drag always silently reverted. Chromium/Blink doesn't coalesce
+  this aggressively, which is why the gesture worked there but not in
+  the packaged app. Fixed by calibrating the grab offset from
+  `mousedown`'s own coordinates and replaying the drag against the
+  first `mousemove` instead of waiting on a second one that may never
+  come. Also hardened `.fixbutton`/`.fixbutton-bg` against a separate,
+  unrelated WebKit native-link-drag quirk as defense-in-depth (ruled
+  out as the actual cause here, but still worth guarding against)
+
+### zeronet-conservancy 1.0.3
+- Silence a spurious `MonkeyPatchWarning` gevent printed on every startup
+  (visible in the packaged AppImage's stderr). It's a harmless side effect
+  of importing `trio`/`libp2p` before `gevent.monkey.patch_all()` (required
+  for trio's socket subclass to be correct) -- libp2p's own dependency
+  chain (httpx -> anyio, urllib3) imports `ssl` first, so gevent can't
+  patch those modules' references. Now wrapped to suppress the warning
+  instead of leaking it as a startup log line
+- `pywebview2` bumped to 0.1.6 (GTK-only frameless-window drag-region
+  compatibility fix; not used by this app, no code changes needed)
+
+### zeronet-conservancy 1.0.2
+- Fix Android crashes: bumped the `pywebview2` dependency to 0.1.5, which
+  drops the unnecessary Kivy requirement from the generated Buildozer
+  Android project (the Android backend uses python-for-Android's SDL2
+  bootstrap and pyjnius, not Kivy) and makes WebView teardown and
+  pause/resume safe against partial-init and double-destroy races.
+  `pywebview2.android.conf.json`'s `buildozerSpecOverrides.requirements`
+  updated to match
+
+### zeronet-conservancy 1.0.1
+- Fix desktop packaging: the Windows MSI installer and the Linux AppImage/deb
+  packages were broken in 1.0.0 (bumped the `pywebview2` dependency to 0.1.4,
+  which fixes both: a WiX v3/v4 schema mismatch that produced an unbuilt
+  `.wxs` script instead of a real `.msi`, and a GTK/GLib library bundling
+  conflict that crashed the app on launch with `undefined symbol:
+  g_once_init_enter_pointer` on Linux). Windows NSIS `.exe`, macOS `.dmg`,
+  and Android APK were already working in 1.0.0 and are unaffected.
+
+### zeronet-conservancy 1.0.0
+- Full rewrite of the networking/UI stack onto trio (structured concurrency)
+  and py-libp2p (transport/peer-routing/DHT), replacing the gevent-based
+  implementation entirely -- see the `libp2p-migration` branch history for
+  the phase-by-phase build-out
+- The legacy gevent stack, and the repo-root `plugins/` ecosystem built on
+  it, have been removed outright (not deprecated). `--no-p2p` no longer
+  falls back to a legacy server -- it now raises a clear error instead
+- New plugin system under `P2P/plugins/`, source- and API-incompatible with
+  the old `plugins/` -- ported/reimplemented: AnnounceLocal, Bigfile,
+  ContentFilter, CryptMessage, MergerSite, Newsfeed, OptionalManager,
+  PeerDb, Sidebar, Stats, TranslateSite, UiConfig, UiFileManager,
+  UiPluginManager, UiSiteBuilder, UiPassword, Multiuser, Cors, FilePack,
+  Zeroname
+- Wire protocol is not compatible with legacy zeronet-conservancy/ZeroNet
+  peers -- this stack speaks libp2p protocols, not the old raw-socket
+  msgpack framing
+- New: private sites (ECIES-encrypted content, approved-recipient keys),
+  opt-in zlib compression for file transfers, UPnP port mapping via
+  py-libp2p's own UpnpManager, a site-creation wizard with starter
+  templates, circuit-relay v2 NAT traversal
+- New: pywebview2-based desktop packaging (Windows/macOS/Linux/Android)
+- Known issue: the Windows MSI installer asset in this release is not a
+  functional installer (a WiX v3/v4 schema mismatch in the pywebview2
+  bundler -- fix submitted upstream, not yet merged/released). Use the
+  NSIS `.exe` installer on Windows instead
+
 ### zeronet-conservancy 0.7.10+
 - disable site-installed plugins for security reasons (@caryoscelus)
 - fix downloading geoip db (@caryoscelus)
@@ -11,6 +389,7 @@
 - better fix of local sites leak (@caryoscelus)
 - ipython-based repl via --repl for debug/interactive development (@caryoscelus)
 - experimental DHT support (@caryoscelus)
+- DHT improvements: persist node id across sessions, configurable port, periodic peer refresh
 - optional blocking of compromised id certificates for spam protection (@caryoscelus)
 - changes in directory structure (split data and config, use user directories by default)
 - use version information from git if available

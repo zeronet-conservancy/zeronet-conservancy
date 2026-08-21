@@ -1,0 +1,36 @@
+{
+	"db_name": "ZeroMail",
+	"db_file": "data/users/zeromail.db",
+	"version": 2,
+	"maps": {
+		".+/data.json": {
+			"to_table": [
+				{"node": "message", "table": "message", "key_col": "date_added", "val_col": "encrypted"},
+				{"node": "secret", "table": "secret", "key_col": "date_added", "val_col": "encrypted"}
+			]
+		},
+		".+/content.json": {
+			"to_keyvalue": [ "cert_user_id" ]
+		}
+	},
+	"tables": {
+		"message": {
+			"cols": [
+				["date_added", "INTEGER"],
+				["encrypted", "TEXT"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE UNIQUE INDEX message_key ON message(json_id, date_added)"],
+			"schema_changed": 3
+		},
+		"secret": {
+			"cols": [
+				["date_added", "INTEGER"],
+				["encrypted", "TEXT"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE UNIQUE INDEX secret_key ON secret(json_id, date_added)"],
+			"schema_changed": 3
+		}
+	}
+}

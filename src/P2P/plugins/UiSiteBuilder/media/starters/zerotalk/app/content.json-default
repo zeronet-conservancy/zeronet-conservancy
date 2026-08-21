@@ -1,0 +1,11 @@
+{
+ "title": "ZeroTalk",
+ "description": "Decentralized forum, signed in with your own local identity",
+ "ignore": "((js|css)/(?!all.(js|css))|data/users/.*db|data/users/.*/.*|data/archived|.*.py)",
+ "translate": ["index.html", "js/all.js"],
+ "includes": {
+  "data/users/content.json": {"signers": [], "signers_required": 1}
+ },
+ "files": {},
+ "signs_required": 1
+}

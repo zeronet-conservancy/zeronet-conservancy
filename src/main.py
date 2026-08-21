@@ -14,9 +14,34 @@ def startupError(msg):
     print("Startup error: %s" % msg)
 
 # Third party modules
+
+# trio/libp2p MUST be imported before gevent monkey-patches the process: trio's
+# raw-socket wrapper (trio._socket._SocketType) subclasses socket.SocketType at
+# *class definition time* (its own module import), not via a dynamic lookup --
+# so if gevent has already swapped socket.socket for its own greenlet-aware
+# class by the time trio/libp2p are first imported anywhere in the process,
+# that wrong base class is baked in permanently, and no amount of restoring
+# socket.socket afterward (see P2P/compat.py) can fix it. See src/P2P/compat.py
+# for the rest of the story (select.epoll/socket.socket also get deleted/replaced
+# by patch_all() at runtime, independently of this import-order issue).
+import trio  # noqa: F401
+import libp2p  # noqa: F401
+
 import gevent
 import gevent.monkey
-gevent.monkey.patch_all(thread=False)
+import warnings
+
+# The trio/libp2p-first import above is exactly what triggers this: libp2p's
+# own dependency chain (httpx -> anyio -> anyio.streams.tls, plus urllib3)
+# imports ssl before we get a chance to patch it. That's harmless here --
+# anyio/httpx/trio deliberately keep using the *real* socket/ssl machinery
+# for the P2P stack (P2P/compat.py restores it explicitly), and the one
+# post-patch urllib3 user (the legacy bootstrap-bundle fetch in
+# init_dirs()) is always skipped when --p2p is active. Silence the warning
+# rather than have it show up as a spurious-looking error in user logs.
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=gevent.monkey.MonkeyPatchWarning)
+    gevent.monkey.patch_all(thread=False)
 
 update_after_shutdown = False  # If set True then update and restart zeronet after main loop ended
 restart_after_shutdown = False  # If set True then restart zeronet after main loop ended
@@ -69,7 +94,12 @@ def importBundle(bundle):
 def init_dirs():
     data_dir = Path(config.data_dir)
     private_dir = Path(config.private_dir)
+    # The native P2P stack has its own site/data lifecycle and does not use
+    # the legacy bootstrap bundle. Skipping this request is also important
+    # because it would import requests after gevent has patched SSL, which
+    # recurses on current Python versions in native --p2p subprocesses.
     need_bootstrap = (config.bootstrap
+                      and not config.p2p
                       and not config.offline
                       and (not data_dir.is_dir() or not (private_dir / 'sites.json').is_file()))
 
@@ -108,10 +138,16 @@ def init_dirs():
             f.write("{}")
 
 def load_plugins():
-    from Plugin import PluginManager
-    PluginManager.plugin_manager.loadPlugins()
-    config.loadPlugins()
-    config.parse()  # Parse again to add plugin configuration options
+    # The native P2P stack has its own plugin manager (P2P.PluginManager,
+    # loaded lazily from Actions.mainP2P()/Actions._runP2PAction() instead
+    # of here). The legacy root-level plugins/ ecosystem this used to load
+    # for --no-p2p has been removed entirely -- see Actions.py's own
+    # module docstring.
+    if not config.p2p:
+        raise RuntimeError(
+            "The legacy gevent implementation has been removed -- "
+            "pass p2p=True (the default) to use the trio/libp2p stack."
+        )
 
 def init():
     load_config()

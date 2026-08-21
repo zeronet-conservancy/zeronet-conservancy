@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+
+<html>
+<head>
+ <title>ZeroTalk</title>
+ <meta charset="utf-8">
+ <meta http-equiv="content-type" content="text/html; charset=utf-8" />
+ <link rel="stylesheet" href="css/all.css" />
+ <base href="" target="_top" id="base">
+ <script>
+ setTimeout(function() {
+    base.href = document.location.href.replace("/media", "").replace("index.html", "").replace(/([&?])wrapper=False/, "$1").replace(/&$/, "").replace(/[&?]wrapper_nonce=[A-Za-z0-9]+/, "") // Fix urls
+ }, 100) // 100ms later, to workaround double js download in chrome
+ </script>
+</head>
+<body class="{themeclass}">
+
+<!-- editbar -->
+<div class="editbg"></div>
+<div class="editbar bottombar">
+ <ul class="markdown-help">
+  <li># H1</li>
+  <li>## H2</li>
+  <li>### H3</li>
+  <li><i>_italic_</i></li>
+  <li><b>**bold**</b></li>
+  <li>~~<s>strikethrough</s>~~</li>
+  <li>- Lists</li>
+  <li>1. Numbered lists</li>
+  <li>[Links](http://www.zeronet.io)</li>
+  <li>[References][1]<br>[1]: Can be used</li>
+  <li>![image alt](img/logo.png)</li>
+  <li>Inline <code>`code`</code></li>
+  <li><pre><code>```python<br>print "Code block"<br>```</code></pre></li>
+  <li>&gt; Quotes</li>
+  <li>--- Horizontal rule</li>
+ </ul>
+ <a href="#Markdown+help" class="icon-help">?</a> Editing: <span class="object">Post:21.body</span> <a href="#Save" class="button save">Save</a> <a href="#Delete" class="button button-delete button-outline delete">Delete</a> <a href="#Cancel" class="cancel">Cancel</a>
+</div>
+<!-- EOF editbar -->
+
+<!-- Head -->
+<div class="topmenu">
+ <div class="links">
+  Forums:
+  <a href="http://127.0.0.1:43110/Talk.ZeroNetwork.bit">English</a> &middot;
+  <a href="http://127.0.0.1:43110/19Q64E6Gt67e96skgYSJejYjFRrJYyqP2t">Čeština</a> &middot;
+  <a href="http://127.0.0.1:43110/1J7duUJ7NBvPazCbA7EDK4xfKaXNV2EQdK">Dansk</a> &middot;
+  <a href="http://127.0.0.1:43110/165eqHdoQfyf7CVGqtVCGNDvMBZhwVSJBL">Español</a> &middot;
+  <a href="http://127.0.0.1:43110/1Vp5LH4wegCaqeB72yMw2jgNdVm4aR7ET">Français</a> &middot;
+  <a href="http://127.0.0.1:43110/1E4XLtKC59YV8V9JQ4AkeqSvqECSvrUtnv">Deutsch</a> &middot;
+  <a href="http://127.0.0.1:43110/1NPAmKPbZU33tAStGqygs8FD2bRq7zYoHb">Magyar</a> &middot;
+  <a href="http://127.0.0.1:43110/1MxvDmGn5fipn7cyjXAMyMZPH3SyhwfZkw/">Italiano</a> &middot;
+  <a href="http://127.0.0.1:43110/1GRYnz73jSXoMMZNU3nSmbCFA3twuitcoo">Polski</a> &middot;
+  <a href="http://127.0.0.1:43110/1LULE6frq3kw2vbhe4i6ArUTo4YT99Czbj">Português</a> &middot;
+  <a href="http://127.0.0.1:43110/1DKi1k1V3WAkKwxKqySDmknVNTccBmJ7Ku">Québec</a> &middot;
+  <a href="http://127.0.0.1:43110/1RuZntipLvXcLKFEjT6Fr7ZA3GuywYfr5">Русский</a> &middot;
+  <a href="http://127.0.0.1:43110/193psz3yGj7EH39nyKb4A2KKBXEHT49Csf">Українська</a> &middot;
+  <a href="http://127.0.0.1:43110/16J4mEgR5aqerfzGy2WctNV3onPQUgF2E5">한국어</a> &middot;
+  <a href="http://127.0.0.1:43110/1Am2bDQhptVMxaLtKxbHCorvL1rjXtqdFH">日本語</a> &middot;
+  <a href="http://127.0.0.1:43110/NewGFWTalk.bit">中文论坛</a> &middot;
+  <a href="http://127.0.0.1:43110/1Q9LrWv27gyToaqDXA2GF2ZSA6PhznX7z1">知乎</a> &middot;
+  <a href="http://127.0.0.1:43110/1PyJqA1V8wFemvEJ2FeJ8CmVnEtR2nngNp">فارسی</a>
+ </div>
+</div>
+
+<div class="head">
+ <a class="logo nolink" href="?Home">Zer0<br>Talk</a>
+</div>
+<!-- EOF Head -->
+
+<div class="message-big">Initial sync in progress...</div>
+
+<!-- Page: Main -->
+<div class="center topics-list">
+ <h1 class="topics-title">Newest topics</h1>
+ <a href="#Follow" class="feed-follow feed-follow-list"><span class='text-follow'>Follow in Newsfeed</span><span class='text-following'>Following</span><div class="icon-feed"></div></a>
+
+ <!-- New Topic -->
+ <a href="#New+topic" class="topic-new-link nolink"> + Start new topic</a>
+ <div class="topic topic-new" style="display: none">
+  <a href="#" class="image nolink"><div class="icon icon-topic-chat"></div></a>
+  <h2 class="title"><input type="text" id="topic_title" class="text" placeholder="Topic title"></h2>
+  <div class="body"><textarea id="topic_body" placeholder="Topic description"></textarea></div>
+  <div class="message" style="display: none">Please use English, you can reach other language forums at the top of this page</div>
+  <div class="info"><a class="user_name user_name-my certselect" href="#Change+user" title='Change user'>user_name</a> &#9473; <span class="added">new topic</span></div>
+  <a href="#Add+new+topic" class="button button-submit">Add new topic</a>
+  <span class="topic_type" style="position: relative;font-size: 14px;float: right; cursor: pointer">Topic Type<svg fill="currentColor" viewBox="0 0 24 24" width="24" height="24" style="position: relative;top: 8px;"><path d="M12 16.183l2.716-2.966a.757.757 0 0 1 1.064.001.738.738 0 0 1 0 1.052l-3.247 3.512a.758.758 0 0 1-1.064 0L8.22 14.27a.738.738 0 0 1 0-1.052.758.758 0 0 1 1.063 0L12 16.183zm0-9.365L9.284 9.782a.758.758 0 0 1-1.064 0 .738.738 0 0 1 0-1.052l3.248-3.512a.758.758 0 0 1 1.065 0L15.78 8.73a.738.738 0 0 1 0 1.052.757.757 0 0 1-1.063.001L12 6.818z" fill-rule="evenodd"></path></svg>
+  </span>
+  <div style="clear: both"></div>
+ </div>
+ <!-- EOF New Topic -->
+
+ <div class="topics-loading"><img src="img/loading.gif"/>Loading...</div>
+
+ <div class="topics">
+
+  <!-- Template: Topic -->
+  <div class="topic template">
+   <div class="sticky-title">stickied</div>
+   <div class="dot">&bullet;</div>
+   <a href="#" class="image nolink"><div class="icon icon-topic-chat"></div></a>
+   <h2 class="title"><a href="#" class="title-link">Title</a></h2>
+   <div class="body">Body</div>
+   <a href="#" class="link"><div class="icon icon-link"></div> <span class="link-url"></span></a>
+   <div class="subtopic"><div class="icon icon-topic-chat"></div><a href="#" class="subtopic-link">Lastsub</a></div>
+   <div class="info">
+    <a class="score" href="#Upvote">
+     <span class="score-inactive"> <span class="icon-up">^</span><span class="score-num">1</span> </span>
+     <span class="score-active"> <span class="icon-up">^</span><span class="score-num">2</span> </span>
+    </a>
+    <a href="#" class="comment-num"></a>
+    <span class="added">added</span>
+    <span class="started">&#9473; started by <a class="user_menu" href="#menu"><span class="user_name">user_name</span><span class="menu_3dot">⋮</span></a>
+   </div>
+  </div>
+  <!-- EOF Template: Topic main -->
+
+ </div>
+
+ <a href="#More" class="topics-more">More topics</a>
+
+</div>
+<!-- EOF Page: Main -->
+
+
+<!-- Page: Topic -->
+<div class="center topics-full">
+
+ <h1 class="topic-title">&nbsp;</h1>
+
+ <div class="topic topic-full">
+  <a href="#" class="image nolink"><div class="icon icon-topic-chat"></div></a>
+  <a href="#Follow" class="feed-follow feed-follow-show"><span class='text-follow'>Follow in Newsfeed</span><span class='text-following'>Following</span><div class="icon-feed"></div></a>
+  <h2 class="title"><a href="#" class="title-link">Title</a></h2>
+  <div class="body">Body</div>
+  <div class="info">
+    <a class="score" href="#Upvote">
+     <span class="score-inactive"> <span class="icon-up">^</span><span class="score-num">?</span> </span>
+     <span class="score-active"> <span class="icon-up">^</span><span class="score-num">0</span> </span>
+    </a>
+   <span class="user_name">username</span> posted <span class="added">added</span>
+  </div>
+ </div>
+
+ <!-- New comment -->
+ <div class="comment comment-new">
+  <div class="info"><a class="user_name user_name-my certselect" href="#Change+user" title='Change user'>user_name</a> &#9473; <span class="added">new comment</span></div>
+  <div class="body">
+   <a class="button button-submit button-certselect certselect" href="#Change+user"><div class='icon-profile'></div>Sign in as...</a>
+   <textarea id="comment_body"></textarea>
+   <a href="#Submit+comment" class="button button-submit button-submit-form">Submit comment</a>
+   <div style='float: right; margin-top: -6px; position: relative; text-align: right'>
+    <div class="user-size user-size-used">Used space: 22k/100k</div>
+    <div class="user-size">Used space: 22k/100k</div>
+    <div class="user-size-warning">You are running out of your allowed space, please contact the site's admin at <a href="#">unknown</a> to raise your limit.</div>
+   </div>
+   <div style="clear: both"></div>
+  </div>
+ </div>
+<!-- Comments -->
+ <div class="comments center">
+
+  <!-- Template: Comment -->
+  <div class="comment template">
+   <div class="info">
+    <span class="user_name">user_name</span>
+    &#9473;
+    <span class="added">added</span>
+    <a class="score" href="#Upvote">
+     <span class="score-inactive"> <span class="icon-up">^</span><span class="score-num">1</span> </span>
+     <span class="score-active"> <span class="icon-up">^</span><span class="score-num">2</span> </span>
+    </a>
+    <a href="#Reply" class="reply"><div class="icon icon-reply"></div> <span class="reply-text">Reply</span></a>
+    <a href="#Menu" class="menu_3dot">⋮</a>
+   </div>
+   <div class="body">Body</div>
+  </div>
+  <!-- EOF Template: Comment -->
+ </div>
+ <a href="#More" class="comments-more">More comments</a>
+
+</div>
+<!-- EOF Page: Topic -->
+
+<!-- Template: menu -->
+<div class="menu template">
+ <a href="#" class="menu-item template">Template</a>
+</div>
+<!-- EOF Template: menu -->
+
+<script>window.ZEROTALK_LOCAL_DOMAIN = "__LOCAL_DOMAIN__";</script>
+<script type="text/javascript" src="js/all.js?lang={lang}"></script>
+<script>
+$(".topmenu a").each( function(i, elem) {
+    $(elem).attr("href", Text.fixLink($(elem).attr("href")))
+});
+</script>
+</body>
+</html>

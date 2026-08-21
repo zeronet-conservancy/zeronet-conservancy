@@ -1,0 +1,50 @@
+{
+	"Follow in Newsfeed": "在新聞源中關注",
+	"Following": "已關注",
+	"Comments in this topic": "這個話題的新評論",
+	"New topics": "新話題",
+	"New topics in this group": "本組的新話題",
+	"Username mentions": "提到的用戶名",
+	"All comments": "所有評論",
+
+	"Main": "主論壇",
+	"Loading...": "載入中...",
+	" + Start new topic": " + 创建新话题",
+	"new topic": " 新話題",
+	"Topic title": " 話題標題",
+	"Topic description": " 話題描述",
+	"Add new topic": "添加新話題",
+
+	"Newest topics": "最新的話題",
+	"More topics": "更多話題",
+	"Sign in as...": "登入為...",
+	"Submit comment": "提交評論",
+	"Please sign in": "請登入",
+	"new comment": "新評論",
+
+	"Reply": "回復",
+
+	"stickied": "已置顶",
+	" posted ": " 發表了 ",
+	"last ": "最後活動於 ",
+	" comment": " 條評論",
+	" comments": " 條評論",
+	"0 comments": "0 條評論",
+	"last activity": "最後活動",
+	"&#9473; started by ": "&#9473; 發布者：",
+
+	" minutes ago": " 分鐘前",
+	" hours ago": " 小時前",
+	" days ago": " 天前",
+	"on ": "",
+	"Just now": "剛才",
+
+	"Please use English, you can reach other language forums at the top of this page": "請使用英語，你可以在頁面頂部到達其他語言的論壇",
+
+	"Mute this user": "屏蔽此用戶",
+
+	"Please, choose your account before upvoting.": "請在點贊前選擇你的帳戶",
+	"Every new user has limited space to store comments, topics and votes.\\n": "每個用戶有受限的空間來存儲評論、話題與投票。\\n",
+	"This indicator shows your used/total allowed KBytes.\\n": "該指示器顯示你已經使用/總共允許的千位元組。\\n",
+	"The site admin can increase it if you about to run out of it.": "如果你超出限制，網站管理員可以增加它。"
+}

@@ -1,0 +1,146 @@
+{#- Shared left-drawer + theme-application JS, included inside every
+   dashboard-family page's own IIFE (see _layout.html's own script block) --
+   assumes `call`, `status`, and `esc` are already declared in the enclosing
+   scope, and that templates/left_drawer.html's markup is present on the
+   page (every page extending _layout.html gets it via {% include %}).
+
+   Previously only dashboard.html had any of this; console.html and
+   file_manager.html had no drawer, no theme switcher, and no way back to
+   the rest of the admin UI at all. Also fixes two real gaps found while
+   unifying this: theme was never actually applied to the page's own DOM
+   (drawer.html's light/dark/system links only ever saved a server-side
+   preference, see applyThemeFromSettings() below), and it was never even
+   fetched until the drawer was manually opened once (refreshDrawerInfo()
+   is now called unconditionally on load, not just from drawerOpen()). #}
+  const drawer = document.getElementById("left-drawer");
+  const drawerTab = document.getElementById("left-drawer-tab");
+  const drawerWidth = 300;
+  let drawerOpened = false;
+
+  function applyThemeFromSettings(user_settings) {
+    // Pico CSS (see vendor/pico.min.css) already follows
+    // prefers-color-scheme automatically when <html> has no data-theme --
+    // that's exactly what "system" should mean, so it needs no attribute
+    // at all, only an explicit light/dark choice does.
+    if (user_settings && user_settings.use_system_theme === false && user_settings.theme) {
+      document.documentElement.setAttribute("data-theme", user_settings.theme);
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+  }
+
+  function drawerOpen() {
+    drawerOpened = true;
+    drawer.classList.add("open");
+    refreshDrawerInfo();
+  }
+  function drawerClose() {
+    drawerOpened = false;
+    drawer.classList.remove("open");
+  }
+  function drawerToggle() { drawerOpened ? drawerClose() : drawerOpen(); }
+
+  async function refreshDrawerInfo() {
+    const server_info = await call("serverInfo");
+    document.getElementById("leftdrawer-version").textContent =
+      `Version ${server_info.version} (rev${server_info.rev})`;
+    const theme_selected = (server_info.user_settings && server_info.user_settings.use_system_theme)
+      ? "system" : ((server_info.user_settings && server_info.user_settings.theme) || "system");
+    drawer.querySelectorAll(".theme-option").forEach(a => a.classList.toggle("selected", a.dataset.theme === theme_selected));
+    const lang_selected = server_info.language || "en";
+    drawer.querySelectorAll(".lang-option").forEach(a => a.classList.toggle("selected", a.dataset.lang === lang_selected));
+    applyThemeFromSettings(server_info.user_settings);
+  }
+
+  let dragMoved = false, dragStartX = 0, dragOpenedAtStart = false;
+  drawerTab.addEventListener("dragstart", e => e.preventDefault());
+  drawerTab.addEventListener("click", e => {
+    e.preventDefault();
+    // mousedown fires before every click, so gating on elapsed time never
+    // actually let a plain click toggle -- track real pointer movement
+    // instead (same lesson LeftDrawer in plugins/Sidebar/media/all.js
+    // already learned for the site-wrapper version of this drawer).
+    if (dragMoved) return;
+    drawerToggle();
+  });
+  drawerTab.addEventListener("mousedown", e => {
+    if (e.button > 0) return;
+    dragStartX = e.pageX;
+    dragOpenedAtStart = drawerOpened;
+    dragMoved = false;
+    drawer.classList.add("dragging");
+    const onMove = e => {
+      const dx = e.pageX - dragStartX;
+      if (Math.abs(dx) > 5) dragMoved = true;
+      let targetx = (dragOpenedAtStart ? 0 : -drawerWidth) + dx;
+      targetx = Math.max(-drawerWidth, Math.min(0, targetx));
+      drawer.style.left = targetx + "px";
+    };
+    const onUp = () => {
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+      drawer.classList.remove("dragging");
+      if (!dragMoved) { drawer.style.left = ""; return; }
+      const left = parseInt(drawer.style.left) || 0;
+      drawer.style.left = "";
+      left > -drawerWidth / 2 ? drawerOpen() : drawerClose();
+    };
+    document.addEventListener("mousemove", onMove);
+    document.addEventListener("mouseup", onUp);
+  });
+
+  document.getElementById("leftdrawer-back").onclick = e => { e.preventDefault(); history.back(); };
+  document.getElementById("leftdrawer-home").onclick = e => { e.preventDefault(); location.href = "/"; };
+  document.getElementById("leftdrawer-newsite-blank").onclick = async e => {
+    e.preventDefault();
+    try {
+      const result = await call("siteCreate");
+      if (result && result.address) location.href = `/${result.address}/`;
+    } catch (error) {
+      status.textContent = "Could not create site: " + error.message;
+    }
+  };
+  document.getElementById("leftdrawer-siteupdateall").onclick = async e => {
+    e.preventDefault();
+    const result = await call("siteUpdateAll");
+    status.textContent = `Updated ${result && result.updated ? result.updated.length : 0} site(s)`;
+  };
+  document.getElementById("leftdrawer-showdir").onclick = async e => {
+    e.preventDefault();
+    const result = await call("serverShowdirectory", {directory: "backup"});
+    if (result && result.path) status.textContent = `Data directory: ${result.path}`;
+  };
+  document.getElementById("leftdrawer-shutdown").onclick = e => {
+    e.preventDefault();
+    if (confirm("Shut down ZeroNet?")) call("serverShutdown");
+  };
+  drawer.querySelectorAll(".theme-option").forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    const theme = a.dataset.theme;
+    const user_settings = (await call("userGetGlobalSettings")) || {};
+    let applied_theme;
+    if (theme === "system") {
+      applied_theme = window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+      user_settings.use_system_theme = true;
+    } else {
+      applied_theme = theme;
+      user_settings.use_system_theme = false;
+    }
+    user_settings.theme = applied_theme;
+    applyThemeFromSettings(user_settings);
+    await call("userSetGlobalSettings", {settings: user_settings});
+    refreshDrawerInfo();
+  });
+  drawer.querySelectorAll(".lang-option").forEach(a => a.onclick = async e => {
+    e.preventDefault();
+    await call("configSet", {key: "language", value: a.dataset.lang});
+    location.reload();
+  });
+
+  // A separate "open" listener, not socket.onopen -- that property is set
+  // by each page's own on_open block, and this needs to run regardless of
+  // (and independently from) whatever that does.
+  // Calling refreshDrawerInfo() here unconditionally (not only from
+  // drawerOpen()) is what makes theme/version/language correct from the
+  // very first paint instead of only after the drawer's been opened once.
+  socket.addEventListener("open", refreshDrawerInfo);

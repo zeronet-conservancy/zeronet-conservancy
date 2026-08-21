@@ -649,6 +649,15 @@ window.initScrollable = function () {
     }
 
     Sidebar.prototype.initFixbutton = function() {
+      this.fixbutton.on("dragstart", function(e) {
+        // WebKitGTK (unlike Blink) doesn't always honor mousedown's
+        // preventDefault() to suppress the native link-drag on
+        // .fixbutton-bg's real href -- without this, that native OS-level
+        // drag swallows the gesture before our own mousemove handler below
+        // ever runs, so the drag-to-open-sidebar gesture silently does
+        // nothing under pywebview2's GTK backend.
+        return e.preventDefault();
+      });
       this.fixbutton.on("mousedown touchstart", (function(_this) {
         return function(e) {
           if (e.button > 0) {
@@ -659,17 +668,40 @@ window.initScrollable = function () {
           _this.dragStarted = +(new Date);
           $(".drag-bg").remove();
           $("<div class='drag-bg'></div>").appendTo(document.body);
-          return $("body").one("mousemove touchmove", function(e) {
-            var mousex, mousey;
-            mousex = e.pageX;
-            mousey = e.pageY;
-            if (!mousex) {
-              mousex = e.originalEvent.touches[0].pageX;
-              mousey = e.originalEvent.touches[0].pageY;
+          // Calibrate the grab offset from mousedown's own coordinates,
+          // not from the first mousemove -- see the comment above
+          // animDrag/waitMove's replay below for why: on a browser that
+          // coalesces an entire drag gesture down to a single mousemove
+          // event (confirmed live under WebKitGTK: 60 real X11 motion
+          // events over 1.2s still only produced one DOM 'mousemove'),
+          // calibrating from that same single event would make the
+          // start and end positions identical, so every drag would
+          // compute to zero net movement no matter how far the mouse
+          // actually moved.
+          (function() {
+            var downx, downy;
+            downx = e.pageX;
+            downy = e.pageY;
+            if (!downx) {
+              downx = e.originalEvent.touches[0].pageX;
+              downy = e.originalEvent.touches[0].pageY;
             }
-            _this.fixbutton_addx = _this.fixbutton.offset().left - mousex;
-            _this.fixbutton_addy = _this.fixbutton.offset().top - mousey;
-            return _this.startDrag();
+            _this.fixbutton_addx = _this.fixbutton.offset().left - downx;
+            _this.fixbutton_addy = _this.fixbutton.offset().top - downy;
+          })();
+          return $("body").one("mousemove touchmove", function(e) {
+            _this.startDrag();
+            // startDrag() just bound animDrag/waitMove for FUTURE mousemove
+            // events -- handlers bound mid-dispatch never fire for the
+            // event currently dispatching, so on a browser that delivers
+            // many mousemove events per drag (Chromium/Blink) the next
+            // one picks this up naturally. Under WebKitGTK's coalescing
+            // (see above) this first mousemove may be the ONLY one the
+            // gesture ever gets, so replay it manually against the
+            // already-calibrated grab offset instead of waiting for a
+            // second event that may never come.
+            _this.animDrag(e);
+            return _this.waitMove(e);
           });
         };
       })(this));
@@ -1137,6 +1169,20 @@ window.initScrollable = function () {
           return false;
         };
       })(this));
+      this.tag.find("#button-clone").off("click touchend").on("click touchend", (function(_this) {
+        return function() {
+          _this.tag.find("#button-clone").addClass("loading");
+          _this.wrapper.ws.cmd("siteClone", _this.wrapper.site_info.address, function(res) {
+            _this.tag.find("#button-clone").removeClass("loading");
+            if (res && res.address) {
+              return document.location = "/" + res.address;
+            } else {
+              return _this.wrapper.notifications.add("error-clone", "error", "Clone error: " + (res && res.error ? res.error : "Unknown error"));
+            }
+          });
+          return false;
+        };
+      })(this));
       this.tag.find("#button-favourite").off("click touched").on("click touched", (function(_this) {
 	return function() {
 	  _this.tag.find("#button-favourite").addClass("hidden");
@@ -1211,6 +1257,154 @@ window.initScrollable = function () {
                 return _this.updateHtmlTag();
               }
             });
+          });
+          return false;
+        };
+      })(this));
+      this.tag.find("#button-recipient-add").off("click touchend").on("click touchend", (function(_this) {
+        return function() {
+          var address, signature;
+          address = $("#input-recipient-address").val();
+          signature = $("#input-recipient-signature").val();
+          if (!address || !signature) {
+            _this.wrapper.notifications.add("recipient-add", "error", "Address and signature are both required", 5000);
+            return false;
+          }
+          _this.tag.find("#button-recipient-add").addClass("loading");
+          _this.wrapper.ws.cmd("siteAddRecipient", [address, signature], function(res) {
+            _this.tag.find("#button-recipient-add").removeClass("loading");
+            if (res !== "ok") {
+              return _this.wrapper.notifications.add("recipient-add", "error", "Approve recipient error: " + (res && res.error ? res.error : res));
+            } else {
+              return _this.wrapper.ws.cmd("siteSign", {}, function(res_sign) {
+                if (res_sign === "ok") {
+                  _this.wrapper.notifications.add("recipient-add", "done", "Recipient approved and site re-signed!", 5000);
+                } else {
+                  _this.wrapper.notifications.add("recipient-add", "error", "Recipient approved, but re-sign failed: " + (res_sign && res_sign.error ? res_sign.error : res_sign));
+                }
+                return _this.updateHtmlTag();
+              });
+            }
+          });
+          return false;
+        };
+      })(this));
+      // Delegated: creating a provider morphdom-swaps the create-form for
+      // the issue-form (different element ids), so a direct .find().on()
+      // bound here at onOpened time would miss #button-provider-issue
+      // after that swap. Same reasoning as the recipient-remove handler
+      // just below.
+      this.tag.off("click touchend", "#button-provider-create").on("click touchend", "#button-provider-create", (function(_this) {
+        return function() {
+          var domain;
+          domain = _this.tag.find("#input-provider-domain").val();
+          if (!domain) {
+            _this.wrapper.notifications.add("provider-create", "error", "Provider domain is required", 5000);
+            return false;
+          }
+          _this.tag.find("#button-provider-create").addClass("loading");
+          _this.wrapper.ws.cmd("providerCreate", [domain], function(res) {
+            _this.tag.find("#button-provider-create").removeClass("loading");
+            if (res && res.error) {
+              _this.wrapper.notifications.add("provider-create", "error", "Provider creation error: " + res.error);
+            } else {
+              _this.wrapper.notifications.add("provider-create", "done", "Identity provider created for " + domain, 5000);
+              _this.updateHtmlTag();
+            }
+          });
+          return false;
+        };
+      })(this));
+      this.tag.off("click touchend", "#button-provider-issue").on("click touchend", "#button-provider-issue", (function(_this) {
+        return function() {
+          var auth_address, domain, username;
+          auth_address = _this.tag.find("#input-provider-issue-address").val();
+          domain = _this.tag.find("#input-provider-issue-domain").val();
+          username = _this.tag.find("#input-provider-issue-username").val();
+          if (!auth_address || !domain || !username) {
+            _this.wrapper.notifications.add("provider-issue", "error", "Address, domain and username are all required", 5000);
+            return false;
+          }
+          _this.tag.find("#button-provider-issue").addClass("loading");
+          _this.wrapper.ws.cmd("certProviderIssue", [auth_address, domain, "web", username], function(res) {
+            _this.tag.find("#button-provider-issue").removeClass("loading");
+            if (res && res.error) {
+              _this.wrapper.notifications.add("provider-issue", "error", "Certificate issue error: " + res.error);
+            } else {
+              _this.wrapper.notifications.add("provider-issue", "done", "Certificate issued! cert_sign: " + res.cert_sign, 0);
+            }
+          });
+          return false;
+        };
+      })(this));
+      // Delegated (not .find().on()): recipient rows -- and their Remove
+      // buttons -- only exist once at least one recipient's been
+      // approved, and updateHtmlTag()'s morphdom-based re-render never
+      // re-runs onOpened() to rebind a direct handler onto newly-created
+      // ones. Binding on this.tag with a selector matches at click time,
+      // not bind time, so it keeps working across re-renders.
+      this.tag.off("click touchend", ".recipient-remove").on("click touchend", ".recipient-remove", (function(_this) {
+        return function() {
+          var address;
+          address = $(this).data("address");
+          _this.tag.find(".recipient-remove").addClass("loading");
+          _this.wrapper.ws.cmd("siteRemoveRecipient", [address], function(res) {
+            _this.tag.find(".recipient-remove").removeClass("loading");
+            if (res !== "ok") {
+              return _this.wrapper.notifications.add("recipient-remove", "error", "Remove recipient error: " + (res && res.error ? res.error : res));
+            } else {
+              return _this.wrapper.ws.cmd("siteSign", {}, function(res_sign) {
+                if (res_sign === "ok") {
+                  _this.wrapper.notifications.add("recipient-remove", "done", "Recipient removed and site re-signed!", 5000);
+                } else {
+                  _this.wrapper.notifications.add("recipient-remove", "error", "Recipient removed, but re-sign failed: " + (res_sign && res_sign.error ? res_sign.error : res_sign));
+                }
+                return _this.updateHtmlTag();
+              });
+            }
+          });
+          return false;
+        };
+      })(this));
+      // Same delegation reasoning as .recipient-remove above: pending-
+      // request rows only exist once request_access.py has actually
+      // queued one, well after onOpened() first ran.
+      this.tag.off("click touchend", ".request-approve").on("click touchend", ".request-approve", (function(_this) {
+        return function() {
+          var address;
+          address = $(this).data("address");
+          _this.tag.find(".request-approve, .request-deny").addClass("loading");
+          _this.wrapper.ws.cmd("siteApproveRequest", [address], function(res) {
+            _this.tag.find(".request-approve, .request-deny").removeClass("loading");
+            if (res !== "ok") {
+              return _this.wrapper.notifications.add("request-approve", "error", "Approve request error: " + (res && res.error ? res.error : res));
+            } else {
+              return _this.wrapper.ws.cmd("siteSign", {}, function(res_sign) {
+                if (res_sign === "ok") {
+                  _this.wrapper.notifications.add("request-approve", "done", "Request approved and site re-signed!", 5000);
+                } else {
+                  _this.wrapper.notifications.add("request-approve", "error", "Request approved, but re-sign failed: " + (res_sign && res_sign.error ? res_sign.error : res_sign));
+                }
+                return _this.updateHtmlTag();
+              });
+            }
+          });
+          return false;
+        };
+      })(this));
+      this.tag.off("click touchend", ".request-deny").on("click touchend", ".request-deny", (function(_this) {
+        return function() {
+          var address;
+          address = $(this).data("address");
+          _this.tag.find(".request-approve, .request-deny").addClass("loading");
+          _this.wrapper.ws.cmd("siteDenyRequest", [address], function(res) {
+            _this.tag.find(".request-approve, .request-deny").removeClass("loading");
+            if (res !== "ok") {
+              _this.wrapper.notifications.add("request-deny", "error", "Deny request error: " + (res && res.error ? res.error : res));
+            } else {
+              _this.wrapper.notifications.add("request-deny", "done", "Request denied", 5000);
+            }
+            return _this.updateHtmlTag();
           });
           return false;
         };
@@ -1430,10 +1624,264 @@ window.initScrollable = function () {
 
   })(Class);
 
+  function LeftDrawer(wrapper) {
+    this.wrapper = wrapper;
+    this.opened = false;
+    this.dragMoved = false;
+    this.drag_startx = 0;
+    this.width = 300;
+    this.createHtmltag();
+    this.bindEvents();
+  }
+
+  LeftDrawer.prototype.createHtmltag = function() {
+    // Markup itself is server-rendered (templates/left_drawer.html,
+    // included by wrapper.html) rather than built here, so the exact
+    // same markup can also be included by dashboard.html -- the drawer
+    // needs to persist across /Config, /Plugins, etc, not just site
+    // pages, and those pages have no jQuery/Wrapper class to build it
+    // with. This just binds behavior onto what's already in the DOM.
+    this.container = $("#left-drawer");
+    this.tab = this.container.find("#left-drawer-tab");
+    this.content = this.container.find(".left-drawer-content");
+  };
+
+  LeftDrawer.prototype.refreshInfo = function() {
+    var _this = this;
+    return this.wrapper.ws.cmd("serverInfo", [], function(server_info) {
+      _this.wrapper.server_info = server_info;
+      _this.content.find("#leftdrawer-version").text(
+        "Version " + server_info.version + " (rev" + server_info.rev + ")"
+      );
+      return _this.refreshThemeLang(server_info);
+    });
+  };
+
+  LeftDrawer.prototype.refreshThemeLang = function(server_info) {
+    var theme_selected, lang_selected;
+    if (server_info.user_settings && server_info.user_settings.use_system_theme) {
+      theme_selected = "system";
+    } else {
+      theme_selected = (server_info.user_settings && server_info.user_settings.theme) || "system";
+    }
+    this.content.find(".theme-option").removeClass("selected");
+    this.content.find(".theme-option[data-theme='" + theme_selected + "']").addClass("selected");
+    lang_selected = server_info.language || "en";
+    this.content.find(".lang-option").removeClass("selected");
+    this.content.find(".lang-option[data-lang='" + lang_selected + "']").addClass("selected");
+    return true;
+  };
+
+  LeftDrawer.prototype.open = function() {
+    this.opened = true;
+    this.container.addClass("open");
+    return this.refreshInfo();
+  };
+
+  LeftDrawer.prototype.close = function() {
+    this.opened = false;
+    return this.container.removeClass("open");
+  };
+
+  LeftDrawer.prototype.toggle = function() {
+    if (this.opened) {
+      return this.close();
+    } else {
+      return this.open();
+    }
+  };
+
+  LeftDrawer.prototype.bindEvents = function() {
+    var _this = this;
+
+    this.tab.on("dragstart", function(e) {
+      return e.preventDefault();
+    });
+
+    this.dragMoved = false;
+
+    this.tab.on("click", function(e) {
+      e.preventDefault();
+      // mousedown fires before every click, dragged or not -- gating on
+      // elapsed time (< 250ms) is backwards: a plain quick click ALWAYS
+      // falls under that threshold, so toggle() never ran except on an
+      // unnaturally slow click. Track actual pointer movement instead
+      // (set on mousemove below) and only suppress the toggle when a
+      // real drag happened, letting mouseup's own open()/close() stand.
+      if (_this.dragMoved) {
+        return false;
+      }
+      _this.toggle();
+      return false;
+    });
+
+    this.tab.on("mousedown touchstart", function(e) {
+      var downx;
+      if (e.button > 0) {
+        return;
+      }
+      downx = e.pageX;
+      if (!downx && e.originalEvent.touches) {
+        downx = e.originalEvent.touches[0].pageX;
+      }
+      _this.drag_startx = downx;
+      _this.drag_opened_at_start = _this.opened;
+      _this.dragMoved = false;
+      _this.container.addClass("dragging");
+      $("body").on("mousemove.leftdrawer touchmove.leftdrawer", function(e) {
+        var movex, dx, targetx;
+        movex = e.pageX;
+        if (!movex && e.originalEvent.touches) {
+          movex = e.originalEvent.touches[0].pageX;
+        }
+        dx = movex - _this.drag_startx;
+        if (Math.abs(dx) > 5) {
+          _this.dragMoved = true;
+        }
+        targetx = (_this.drag_opened_at_start ? 0 : -_this.width) + dx;
+        if (targetx > 0) {
+          targetx = 0;
+        }
+        if (targetx < -_this.width) {
+          targetx = -_this.width;
+        }
+        return _this.container[0].style.left = targetx + "px";
+      });
+      return $("body").one("mouseup touchend touchcancel", function(e) {
+        var left;
+        $("body").off("mousemove.leftdrawer touchmove.leftdrawer");
+        _this.container.removeClass("dragging");
+        if (!_this.dragMoved) {
+          _this.container[0].style.left = "";
+          return false;
+        }
+        left = parseInt(_this.container[0].style.left) || 0;
+        _this.container[0].style.left = "";
+        if (left > -_this.width / 2) {
+          _this.open();
+        } else {
+          _this.close();
+        }
+        return false;
+      });
+    });
+
+    this.content.find("#leftdrawer-back").on("click", function(e) {
+      e.preventDefault();
+      window.top.history.back();
+      return false;
+    });
+
+    this.content.find("#leftdrawer-home").on("click", function(e) {
+      e.preventDefault();
+      var homepage_href = $(".fixbutton-bg").attr("href");
+      window.top.location = homepage_href || "/";
+      return false;
+    });
+
+    this.content.find("#leftdrawer-newsite-blank").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.ws.cmd("siteCreate", [], function(res) {
+        if (res && res.address) {
+          return window.top.location = "/" + res.address + "/";
+        } else {
+          // siteCreate is ADMIN-gated on THIS connection's own site (the
+          // drawer is available site-wide, not just from the dashboard),
+          // so this reliably fails with an error -- not silence -- when
+          // opened from a page that isn't itself ADMIN. Surfacing it
+          // beats leaving the click looking like it did nothing.
+          return _this.wrapper.notifications.add(
+            "newsite", "error", "Could not create site: " + (res && res.error ? res.error : "unknown error")
+          );
+        }
+      });
+      return false;
+    });
+
+    this.content.find("#leftdrawer-siteupdateall").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.ws.cmd("siteUpdateAll", [], function(res) {
+        var num = (res && res.updated) ? res.updated.length : 0;
+        return _this.wrapper.notifications.add("siteupdateall", "done", "Updated " + num + " site(s)", 5000);
+      });
+      return false;
+    });
+
+    this.content.find("#leftdrawer-showdir").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.ws.cmd("serverShowdirectory", ["backup"], function(res) {
+        if (res && res.path) {
+          return _this.wrapper.notifications.add("showdir", "done", "Data directory: <b>" + res.path + "</b>", 15000);
+        }
+      });
+      return false;
+    });
+
+    this.content.find("#leftdrawer-shutdown").on("click", function(e) {
+      e.preventDefault();
+      _this.wrapper.displayConfirm("Are you sure?", "Shut down ZeroNet", function(confirmed) {
+        if (confirmed) {
+          return _this.wrapper.ws.cmd("serverShutdown", []);
+        }
+      });
+      return false;
+    });
+
+    this.content.on("click", ".theme-option", function(e) {
+      var theme = $(e.currentTarget).attr("data-theme");
+      e.preventDefault();
+      return _this.wrapper.ws.cmd("userGetGlobalSettings", [], function(user_settings) {
+        var DARK, mqDark, applied_theme;
+        user_settings = user_settings || {};
+        if (theme === "system") {
+          DARK = "(prefers-color-scheme: dark)";
+          mqDark = window.matchMedia(DARK);
+          applied_theme = mqDark.matches ? "dark" : "light";
+          user_settings.use_system_theme = true;
+        } else {
+          applied_theme = theme;
+          user_settings.use_system_theme = false;
+        }
+        user_settings.theme = applied_theme;
+        _this.wrapper.ws.cmd("userSetGlobalSettings", [user_settings]);
+        document.body.className = document.body.className.replace(/theme-[a-z]+/, "");
+        document.body.className += " theme-" + applied_theme;
+        // Best-effort: the wrapper's OWN body class only ever controlled
+        // the loading screen (see src/Ui/media/all.css's only two
+        // theme-dark rules) -- everything visible is the site's own
+        // iframe, styled by ITS OWN body class. Real ZeroHello's own
+        // theme menu toggles that same convention on its own document
+        // when triggered from inside it; this reaches into the iframe
+        // to do the same thing from outside, same-origin so no CORS
+        // issue, wrapped in try/catch since not every site follows this
+        // convention (a no-op then, not an error).
+        try {
+          var frame = document.getElementById("inner-iframe");
+          var frame_body = frame && frame.contentDocument && frame.contentDocument.body;
+          if (frame_body) {
+            frame_body.className = frame_body.className.replace(/theme-[a-z]+/, "") + " theme-" + applied_theme;
+          }
+        } catch (err) {}
+        return _this.refreshThemeLang({user_settings: user_settings, language: _this.wrapper.server_info ? _this.wrapper.server_info.language : "en"});
+      });
+    });
+
+    this.content.on("click", ".lang-option", function(e) {
+      var lang = $(e.currentTarget).attr("data-lang");
+      e.preventDefault();
+      return _this.wrapper.ws.cmd("configSet", ["language", lang], function() {
+        return window.top.location.reload();
+      });
+    });
+
+    return $(window).on("resize", function() {});
+  };
+
   wrapper = window.wrapper;
 
   setTimeout((function() {
-    return window.sidebar = new Sidebar(wrapper);
+    window.sidebar = new Sidebar(wrapper);
+    return window.leftDrawer = new LeftDrawer(wrapper);
   }), 500);
 
   window.transitionEnd = 'transitionend webkitTransitionEnd oTransitionEnd otransitionend';

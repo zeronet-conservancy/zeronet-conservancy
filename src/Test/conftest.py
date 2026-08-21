@@ -10,9 +10,18 @@ import datetime
 import atexit
 import threading
 import socket
+from pathlib import Path
 
 import pytest
 import mock
+
+# trio/libp2p MUST be imported before gevent monkey-patches -- see the comment
+# in src/main.py above the matching import for why (trio's socket subclass
+# bakes in socket.SocketType at its own import time, not dynamically). Without
+# this, P2P tests only pass by accident, if some pytest plugin (e.g. anyio's)
+# happens to import trio first during plugin discovery.
+import trio  # noqa: F401
+import libp2p  # noqa: F401
 
 import gevent
 if "libev" not in str(gevent.config.loop):
@@ -21,10 +30,19 @@ if "libev" not in str(gevent.config.loop):
 
 import gevent.event
 from gevent import monkey
-monkey.patch_all(thread=False, subprocess=False)
+monkey.patch_all(thread=False)
+
+# NOTE: P2P/* tests that call trio.run() need select.epoll/socket.socket
+# temporarily restored to their real (non-gevent-patched) versions -- see
+# P2P/compat.py's run(), which brackets that restoration around each
+# trio.run() call and swaps gevent's patched versions back immediately
+# after, rather than restoring them process-wide here. A process-wide
+# restore breaks gevent's own cooperative networking permanently for the
+# rest of the test session (confirmed while building this) -- it is not
+# thread-liveness-dependent, so don't reintroduce it here.
 
 atexit_register = atexit.register
-atexit.register = lambda func: ""  # Don't register shutdown functions to avoid IO error on exit
+atexit.register = lambda func, *args, **kwargs: ""  # Don't register shutdown functions to avoid IO error on exit
 
 def pytest_addoption(parser):
     parser.addoption("--slow", action='store_true', default=False, help="Also run slow tests")
@@ -49,22 +67,21 @@ SITE_URL = "http://127.0.0.1:43110"
 TEST_DATA_PATH = 'src/Test/testdata'
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/../lib"))  # External modules directory
 sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/.."))  # Imports relative to src dir
+sys.path.insert(0, os.path.abspath(os.path.dirname(__file__) + "/../.."))  # Repo root for src package
+
+import src.Config  # noqa: F401
+sys.modules['Config'] = sys.modules['src.Config']
 
 from Config import config
 config.argv = ["none"]  # Dont pass any argv to config parser
 config.parse(silent=True, parse_config=False)  # Plugins need to access the configuration
 config.action = "test"
 
-# Load plugins
-from Plugin import PluginManager
-
-config.data_dir = TEST_DATA_PATH  # Use test data for unittests
+config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
+config.private_dir = Path(TEST_DATA_PATH)  # Use test data for private files (users.json, sites.json)
 config.debug = True
 
 os.chdir(os.path.abspath(os.path.dirname(__file__) + "/../.."))  # Set working dir
-
-config.loadPlugins()
-config.parse(parse_config=False)  # Parse again to add plugin configuration options
 
 config.action = "test"
 config.debug = True
@@ -72,7 +89,8 @@ config.debug_socket = True  # Use test data for unittests
 config.verbose = True  # Use test data for unittests
 config.tor = "disable"  # Don't start Tor client
 config.trackers = []
-config.data_dir = TEST_DATA_PATH  # Use test data for unittests
+config.data_dir = Path(TEST_DATA_PATH)  # Use test data for unittests
+config.private_dir = Path(TEST_DATA_PATH)  # Use test data for private files (users.json, sites.json)
 if "ZERONET_LOG_DIR" in os.environ:
     config.log_dir = os.environ["ZERONET_LOG_DIR"]
 config.initLogging(console_logging=False)
@@ -114,16 +132,7 @@ fmt = logging.Formatter(fmt='%(since_start)s %(thread_marker)s %(levelname)-8s %
 [hndl.addFilter(TimeFilter()) for hndl in log.handlers]
 [hndl.setFormatter(fmt) for hndl in log.handlers]
 
-from Site.Site import Site
-from Site import SiteManager
-from User import UserManager
-from File import FileServer
-from Connection import ConnectionServer
-from Crypt import CryptConnection
 from Crypt import CryptBitcoin
-from Ui import UiWebsocket
-from Tor import TorManager
-from Content import ContentDb
 from util import RateLimit
 from Db import Db
 from Debug import Debug
@@ -132,13 +141,13 @@ gevent.get_hub().NOT_ERROR += (Debug.Notify,)
 
 def cleanup():
     Db.dbCloseAll()
-    for dir_path in [config.data_dir, config.data_dir + "-temp"]:
+    for dir_path in [config.data_dir, Path(str(config.data_dir) + "-temp")]:
         if os.path.isdir(dir_path):
             for file_name in os.listdir(dir_path):
                 ext = file_name.rsplit(".", 1)[-1]
                 if ext not in ["csr", "pem", "srl", "db", "json", "tmp"]:
                     continue
-                file_path = dir_path + "/" + file_name
+                file_path = os.path.join(dir_path, file_name)
                 if os.path.isfile(file_path):
                     os.unlink(file_path)
 
@@ -161,7 +170,7 @@ def resetSettings(request):
 
 @pytest.fixture(scope="session")
 def resetTempSettings(request):
-    data_dir_temp = config.data_dir + "-temp"
+    data_dir_temp = Path(str(config.data_dir) + "-temp")
     if not os.path.isdir(data_dir_temp):
         os.mkdir(data_dir_temp)
     open("%s/sites.json" % data_dir_temp, "w").write("{}")
@@ -181,218 +190,6 @@ def resetTempSettings(request):
         os.unlink("%s/users.json" % data_dir_temp)
         os.unlink("%s/filters.json" % data_dir_temp)
     request.addfinalizer(cleanup)
-
-
-@pytest.fixture()
-def site(request):
-    threads_before = [obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet)]
-    # Reset ratelimit
-    RateLimit.queue_db = {}
-    RateLimit.called_db = {}
-
-    site = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
-
-    # Always use original data
-    assert "1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT" in site.storage.getPath("")  # Make sure we dont delete everything
-    shutil.rmtree(site.storage.getPath(""), True)
-    shutil.copytree(site.storage.getPath("") + "-original", site.storage.getPath(""))
-
-    # Add to site manager
-    SiteManager.site_manager.get("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
-    site.announce = mock.MagicMock(return_value=True)  # Don't try to find peers from the net
-
-    def cleanup():
-        site.delete()
-        site.content_manager.contents.db.close("Test cleanup")
-        site.content_manager.contents.db.timer_check_optional.kill()
-        SiteManager.site_manager.sites.clear()
-        db_path = "%s/content.db" % config.data_dir
-        os.unlink(db_path)
-        del ContentDb.content_dbs[db_path]
-        gevent.killall([obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet) and obj not in threads_before])
-    request.addfinalizer(cleanup)
-
-    site.greenlet_manager.stopGreenlets()
-    site = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")  # Create new Site object to load content.json files
-    if not SiteManager.site_manager.sites:
-        SiteManager.site_manager.sites = {}
-    SiteManager.site_manager.sites["1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT"] = site
-    site.settings["serving"] = True
-    return site
-
-
-@pytest.fixture()
-def site_temp(request):
-    threads_before = [obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet)]
-    with mock.patch("Config.config.data_dir", config.data_dir + "-temp"):
-        site_temp = Site("1TeSTvb4w2PWE81S2rEELgmX2GCCExQGT")
-        site_temp.settings["serving"] = True
-        site_temp.announce = mock.MagicMock(return_value=True)  # Don't try to find peers from the net
-
-    def cleanup():
-        site_temp.delete()
-        site_temp.content_manager.contents.db.close("Test cleanup")
-        site_temp.content_manager.contents.db.timer_check_optional.kill()
-        db_path = "%s-temp/content.db" % config.data_dir
-        os.unlink(db_path)
-        del ContentDb.content_dbs[db_path]
-        gevent.killall([obj for obj in gc.get_objects() if isinstance(obj, gevent.Greenlet) and obj not in threads_before])
-    request.addfinalizer(cleanup)
-    site_temp.log = logging.getLogger("Temp:%s" % site_temp.address_short)
-    return site_temp
-
-
-@pytest.fixture(scope="session")
-def user():
-    user = UserManager.user_manager.get()
-    if not user:
-        user = UserManager.user_manager.create()
-    user.sites = {}  # Reset user data
-    return user
-
-
-@pytest.fixture(scope="session")
-def browser(request):
-    try:
-        from selenium import webdriver
-        print("Starting chromedriver...")
-        options = webdriver.chrome.options.Options()
-        options.add_argument("--headless")
-        options.add_argument("--window-size=1920x1080")
-        options.add_argument("--log-level=1")
-        browser = webdriver.Chrome(executable_path=CHROMEDRIVER_PATH, service_log_path=os.path.devnull, options=options)
-
-        def quit():
-            browser.quit()
-        request.addfinalizer(quit)
-    except Exception as err:
-        raise pytest.skip("Test requires selenium + chromedriver: %s" % err)
-    return browser
-
-
-@pytest.fixture(scope="session")
-def site_url():
-    try:
-        urllib.request.urlopen(SITE_URL).read()
-    except Exception as err:
-        raise pytest.skip("Test requires zeronet client running: %s" % err)
-    return SITE_URL
-
-
-@pytest.fixture(params=['ipv4', 'ipv6'])
-def file_server(request):
-    if request.param == "ipv4":
-        return request.getfixturevalue("file_server4")
-    else:
-        return request.getfixturevalue("file_server6")
-
-
-@pytest.fixture
-def file_server4(request):
-    time.sleep(0.1)
-    file_server = FileServer("127.0.0.1", 1544)
-    file_server.ip_external = "1.2.3.4"  # Fake external ip
-
-    def listen():
-        ConnectionServer.start(file_server)
-        ConnectionServer.listen(file_server)
-
-    gevent.spawn(listen)
-    # Wait for port opening
-    for retry in range(10):
-        time.sleep(0.1)  # Port opening
-        try:
-            conn = file_server.getConnection("127.0.0.1", 1544)
-            conn.close()
-            break
-        except Exception as err:
-            print("FileServer6 startup error", Debug.formatException(err))
-    assert file_server.running
-    file_server.ip_incoming = {}  # Reset flood protection
-
-    def stop():
-        file_server.stop()
-    request.addfinalizer(stop)
-    return file_server
-
-
-@pytest.fixture
-def file_server6(request):
-    try:
-        sock = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
-        sock.connect(("::1", 80, 1, 1))
-        has_ipv6 = True
-    except OSError:
-        has_ipv6 = False
-    if not has_ipv6:
-        pytest.skip("Ipv6 not supported")
-
-
-    time.sleep(0.1)
-    file_server6 = FileServer("::1", 1544)
-    file_server6.ip_external = 'fca5:95d6:bfde:d902:8951:276e:1111:a22c'  # Fake external ip
-
-    def listen():
-        ConnectionServer.start(file_server6)
-        ConnectionServer.listen(file_server6)
-
-    gevent.spawn(listen)
-    # Wait for port opening
-    for retry in range(10):
-        time.sleep(0.1)  # Port opening
-        try:
-            conn = file_server6.getConnection("::1", 1544)
-            conn.close()
-            break
-        except Exception as err:
-            print("FileServer6 startup error", Debug.formatException(err))
-    assert file_server6.running
-    file_server6.ip_incoming = {}  # Reset flood protection
-
-    def stop():
-        file_server6.stop()
-    request.addfinalizer(stop)
-    return file_server6
-
-
-@pytest.fixture()
-def ui_websocket(site, user):
-    class WsMock:
-        def __init__(self):
-            self.result = gevent.event.AsyncResult()
-
-        def send(self, data):
-            logging.debug("WsMock: Set result (data: %s) called by %s" % (data, Debug.formatStack()))
-            self.result.set(json.loads(data)["result"])
-
-        def getResult(self):
-            logging.debug("WsMock: Get result")
-            back = self.result.get()
-            logging.debug("WsMock: Got result (data: %s)" % back)
-            self.result = gevent.event.AsyncResult()
-            return back
-
-    ws_mock = WsMock()
-    ui_websocket = UiWebsocket(ws_mock, site, None, user, None)
-
-    def testAction(action, *args, **kwargs):
-        ui_websocket.handleRequest({"id": 0, "cmd": action, "params": list(args) if args else kwargs})
-        return ui_websocket.ws.getResult()
-
-    ui_websocket.testAction = testAction
-    return ui_websocket
-
-
-@pytest.fixture(scope="session")
-def tor_manager():
-    try:
-        tor_manager = TorManager(fileserver_port=1544)
-        tor_manager.start()
-        assert tor_manager.conn is not None
-        tor_manager.startOnions()
-    except Exception as err:
-        raise pytest.skip("Test requires Tor with ControlPort: %s, %s" % (config.tor_controller, err))
-    return tor_manager
 
 
 @pytest.fixture()

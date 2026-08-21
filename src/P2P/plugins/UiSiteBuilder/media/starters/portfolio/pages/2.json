@@ -1,0 +1,22 @@
+{
+ "page": [
+  {
+   "page_id": 2,
+   "slug": "about",
+   "title": "About",
+   "modified": 1690000000,
+   "blocks": [
+    {"type": "heading", "level": 1, "body": "About"},
+    {"type": "section", "columns": [
+      [
+        {"type": "text", "body": "I make websites, tools and experiments on the open web."}
+      ],
+      [
+        {"type": "list", "ordered": false, "items": ["Design", "Code", "Writing"]}
+      ]
+     ]},
+    {"type": "quote", "body": "Small tools, well made."}
+   ]
+  }
+ ]
+}

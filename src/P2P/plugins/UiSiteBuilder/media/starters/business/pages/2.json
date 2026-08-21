@@ -1,0 +1,31 @@
+{
+ "page": [
+  {
+   "page_id": 2,
+   "slug": "pricing",
+   "title": "Pricing",
+   "modified": 1690000000,
+   "blocks": [
+    {"type": "heading", "level": 1, "body": "Plans"},
+    {"type": "text", "body": "Pick the plan that fits. All plans are yours forever."},
+    {"type": "section", "columns": [
+      [
+        {"type": "heading", "level": 3, "body": "Free"},
+        {"type": "text", "body": "Everything you need to start."},
+        {"type": "card", "title": "Free", "url": "#", "description": "No cost", "image": ""}
+      ],
+      [
+        {"type": "heading", "level": 3, "body": "Pro"},
+        {"type": "text", "body": "For teams and power users."},
+        {"type": "card", "title": "Pro", "url": "#", "description": "$10/mo", "image": ""}
+      ],
+      [
+        {"type": "heading", "level": 3, "body": "Enterprise"},
+        {"type": "text", "body": "Custom everything."},
+        {"type": "card", "title": "Enterprise", "url": "#", "description": "Contact us", "image": ""}
+      ]
+     ]}
+   ]
+  }
+ ]
+}

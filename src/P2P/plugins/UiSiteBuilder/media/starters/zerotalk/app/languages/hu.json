@@ -1,0 +1,41 @@
+{
+	"Follow in Newsfeed": "Követés a hírfolyamban",
+	"Following": "Követve",
+	"Comments in this topic": "Hozzászólások ebben a témában",
+	"New topics": "Új témák",
+	"New topics in this group": "Új témák ebben a csoportban",
+	"Username mentions": "Felhasználónév említések",
+	"All comments": "Minden hozzászólás",
+
+	"Main": "Főoldal",
+	"Loading...": "Betöltés...",
+	" + Start new topic": " + Téma indítása",
+	"new topic": " új téma",
+	"Topic title": " Téma címe",
+	"Topic description": " Téma leírása",
+	"Add new topic": "Új téma hozzáadása",
+
+	"Newest topics": "Legújabb témák",
+	"More topics": "Több téma",
+	"Sign in as...": "Bejelentkezés...",
+	"Submit comment": "Hozzászólás elküldése",
+	"Please sign in": "Kérjük, jelentkezz be!",
+	"new comment": "Új hozzászólás",
+
+	"Reply": "Válasz",
+
+	"stickied": "rögzítve",
+	" posted ": " nyitotta ",
+	"last ": "az utolsó ",
+	" comment": " hozzászólás",
+	" comments": " hozzászólás",
+	"0 comments": "0 hozzászólás",
+	"last activity": "utolsó aktivitás",
+	"&#9473; started by ": "&#9473; témaindító: ",
+
+	" minutes ago": " perce",
+	" hours ago": " órája",
+	" days ago": " napja",
+	"on ": "",
+	"Just now": "Épp most"
+}

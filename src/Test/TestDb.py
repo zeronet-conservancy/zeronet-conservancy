@@ -121,6 +121,17 @@ class TestDb:
         assert db.execute("SELECT COUNT(*) AS num FROM test_importfilter").fetchone()["num"] == 1
         assert db.execute("SELECT COUNT(*) AS num FROM test").fetchone()["num"] == 1
 
+    def testUpdateJsonToJsonTable(self, db):
+        # The to_json_table mapping syncs keys into a (possibly different) json row,
+        # and previously crashed on Path + str when passed a Path file_path
+        from pathlib import Path
+        db.schema["maps"]["data.json"]["to_json_table"] = {"title": "title"}
+        f = io.BytesIO()
+        f.write(b'{"test": [{"test_id": 1, "title": "Test title"}]}')
+        f.seek(0)
+        assert db.updateJson(Path(db.db_dir) / "data.json", f) is True
+        assert db.execute("SELECT COUNT(*) AS num FROM json WHERE ?", {"path": "/data.json"}).fetchone()["num"] == 1
+
     def testUnsafePattern(self, db):
         db.schema["maps"] = {"[A-Za-z.]*": db.schema["maps"]["data.json"]}  # Only repetition of . supported
         f = io.StringIO()

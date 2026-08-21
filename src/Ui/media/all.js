@@ -64,6 +64,7 @@
       this.url = url;
       this.next_message_id = 1;
       this.waiting_cb = {};
+      this.keepalive_timer = null;
       this.init();
     }
 
@@ -152,6 +153,16 @@
       var i, len, message, ref;
       this.log("Open");
       this.connected = true;
+      if (this.keepalive_timer != null) {
+        clearInterval(this.keepalive_timer);
+      }
+      this.keepalive_timer = setInterval(((function(_this) {
+        return function() {
+          if (_this.connected) {
+            return _this.cmd("ping");
+          }
+        };
+      })(this)), 30000);
       ref = this.message_queue;
       for (i = 0, len = ref.length; i < len; i++) {
         message = ref[i];
@@ -176,6 +187,10 @@
       }
       this.log("Closed", e);
       this.connected = false;
+      if (this.keepalive_timer != null) {
+        clearInterval(this.keepalive_timer);
+        this.keepalive_timer = null;
+      }
       if (e && e.code === 1000 && e.wasClean === false) {
         this.log("Server error, please reload the page", e.wasClean);
       } else {

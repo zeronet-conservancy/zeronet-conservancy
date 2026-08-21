@@ -1,0 +1,156 @@
+{% extends "_layout.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}{{ title }}{% endblock %}
+
+{% block page_script %}
+  const page = {{ page | tojson }};
+  const content = document.getElementById("content");
+
+  function setStatus(text, isError) {
+    status.removeAttribute("aria-busy");
+    status.textContent = text || "";
+    status.style.color = isError ? "var(--pico-del-color)" : "";
+  }
+
+  function renderConfig(values) {
+    const rows = Object.entries(values).sort(([a], [b]) => a.localeCompare(b)).map(([key, item]) => {
+      const value = item.value;
+      const encoded = typeof value === "object" ? JSON.stringify(value) : String(value ?? "");
+      return `<tr><td><code>${esc(key)}</code></td>` +
+        `<td><input type="text" data-key="${esc(key)}" value="${esc(encoded)}"></td>` +
+        `<td class="muted">${esc(item.default)}</td>` +
+        `<td>${item.pending ? '<span class="pending-note">restart required</span>' : ''}</td>` +
+        `<td><button class="secondary" data-save="${esc(key)}">Save</button></td></tr>`;
+    }).join("");
+    content.innerHTML = `<figure class="table-wrap"><table><thead><tr><th>Key</th><th>Value</th><th>Default</th><th>Status</th><th></th></tr></thead><tbody>${rows}</tbody></table></figure>`;
+    content.querySelectorAll("button[data-save]").forEach(button => button.onclick = async () => {
+      const key = button.dataset.save;
+      const input = content.querySelector(`input[data-key="${CSS.escape(key)}"]`);
+      let value = input.value;
+      try { value = JSON.parse(value); } catch (_) { /* plain strings are valid config values */ }
+      try { await call("configSet", {key, value}); setStatus(`${key} saved.`); load(); }
+      catch (error) { setStatus(error.message, true); }
+    });
+  }
+
+  function renderPlugins(data) {
+    const rows = data.plugins.sort((a, b) => a.name.localeCompare(b.name)).map(plugin =>
+      `<tr><td><code>${esc(plugin.name)}</code></td><td>${plugin.loaded ? "loaded" : "not loaded"}</td>` +
+      `<td><label><input type="checkbox" data-plugin="${esc(plugin.dir_name)}" ${plugin.enabled ? "checked" : ""}> enabled</label></td></tr>`
+    ).join("");
+    content.innerHTML = `<p class="muted">Changes take effect after restarting the native P2P process.</p>` +
+      `<figure class="table-wrap"><table><thead><tr><th>Plugin</th><th>State</th><th>Enabled</th></tr></thead><tbody>${rows}</tbody></table></figure>`;
+    content.querySelectorAll("input[data-plugin]").forEach(input => input.onchange = async () => {
+      try { await call("pluginConfigSet", {dir_name: input.dataset.plugin, key: "enabled", value: input.checked}); setStatus("Plugin setting saved."); }
+      catch (error) { input.checked = !input.checked; setStatus(error.message, true); }
+    });
+  }
+
+  function renderSiteBuilder(starters) {
+    const cards = starters.map(starter =>
+      `<article><header><strong>${esc(starter.title)}</strong> <code class="muted">${esc(starter.id)}</code></header>` +
+      `<p>${esc(starter.description)}</p>` +
+      `<button data-starter="${esc(starter.id)}">Create</button></article>`
+    ).join("");
+    content.innerHTML = `<p class="muted">Creates a new site signed with your own key, seeded from the chosen starter template.</p>` +
+      `<div class="starter-grid">${cards}</div>`;
+    content.querySelectorAll("button[data-starter]").forEach(button => button.onclick = async () => {
+      const buttons = content.querySelectorAll("button[data-starter]");
+      buttons.forEach(b => { b.disabled = true; b.setAttribute("aria-busy", "true"); });
+      setStatus("Creating site…");
+      status.setAttribute("aria-busy", "true");
+      try {
+        const result = await call("siteBuilderCreate", {starter: button.dataset.starter});
+        setStatus("");
+        status.innerHTML = `Site created: <a href="/${esc(result.address)}/">${esc(result.address)}</a>`;
+      } catch (error) {
+        setStatus(error.message, true);
+      } finally {
+        buttons.forEach(b => { b.disabled = false; b.removeAttribute("aria-busy"); });
+      }
+    });
+  }
+
+  function renderContentFilter(siteblocks, mutes, localNames) {
+    const nameRows = Object.entries(localNames).sort(([a], [b]) => a.localeCompare(b)).map(([address, name]) =>
+      `<tr><td><code>${esc(address)}</code></td><td>${esc(name)}</td>` +
+      `<td><button class="secondary" data-unname="${esc(address)}">Remove</button></td></tr>`
+    ).join("");
+    const blockRows = Object.entries(siteblocks).sort(([a], [b]) => a.localeCompare(b)).map(([address, info]) =>
+      `<tr><td><code>${esc(address)}</code></td><td>${esc(info.reason ?? "")}</td>` +
+      `<td><button class="secondary" data-unblock="${esc(address)}">Remove</button></td></tr>`
+    ).join("");
+    const muteRows = Object.entries(mutes).sort(([a], [b]) => a.localeCompare(b)).map(([auth_address, info]) =>
+      `<tr><td><code>${esc(auth_address)}</code></td><td>${esc(info.cert_user_id ?? "")}</td><td>${esc(info.reason ?? "")}</td>` +
+      `<td><button class="secondary" data-unmute="${esc(auth_address)}">Remove</button></td></tr>`
+    ).join("");
+    content.innerHTML =
+      `<article><header><strong>Local names</strong></header>` +
+      `<p class="muted">Your own label for an address, shown by any app that reads it instead of ` +
+      `whatever username that identity claims for itself. Never published or synced -- yours alone.</p>` +
+      (nameRows
+        ? `<figure class="table-wrap"><table><thead><tr><th>Address</th><th>Name</th><th></th></tr></thead><tbody>${nameRows}</tbody></table></figure>`
+        : `<p class="muted">No local names set.</p>`) +
+      `<div class="grid">` +
+      `<input type="text" id="localname-address" placeholder="Address">` +
+      `<input type="text" id="localname-name" placeholder="Name">` +
+      `<button data-add-localname>Add</button>` +
+      `</div>` +
+      `</article>` +
+      `<article><header><strong>Blocked sites</strong></header>` +
+      (blockRows
+        ? `<figure class="table-wrap"><table><thead><tr><th>Address</th><th>Reason</th><th></th></tr></thead><tbody>${blockRows}</tbody></table></figure>`
+        : `<p class="muted">No blocked sites.</p>`) +
+      `</article>` +
+      `<article><header><strong>Muted users</strong></header>` +
+      (muteRows
+        ? `<figure class="table-wrap"><table><thead><tr><th>Auth address</th><th>Cert user id</th><th>Reason</th><th></th></tr></thead><tbody>${muteRows}</tbody></table></figure>`
+        : `<p class="muted">No muted users.</p>`) +
+      `</article>`;
+    content.querySelector("button[data-add-localname]").onclick = async () => {
+      const address = content.querySelector("#localname-address").value.trim();
+      const name = content.querySelector("#localname-name").value.trim();
+      if (!address || !name) { setStatus("Address and name are both required.", true); return; }
+      try {
+        const result = await call("localNameSet", {auth_address: address, name});
+        if (result && result.error) { setStatus(result.error, true); return; }
+        setStatus("Name saved.");
+        load();
+      } catch (error) { setStatus(error.message, true); }
+    };
+    content.querySelectorAll("button[data-unname]").forEach(button => button.onclick = async () => {
+      try { await call("localNameRemove", {auth_address: button.dataset.unname}); setStatus("Name removed."); load(); }
+      catch (error) { setStatus(error.message, true); }
+    });
+    content.querySelectorAll("button[data-unblock]").forEach(button => button.onclick = async () => {
+      try { await call("siteblockRemove", {site_address: button.dataset.unblock}); setStatus("Site unblocked."); load(); }
+      catch (error) { setStatus(error.message, true); }
+    });
+    content.querySelectorAll("button[data-unmute]").forEach(button => button.onclick = async () => {
+      try { await call("muteRemove", {auth_address: button.dataset.unmute}); setStatus("User unmuted."); load(); }
+      catch (error) { setStatus(error.message, true); }
+    });
+  }
+
+  const PAGE_LOADERS = {
+    config: async () => renderConfig(await call("configList")),
+    plugins: async () => renderPlugins(await call("pluginList")),
+    sitebuilder: async () => renderSiteBuilder(await call("siteBuilderStarters")),
+    contentfilter: async () => renderContentFilter(await call("siteblockList"), await call("muteList"), await call("localNameList")),
+  };
+
+  async function load() {
+    status.setAttribute("aria-busy", "true");
+    status.textContent = "Loading…";
+    try {
+      await PAGE_LOADERS[page]();
+      setStatus("");
+    } catch (error) {
+      setStatus(error.message, true);
+    }
+  }
+{% endblock %}
+
+{% block on_open %}
+  await load();
+{% endblock %}

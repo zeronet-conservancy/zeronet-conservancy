@@ -33,7 +33,7 @@ def writeBuildInfo(build_type):
     bvars = {
         'build_type': build_type,
         'branch': Git.branch(),
-        'commit': Git.commit(),
+        'commit': Git.commit(allow_dirty=False),
     }
     code = '\n'.join(f'{var} = {repr(val)}' for var, val in bvars.items())
     content = \

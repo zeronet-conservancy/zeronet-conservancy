@@ -1,0 +1,71 @@
+{% extends "_layout.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}Console{% endblock %}
+{% block subheading %}<p class="muted">Live server log, streamed over the same websocket every other admin page uses.</p>{% endblock %}
+
+{% block extra_style %}
+<style>
+  #output { min-height: 60vh; max-height: 70vh; overflow-y: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .console-controls { display: flex; gap: .5rem; align-items: end; }
+  .console-controls > div:first-child { flex: 1 1 auto; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="console-controls">
+  <div>
+    <label for="filter">Log filter</label>
+    <input id="filter" placeholder="e.g. ERROR, P2P.SiteManager…">
+  </div>
+  <button id="reload" class="secondary">Reload</button>
+</div>
+<pre id="output">Connecting…</pre>
+{% endblock %}
+
+{% block page_script %}
+  const output = document.getElementById("output");
+  const filter = document.getElementById("filter");
+  let streamId = null;
+
+  function append(lines) {
+    output.textContent += lines.join("");
+    output.scrollTop = output.scrollHeight;
+  }
+
+  async function load() {
+    output.textContent = "";
+    status.setAttribute("aria-busy", "true");
+    try {
+      const result = await call("consoleLogRead", {filter: filter.value, limit: 500});
+      append(result.lines || []);
+      const stream = await call("consoleLogStream", {filter: filter.value});
+      streamId = stream.stream_id;
+      status.removeAttribute("aria-busy");
+      status.textContent = "";
+    } catch (error) {
+      status.removeAttribute("aria-busy");
+      status.textContent = error.message;
+    }
+  }
+
+  document.getElementById("reload").onclick = async () => {
+    if (streamId) await call("consoleLogStreamRemove", {stream_id: streamId});
+    await load();
+  };
+{% endblock %}
+
+{% block on_open %}
+  await load();
+{% endblock %}
+
+{% block on_message_extra %}
+    if (message.cmd === "logLineAdd") { append(message.params.lines || []); return; }
+{% endblock %}
+
+{% block on_unload %}
+  window.addEventListener("beforeunload", () => {
+    if (streamId && socket.readyState === WebSocket.OPEN) {
+      socket.send(JSON.stringify({cmd: "consoleLogStreamRemove", params: {stream_id: streamId}, id: nextId++}));
+    }
+  });
+{% endblock %}

@@ -1,0 +1,51 @@
+{% extends "_layout.html" %}
+{% block title %}{{ title }}{% endblock %}
+{% block heading %}Files{% endblock %}
+{% block subheading %}<p class="muted" id="path"></p>{% endblock %}
+
+{% block page_script %}
+  const address = {{ address | tojson }};
+  const currentPath = {{ inner_path | tojson }};
+  const content = document.getElementById("content");
+
+  function join(name) { return currentPath ? `${currentPath}/${name}` : name; }
+
+  function renderBreadcrumb() {
+    const parts = currentPath ? currentPath.split("/") : [];
+    let accumulated = "";
+    const crumbs = [`<li><a href="/list/${encodeURIComponent(address)}">${esc(address)}</a></li>`];
+    parts.forEach(part => {
+      accumulated = accumulated ? `${accumulated}/${part}` : part;
+      const href = `/list/${encodeURIComponent(address)}/${accumulated.split("/").map(encodeURIComponent).join("/")}`;
+      crumbs.push(`<li><a href="${href}">${esc(part)}</a></li>`);
+    });
+    document.getElementById("path").innerHTML = `<nav aria-label="breadcrumb"><ul>${crumbs.join("")}</ul></nav>`;
+  }
+
+  async function load() {
+    renderBreadcrumb();
+    status.setAttribute("aria-busy", "true");
+    try {
+      const entries = await call("dirList", {inner_path: currentPath, stats: true});
+      const parent = currentPath ? currentPath.split("/").slice(0, -1).join("/") : null;
+      const parentRow = parent === null ? "" :
+        `<tr><td>↩ <a href="/list/${encodeURIComponent(address)}/${parent}">..</a></td><td>directory</td><td></td></tr>`;
+      const rows = entries.sort((a, b) => Number(b.is_dir) - Number(a.is_dir) || a.name.localeCompare(b.name)).map(entry => {
+        const path = join(entry.name).split("/").map(encodeURIComponent).join("/");
+        const href = entry.is_dir ? `/list/${encodeURIComponent(address)}/${path}` : `/${encodeURIComponent(address)}/${path}?wrapper=0`;
+        return `<tr><td>${entry.is_dir ? "📁" : "📄"} <a href="${href}">${esc(entry.name)}</a></td>` +
+          `<td>${entry.is_dir ? "directory" : "file"}</td><td>${entry.is_dir ? "" : entry.size}</td></tr>`;
+      }).join("");
+      content.innerHTML = `<figure class="table-wrap"><table><thead><tr><th>Name</th><th>Type</th><th>Size</th></tr></thead><tbody>${parentRow}${rows}</tbody></table></figure>`;
+      status.removeAttribute("aria-busy");
+      status.textContent = `${entries.length} ${entries.length === 1 ? "entry" : "entries"}`;
+    } catch (error) {
+      status.removeAttribute("aria-busy");
+      status.textContent = error.message;
+    }
+  }
+{% endblock %}
+
+{% block on_open %}
+  await load();
+{% endblock %}

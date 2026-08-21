@@ -73,8 +73,26 @@ else:
     gevent.Greenlet = gevent.greenlet.Greenlet = ErrorhookedGreenlet
     importlib.reload(gevent)
 
+def _isThreadpoolError(context, tb):
+    # Exceptions raised in gevent's thread pool workers are re-raised in the
+    # main thread via ThreadResult.get(), so they should not be reported here.
+    # The worker class name differs across gevent versions (ThreadPool in older
+    # versions, _WorkerGreenlet in newer ones), so also match on the traceback.
+    if context is not None and context.__class__ is tuple:
+        name = getattr(context[0].__class__, "__name__", "")
+        if name in ("ThreadPool", "_WorkerGreenlet", "ThreadPoolWorker"):
+            return True
+    while tb is not None:
+        frame = tb.tb_frame
+        code = frame.f_code
+        if code.co_filename.endswith("threadpool.py") and code.co_name in ("__run_task", "_run_task"):
+            return True
+        tb = tb.tb_next
+    return False
+
+
 def handleGreenletError(context, type, value, tb):
-    if context.__class__ is tuple and context[0].__class__.__name__ == "ThreadPool":
+    if _isThreadpoolError(context, tb):
         # Exceptions in ThreadPool will be handled in the main Thread
         return None
 

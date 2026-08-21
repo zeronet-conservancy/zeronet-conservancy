@@ -1,0 +1,25 @@
+app-id: org.zeronetconservancy.ZeroNet
+runtime: org.freedesktop.Platform
+runtime-version: '23.08'
+sdk: org.freedesktop.Sdk
+command: zeronet-conservancy
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+modules:
+  - name: zeronet-conservancy
+    buildsystem: simple
+    build-commands:
+      - install -d /app/opt/zeronet-conservancy
+      - cp -a . /app/opt/zeronet-conservancy/
+      - install -d /app/bin
+      - ln -s /app/opt/zeronet-conservancy/ZeroNet /app/bin/zeronet-conservancy
+      - install -Dm644 org.zeronetconservancy.ZeroNet.desktop /app/share/applications/org.zeronetconservancy.ZeroNet.desktop
+    sources:
+      - type: dir
+        path: ../../dist/ZeroNet
+      - type: file
+        path: org.zeronetconservancy.ZeroNet.desktop

@@ -1,0 +1,11 @@
+{
+ "title": "ZeroMail",
+ "description": "End-to-end encrypted messaging",
+ "ignore": "((js|css)/(?!all.(js|css))|data/.*db|data/users/.*/.*)",
+ "optional": "data/archived.json",
+ "includes": {
+  "data/users/content.json": {"signers": [], "signers_required": 1}
+ },
+ "files": {},
+ "signs_required": 1
+}

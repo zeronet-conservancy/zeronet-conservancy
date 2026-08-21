@@ -1,0 +1,16 @@
+{
+ "title": "About",
+ "slug": "about",
+ "blocks": [
+  {"type": "heading", "level": 1, "body": "About"},
+  {"type": "section", "columns": [
+   [
+    {"type": "text", "body": "Tell your story in the left column."}
+   ],
+   [
+    {"type": "list", "ordered": false, "items": ["Thing one", "Thing two", "Thing three"]}
+   ]
+  ]},
+  {"type": "quote", "body": "A short quote or motto."}
+ ]
+}

@@ -23,40 +23,61 @@ import os
 
 from typing import Optional
 
-global git
+git = None
+_repo = None
+_loaded = False
 
-try:
-    import git
-except ImportError:
-    git = None
-else:
+
+def _load():
+    """Lazily import GitPython and resolve the repository.
+
+    Importing GitPython runs `git version` at import time (a mitigation for
+    CVE-2024-22190), so avoid triggering it until version info is actually
+    requested.
+    """
+    global git, _repo, _loaded
+    if _loaded:
+        return
+    _loaded = True
+
+    os.environ.setdefault("GIT_PYTHON_REFRESH", "quiet")  # Don't warn if git is missing
+
     try:
-        global _repo
-        up = os.path.dirname
-        root = up(up(up(__file__)))
-        print(root)
-        _repo = git.Repo(root)
-    except Exception as exc:
-        print("Caught exception while trying to detect git repo.")
-        traceback.print_exc()
+        import git as _git
+    except ImportError:
         git = None
+        return
 
-def _gitted(f):
-    if git:
-        return f
-    else:
-        return lambda *args, **kwargs: None
+    try:
+        root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+        _repo = _git.Repo(root)
+        git = _git
+    except Exception:
+        git = None
+        _repo = None
 
-@_gitted
-def commit() -> Optional[str]:
-    """Returns git revision, possibly suffixed with -dirty"""
-    dirty = '-dirty' if _repo.is_dirty() else ''
-    return f'{_repo.head.commit}{dirty}'
 
-@_gitted
+def commit(allow_dirty=True) -> Optional[str]:
+    """Returns git revision, optionally suffixed with -dirty.
+
+    Set ``allow_dirty=False`` for reproducible builds so the returned value
+    does not depend on the state of the working tree.
+    """
+    _load()
+    if git is None:
+        return None
+    try:
+        dirty = '-dirty' if (allow_dirty and _repo.is_dirty()) else ''
+        return f'{_repo.head.commit}{dirty}'
+    except Exception:
+        return None
+
 def branch() -> Optional[str]:
     """Returns current git branch if any"""
+    _load()
+    if git is None:
+        return None
     try:
         return str(_repo.active_branch)
-    except TypeError:
+    except Exception:
         return None

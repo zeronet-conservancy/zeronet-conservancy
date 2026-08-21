@@ -1,0 +1,37 @@
+<!-- Shared left-edge nav drawer, included by both wrapper.html (site pages)
+     and dashboard.html (/Config, /Plugins, /SiteBuilder, /ContentFilter,
+     /Console) so it persists across all pages, not just site views. Each
+     page wires its own behavior onto this static markup: wrapper.html's
+     LeftDrawer (plugins/Sidebar/media/all.js) uses jQuery + wrapper.ws,
+     dashboard.html uses its own plain-JS call() websocket helper. -->
+<div class="left-drawer" id="left-drawer">
+  <div class="left-drawer-tab" id="left-drawer-tab">&#8250;</div>
+  <div class="left-drawer-head"><b>ZeroNet</b></div>
+  <div class="left-drawer-content">
+    <a href="#" class="item" id="leftdrawer-back">&#8592; Back</a>
+    <a href="#" class="item" id="leftdrawer-home">&#8962; Home</a>
+    <h2>Sites</h2>
+    <a href="#" class="item" id="leftdrawer-siteupdateall">Update all sites</a>
+    <a href="#" class="item" id="leftdrawer-newsite-blank">Create new, empty site</a>
+    <a href="/SiteBuilder" target="_top" class="item">Create new site from template&hellip;</a>
+    <a href="/ContentFilter" target="_top" class="item">Manage users and sites</a>
+    <h2>ZeroNet</h2>
+    <a href="/Config" target="_top" class="item">Configuration</a>
+    <a href="/Plugins" target="_top" class="item">Plugins</a>
+    <a href="#" class="item" id="leftdrawer-showdir">Show data directory</a>
+    <h2>Theme</h2>
+    <div class="theme-row">
+      <a href="#system" class="theme-option" data-theme="system">system</a>
+      <a href="#light" class="theme-option" data-theme="light">light</a>
+      <a href="#dark" class="theme-option" data-theme="dark">dark</a>
+    </div>
+    <h2>Language</h2>
+    <div class="lang-row">
+      {% for lang in ["da", "de", "en", "es", "fr", "hu", "it", "nl", "pl", "pt", "pt-br", "ru", "sk", "tr", "uk", "zh", "zh-tw"] %}
+      <a href="#{{ lang }}" class="lang-option" data-lang="{{ lang }}">{{ lang }}</a>
+      {% endfor %}
+    </div>
+    <div class="version" id="leftdrawer-version">Version</div>
+    <a href="#" class="item danger" id="leftdrawer-shutdown">Shut down ZeroNet</a>
+  </div>
+</div>

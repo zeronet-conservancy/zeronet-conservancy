@@ -1,6 +1,7 @@
 # zeronet-conservancy
 
 [![Packaging status](https://repology.org/badge/vertical-allrepos/zeronet-conservancy.svg)](https://repology.org/project/zeronet-conservancy/versions)
+[![tests](https://github.com/imattau/zeronet-conservancy/actions/workflows/tests.yml/badge.svg)](https://github.com/imattau/zeronet-conservancy/actions/workflows/tests.yml)
 
 (NOTE THAT TRANSLATIONS ARE USUALLY BEHIND THIS FILE)
 
@@ -16,11 +17,16 @@ During onion-v3 switch crisis, we needed a fork that worked with onion-v3 and di
 two people. This fork started from fulfilling that mission, implementing minimal changes to
 [ZeroNet/py3](https://github.com/HelloZeroNet/ZeroNet/tree/py3) branch which are easy to audit by anyone.
 
-Now 0net is in deeper crisis than ever before and this fork seems to
-be the last one standing.  Development is sparse and slow, but some of
-the work is being done behind the scenes. If you're completely new to
-0net, don't have anybody to guide you there and are not a developer,
-we recommend waiting until v0.8 is out.
+Since then the fork has gone through a full rewrite of its networking
+layer onto [trio](https://trio.readthedocs.io/) and
+[libp2p](https://libp2p.io/) (replacing the original gevent-based
+stack and BitTorrent-style tracker discovery with a Kademlia DHT, local
+discovery, gossipsub, and peer exchange), and is now on the 1.0.x
+release series with packaged installers for Windows, macOS, Linux, and
+Android built from CI on every tagged release. Development pace still
+varies, so if you're completely new to 0net and don't have anyone to
+guide you there, check the [Releases page](https://github.com/zeronet-conservancy/zeronet-conservancy/releases)
+for the current stable version before diving in.
 
 ## Why 0net?
 
@@ -40,7 +46,7 @@ we recommend waiting until v0.8 is out.
  * Built-in SQL server with P2P data synchronization: allows easier dynamic site development
  * Anonymity: Tor network support with .onion hidden services (including onion-v3 support)
  * TLS encrypted connections (through clearnet)
- * Automatic uPnP port opening (if opted in)
+ * Automatic uPnP port opening (on by default; disable with `--no-upnp`)
  * Plugin for multiuser (openproxy) support
  * Works with any modern browser/OS
  * Works offline and can be synced via alternative transports (or when connection is back)
@@ -48,19 +54,25 @@ we recommend waiting until v0.8 is out.
 
 ## How does it work?
 
-* After starting `zeronet.py` you will be able to visit zeronet sites using
-  `http://127.0.0.1:43110/{zeronet_address}` (eg.
-  `http://127.0.0.1:43110/1MCoA8rQHhwu4LY2t2aabqcGSRqrL8uf2X/`).
-* When you visit a new zeronet site, it tries to find peers using the BitTorrent
-  network so it can download the site files (html, css, js...) from them.
+* After starting `zeronet.py` (which now runs the trio/libp2p-native
+  network stack by default, see "How to join" below) you will be able to
+  visit zeronet sites using `http://127.0.0.1:43110/{zeronet_address}`
+  (eg. `http://127.0.0.1:43110/1MCoA8rQHhwu4LY2t2aabqcGSRqrL8uf2X/`).
+* When you visit a new zeronet site, it looks for peers via a Kademlia
+  DHT, local-network discovery, and peer exchange with already-connected
+  peers, then downloads the site files (html, css, js...) from them over
+  libp2p. (BitTorrent-style HTTP/UDP trackers were dropped during the
+  libp2p migration; the old tracker-based discovery is no longer used.)
 * Each visited site is also served by you.
 * Every site contains a `content.json` file which holds all other files in a sha512 hash
   and a signature generated using the site's private key.
 * If the site owner (who has the private key for the site address) modifies the
-  site, then he/she signs the new `content.json` and publishes it to the peers.
-  Afterwards, the peers verify the `content.json` integrity (using the
-  signature), they download the modified files and publish the new content to
-  other peers.
+  site, then he/she signs the new `content.json` and publishes it to the peers
+  -- both directly and, for sites the node is already serving, via a gossip
+  mesh so peers that don't have a direct connection still hear about it.
+  Peers verify the `content.json` integrity (using the signature) before
+  applying it, then download the modified files and publish the new content
+  to other peers in turn.
 
 Following links relate to original ZeroNet:
 
@@ -124,11 +136,20 @@ Install autoconf and other basic development tools, python3 and pip, then procee
  - `python3 -m venv venv` (make python virtual environment, the last `venv` is just a name, if you use different you should replace it in later commands)
  - `source venv/bin/activate` (activate environment)
  - `python3 -m pip install -r requirements.txt` (install dependencies)
- - `python3 zeronet.py` (**run zeronet-conservancy!**)
+ - (optional) install the native desktop shell and bundler: `python3 -m pip install -r requirements-webview.txt`
+ - for a reproducible install use the pinned lockfile instead: `python3 -m pip install --require-hashes -r requirements.lock` (regenerate it with `pip-compile --allow-unsafe --generate-hashes --output-file=requirements.lock requirements.txt`)
+ - `python3 zeronet.py` (**run zeronet-conservancy!** -- this now runs the
+   trio/libp2p-native network stack by default; the old gevent
+   implementation has been removed, so there's no `--no-p2p` fallback)
  - open the landing page in your browser by navigating to: http://127.0.0.1:43110/
+ - or open it in the native shell with: `python3 zeronet.py --webview`
  - to start it again from fresh terminal, you need to navigate to repo directory and:
  - `source venv/bin/activate`
  - `python3 zeronet.py`
+ - (advanced) the network stack can also be run directly, without the
+   `zeronet.py` launch wrapper: `python3 -m P2P app --data-dir ./data`
+   -- see `python3 -m P2P app --help` for its own flags (`--tor`,
+   `--dht-bootstrap`, `--no-upnp`, `--multiuser`, etc.)
 
 #### (alternatively) On NixOS
 - clone this repo
@@ -136,13 +157,11 @@ Install autoconf and other basic development tools, python3 and pip, then procee
 - `./zeronet.py`
 
 #### (alternatively) Build Docker image
-- build 0net image: `docker build -t 0net-conservancy:latest . -f Dockerfile`
-- or build 0net image with integrated tor: `docker build -t 0net-conservancy:latest . -f Dockerfile.integrated_tor`
-- and run it: `docker run --rm -it -v </path/to/0n/data/directory>:/app/data -p 43110:43110 -p 26552:26552 0net-conservancy:latest`
-- /path/to/0n/data/directory - directory, where all data will be saved, including your secret certificates. If you run it with production mode, do not remove this folder!
-- or you can run it with docker-compose: `docker compose up -d 0net-conservancy` up two containers - 0net and tor separately.
-- or: `docker compose up -d 0net-tor` for run 0net and tor in one container.
-(please check if these instructions are still accurate)
+The Docker build files live under `docker/`, not the repo root:
+- build the image: `docker build -t 0net-conservancy:latest -f docker/Dockerfile .`
+- or run everything via compose from that directory: `cd docker && docker compose up -d 0net-conservancy` (two containers -- 0net and a separate `tor` container)
+- or: `docker compose up -d 0net-tor` for 0net and tor bundled into one container
+- data (including your secret certificates) is persisted to `docker/data` on the host via the compose volume mount; if you run it in production, do not remove that folder!
 
 #### Alternative one-liner (by @ssdifnskdjfnsdjk) (installing python dependencies globally)
 
@@ -150,7 +169,7 @@ Clone Github repository and install required Python modules. First
 edit zndir path at the begining of the command, to be the path where
 you want to store `zeronet-conservancy`:
 
-`zndir="/home/user/myapps/zeronet" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin master; fi; cd "$zndir" && pip install -r requirements.txt|grep -v "already satisfied"; echo "Try to run: python3 $(pwd)/zeronet.py"`
+`zndir="/home/user/myapps/zeronet" ; if [[ ! -d "$zndir" ]]; then git clone --recursive "https://github.com/zeronet-conservancy/zeronet-conservancy.git" "$zndir" && cd "$zndir"||exit; else cd "$zndir";git pull origin main; fi; cd "$zndir" && pip install -r requirements.txt|grep -v "already satisfied"; echo "Try to run: python3 $(pwd)/zeronet.py"`
 
 (This command can also be used to keep `zeronet-conservancy` up to date)
 
@@ -160,10 +179,52 @@ you want to store `zeronet-conservancy`:
    install python requirements
  - more convenience scripts to be added soon
 
-### (unofficial) Windows OS build
+### Windows OS build
 
-Download and extract .zip archive
-[zeronet-conservancy-0.7.10-unofficial-win64.zip](https://github.com/zeronet-conservancy/zeronet-conservancy/releases/download/v0.7.10/zeronet-conservancy-0.7.10-unofficial-win64.zip)
+Official Windows (MSI/NSIS), macOS (DMG), and Linux (DEB/RPM/AppImage/
+Flatpak) installers, plus an Android APK, are built automatically by the
+`desktop-packages` CI workflow (see "pywebview2 zero-configuration
+deployment" below) and published on the
+[Releases page](https://github.com/zeronet-conservancy/zeronet-conservancy/releases)
+for each tagged version. Prefer those over building manually.
+
+### pywebview2 zero-configuration deployment
+
+`pywebview2` provides a Tauri-inspired CLI and bundler. Install the CLI extra,
+then use a `pywebview.conf.json` configuration to build platform-native
+installers with `pywebview2 build`. The supported installer targets are MSI or
+NSIS on Windows, DMG on macOS, and DEB or AppImage on Linux. The Linux
+workflow additionally creates RPM and Flatpak artifacts from the same frozen
+application. Builds are
+performed on the target OS; the CLI does not cross-compile installers.
+
+Platform prerequisites are:
+
+ - Windows: `pythonnet` and the WebView2 Runtime. Windows 10 needs the
+   Evergreen Runtime installer or a bundled Fixed Version Runtime; Windows 11
+   normally includes WebView2.
+ - macOS: PyObjC (`pyobjc-core`, Cocoa, Quartz, WebKit, Security, and Uniform
+   Type Identifiers frameworks).
+ - Linux: either GTK/WebKitGTK (`PyGObject` plus `gir1.2-webkit2-4.1`) or Qt
+   (`pywebview2[qt]`); AppImage and Flatpak cannot bundle WebKitGTK, so the
+   target system/runtime must provide it. DEB and RPM packages should declare
+   their native dependencies in their package metadata.
+ - Android: manually dispatch the workflow to run the separate experimental
+   Buildozer job. It uses the pywebview2 Android template and is currently a packaging scaffold;
+   ZeroNet's full native/P2P dependency set still needs an Android-compatible
+   python-for-android recipe set before the APK can be considered production-ready.
+
+Run `pywebview2 doctor` before building. The CLI uses PyInstaller and can
+produce a one-file executable, but ZeroNet's data directory must remain
+external to the application bundle. The repository's CI tests Ubuntu Qt,
+Ubuntu GTK, Windows EdgeChromium, and macOS; it installs WebView2 on the
+Windows runner and system GTK/Qt/Xvfb dependencies on Linux.
+
+This repository provides the corresponding `pywebview2.conf.json` and
+`desktop.py` entrypoint. The `desktop-packages` GitHub Actions workflow builds
+the native targets on their matching runners when manually dispatched or when
+a `v*` tag is pushed, then uploads the installers and publishes tagged release
+artifacts.
 
 ### Building under Windows OS
 
@@ -183,30 +244,45 @@ Download and extract .zip archive
 - (NOTE: if previous step fails, it most likely means you haven't installed c/c++ compiler successfully)
 - [optional for tor for better connectivity and anonymity] launch Tor Browser
 - (NOTE: windows might show a window saying it blocked access to internet for "security reasons" — you should allow the access)
-- `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151` (launch zeronet-conservancy!)
-- [for full tor anonymity launch this instead] `python zeronet.py --tor_proxy 127.0.0.1:9150 --tor_controller 127.0.0.1:9151 --tor always`
+- `python zeronet.py --tor-proxy 127.0.0.1:9150 --tor-controller 127.0.0.1:9151` (launch zeronet-conservancy!)
+- [for full tor anonymity launch this instead] `python zeronet.py --tor-proxy 127.0.0.1:9150 --tor-controller 127.0.0.1:9151 --tor always`
 - navigate to http://127.0.0.1:43110 in your favourite browser!
 
-To build .exe
-
-- follow the same steps as above, but additionally
-- `pip install pyinstaller`
-- `pyinstaller -p src -p plugins --hidden-import merkletools --hidden-import lib.bencode_open --hidden-import Crypt.Crypt --hidden-import Db.DbQuery --hidden-import lib.subtl --hidden-import lib.subtl.subtl --hidden-import sockshandler --add-data "src;src" --add-data "plugins;plugins" --clean zeronet.py`
-- dist/zeronet should contain working zeronet.exe!
+To build a `.exe`, don't hand-roll a PyInstaller command -- this
+project's real dependency set (libp2p, trio, coincurve, etc.) needs the
+hidden-import/collect-submodules list already maintained in
+`pywebview2.conf.json`, which a manual command will drift out of sync
+with. Use the "pywebview2 zero-configuration deployment" section below
+instead (`pywebview2 build --config pywebview2.conf.json --target msi`
+or `--target nsis`), or grab the official installer from the
+[Releases page](https://github.com/zeronet-conservancy/zeronet-conservancy/releases).
 
 ## Current limitations
 
-* File transactions are not compressed
-* No private sites
-* No DHT support
+* File transfers support opt-in zlib compression (`--file-compression`),
+  but it's off by default
+* Private sites (AES-encrypted content, per-recipient ECIES-wrapped keys)
+  are supported: `siteRequestAccess`/`siteAddRecipient`/`siteRemoveRecipient`
+  websocket commands, transparent encrypt/decrypt on `fileGet`/`fileWrite`
+  and the site's raw HTTP media path. No browser-side "enter your access
+  key" UI has been built yet -- approval/revocation currently has to go
+  through those commands directly (e.g. via a site's own JS or the API),
+  not a dashboard flow
+* Peer discovery is via a Kademlia DHT (plus local-network discovery and
+  peer exchange) -- this is now the primary discovery path for the
+  default network stack, not an experimental add-on; BitTorrent-style
+  trackers were dropped during the libp2p migration
 * No I2P support
 * Centralized elements like zeroid (we're working on this!)
-* No reliable spam protection (and on this too)
+* Spam protection is partial: compromised-signer/cert-based blocking
+  works, but per-site size-limit enforcement from the original
+  implementation hasn't been ported yet
 * Doesn't work directly from browser (one of the top priorities for mid-future)
 * No data transparency
-* No reproducible builds
 * No on-disk encryption
-* No reproducible builds (hence no builds beyond certain GNU/Linux distributions)
+* Builds aren't reproducible/deterministic yet, but official installers
+  for Windows, macOS, Linux, and Android are now built and published
+  automatically for each tagged release (see "Windows OS build" above)
 
 
 ## How can I create a ZeroNet site?

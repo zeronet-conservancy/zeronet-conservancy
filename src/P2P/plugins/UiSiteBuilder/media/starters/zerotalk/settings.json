@@ -1,0 +1,5 @@
+{
+ "title": "ZeroTalk (local identity)",
+ "description": "Decentralized forum, signed in with your own local identity -- no zeroid.bit registration required.",
+ "trust_local_provider_domain": "local"
+}

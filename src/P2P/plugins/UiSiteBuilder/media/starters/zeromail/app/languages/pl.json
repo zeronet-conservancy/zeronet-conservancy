@@ -1,0 +1,36 @@
+{
+	"Inbox": "Skrzynka odbiorcza",
+	"Sent": "Wysłane",
+	"Contacts": "Kontakty",
+	": No messages": ": Brak wiadomości",
+	"Reply to this message": "Odpowiedz na tą wiadomość",
+	"New message": "Nowa wiadomość",
+	"Reply message": "Wiadomość zwrotna",
+	"Delete messages": "Usuń wiadomość",
+	"Encrypt & Send message": "Zaszyfruj i wyślij wiadomość",
+
+	"Loading...": "Ładowanie...",
+	"Loading known AES keys...": "Ładowanie znanych kluczy AES...",
+	"Decrypting new secrets...": "Rozszyfrowywanie nowych sekretów...",
+	"Decrypting new messages...": "Rozszyfrowywanie nowych wiadomości...",
+	"Loading messages...": "Ładowanie wiadomości...",
+	"Decrypting sent messages...": "Rozszyfrowywanie wysłanych wiadomości...",
+	"Message sent!": "Wiadomość wysłana!",
+	"Reply to message": "Odpowiedz na wiadomość",
+
+	"From: ": "Od: ",
+	"To: ": "Do: ",
+	"To:": "Do:",
+	"Username": "Użytkownik",
+	"Subject": "Temat",
+	"Message": "Wiadomość",
+
+	"Delete message": "Usuń wiadomość",
+	"No message selected": "Nie wybrano wiadomości",
+
+	"Logout": "Wyloguj",
+
+	" minutes ago": " minut(y/ę) temu",
+	" hours ago": " godzin(y/ę) temu",
+	" days ago": " dni(dzień) temu"
+}

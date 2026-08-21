@@ -54,6 +54,10 @@
 
 from argparse import Action
 
+# Sentinel used to detect explicitly-passed values for deprecated
+# type/choices/metavar arguments (mirrors argparse._deprecated_default upstream)
+_deprecated_default = object()
+
 class BooleanOptionalAction(Action):
     def __init__(self,
                  option_strings,
