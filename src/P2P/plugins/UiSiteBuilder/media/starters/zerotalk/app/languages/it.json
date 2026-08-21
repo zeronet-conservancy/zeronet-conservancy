@@ -1,0 +1,41 @@
+{
+	"Follow in Newsfeed": "Segui su Newsfeed",
+	"Following": "Seguendo",
+	"Comments in this topic": "Commenti in questa discussione",
+	"New topics": "Nuove discussioni",
+	"New topics in this group": "Nuove discussioni in questo gruppo",
+	"Username mentions": "Menzioni username",
+	"All comments": "Tutti i commenti",
+
+	"Main": "Principale",
+	"Loading...": "Caricamento...",
+	" + Start new topic": " + Apri nuova discussione",
+	"new topic": " nuova discussione",
+	"Topic title": " Titolo discussione",
+	"Topic description": " Descrizione discussione",
+	"Add new topic": "Aggiungi nuova discussione",
+
+	"Newest topics": "Ultime discussioni",
+	"More topics": "Altre discussioni",
+	"Sign in as...": "Firma come...",
+	"Submit comment": "Invia commento",
+	"Please sign in": "Si prega di registrarsi!",
+	"new comment": "nuovo commento",
+
+	"Reply": "Rispondi",
+
+	"stickied": "in evidenza",
+	" posted ": " postato ",
+	"last ": "fino a ",
+	" comment": " commento",
+	" comments": " commento",
+	"0 comments": "0 commenti",
+	"last activity": "ultima attività",
+	"&#9473; started by ": "&#9473; avviata da: ",
+
+	" minutes ago": " minuti fa",
+	" hours ago": " ore fa",
+	" days ago": " giorni fa",
+	"on ": "a",
+	"Just now": "Proprio ora"
+}

@@ -1,0 +1,42 @@
+{
+	"Follow in Newsfeed": "Слідкувати у Newsfeed",
+	"Following": "Слідкую",
+	"Comments in this topic": "Коментарі у цій темі",
+	"New topics": "Нові теми",
+	"New topics in this group": "Нові теми у цій групі",
+	"Username mentions": "Згадки про вас",
+	"All comments": "Всі коментарі",
+
+	"Main": "Головна сторінка",
+	"Loading...": "Завантаження...",
+	" + Start new topic": " + Розпочати нову тему",
+	"new topic": "нові теми",
+	"Topic title": "Нова назва",
+	"Topic description": "Опис теми",
+	"Add new topic": "Додати нову тему",
+
+	"Newest topics": "Найсвіжіші теми",
+	"More topics": "Більше тем",
+	"More comments": "Більше коментрів",
+	"Sign in as...": "Увійти як...",
+	"Submit comment": "Надіслати коментар",
+	"Please sign in": "Будь ласка, увійдіть",
+	"new comment": "новий коментар",
+
+	"Reply": "Відповісти",
+
+	"stickied": "закріплені",
+	" posted ": " розміщений ",
+	"last ": "останні ",
+	" comment": " коментар",
+	" comments": " коментарів",
+	"0 comments": "0 коментрів",
+	"last activity": "остання активність",
+	"&#9473; started by ": "&#9473; створив: ",
+
+	" minutes ago": " хвилин тому",
+	" hours ago": " годин тому",
+	" days ago": " днів тому",
+	"on ": "",
+	"Just now": "Щойно"
+}

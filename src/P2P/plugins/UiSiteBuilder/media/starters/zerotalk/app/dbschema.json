@@ -1,0 +1,67 @@
+{
+	"db_name": "ZeroTalk",
+	"db_file": "data/users/zerotalk.db",
+	"version": 2,
+	"maps": {
+		".+/data.json": {
+			"to_table": [
+				{"node": "topic", "table": "topic"},
+				{"node": "topic_vote", "table": "topic_vote", "key_col": "topic_uri", "val_col": "vote"},
+				{"node": "comment", "table": "comment", "key_col": "topic_uri"},
+				{"node": "comment_vote", "table": "comment_vote", "key_col": "comment_uri", "val_col": "vote"}
+			],
+			"to_keyvalue": ["next_comment_id", "next_topic_id"]
+		},
+		".+/content.json": {
+			"to_keyvalue": [ "cert_user_id" ]
+		}
+	},
+	"tables": {
+		"topic": {
+			"cols": [
+				["topic_id", "INTEGER"],
+				["title", "TEXT"],
+				["body", "TEXT"],
+				["type", "TEXT"],
+				["parent_topic_uri", "TEXT"],
+				["added", "DATETIME"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE UNIQUE INDEX topic_key ON topic(topic_id, json_id)"],
+			"schema_changed": 1
+		},
+		"comment": {
+			"cols": [
+				["comment_id", "INTEGER"],
+				["body", "TEXT"],
+				["topic_uri", "TEXT"],
+				["added", "DATETIME"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE INDEX topic_uri ON comment(topic_uri)", "CREATE INDEX comment_added ON comment(added)", "CREATE UNIQUE INDEX comment_key ON comment(json_id, comment_id)"],
+			"schema_changed": 1
+		},
+		"comment_vote": {
+			"cols": [
+				["comment_uri", "TEXT"],
+				["vote", "INTEGER"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE UNIQUE INDEX comment_vote_key ON comment_vote(comment_uri, json_id)", "CREATE INDEX comment_vote_uri ON comment_vote(comment_uri)"],
+			"schema_changed": 1
+		},
+		"topic_vote": {
+			"cols": [
+				["topic_uri", "TEXT"],
+				["vote", "INTEGER"],
+				["json_id", "INTEGER REFERENCES json (json_id)"]
+			],
+			"indexes": ["CREATE UNIQUE INDEX topic_vote_topic_key ON topic_vote(topic_uri, json_id)", "CREATE INDEX topic_vote_uri ON topic_vote(topic_uri)"],
+			"schema_changed": 1
+		}
+	},
+	"feeds": {
+		"Topics": "SELECT title AS title, body AS body, added AS date_added, 'topic' AS type, '?Topic:' || topic.topic_id || '_' || topic_creator_json.directory AS url FROM topic LEFT JOIN json AS topic_creator_json ON (topic_creator_json.json_id = topic.json_id)",
+		"Comments": "SELECT 'comment' AS type, comment.added AS date_added, topic.title AS title, commenter_user.value || ': ' || comment.body AS body, topic_creator_json.directory AS topic_creator_address, topic.topic_id || '_' || topic_creator_json.directory AS row_topic_uri, '?Topic:' || topic.topic_id || '_' || topic_creator_json.directory AS url FROM topic LEFT JOIN json AS topic_creator_json ON (topic_creator_json.json_id = topic.json_id) LEFT JOIN comment ON (comment.topic_uri = row_topic_uri) LEFT JOIN json AS commenter_json ON (commenter_json.json_id = comment.json_id) LEFT JOIN json AS commenter_content ON (commenter_content.directory = commenter_json.directory AND commenter_content.file_name = 'content.json') LEFT JOIN keyvalue AS commenter_user ON (commenter_user.json_id = commenter_content.json_id AND commenter_user.key = 'cert_user_id')"
+	}
+}

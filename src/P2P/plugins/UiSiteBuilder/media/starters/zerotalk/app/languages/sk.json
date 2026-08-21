@@ -1,0 +1,49 @@
+{
+	"Follow in Newsfeed": "Sledovať v novinkách",
+	"Following": "Sledovanie",
+	"Comments in this topic": "Komentárov pri tejto téme",
+	"New topics": "Nové témy",
+	"New topics in this group": "Nové témy v skupine",
+	"Username mentions": "Spomenutých používateľov",
+	"All comments": "Všetky komentáre",
+
+	"Main": "Hlavné",
+	"Loading...": "Načítavanie...",
+	" + Start new topic": " + Začať novú tému",
+	"new topic": " nová téma",
+	"Topic title": " Názov témy",
+	"Topic description": " Popis témy",
+	"Add new topic": "Pridať novú tému",
+
+	"Newest topics": "Najnovšie témy",
+	"More topics": "Viac tém",
+	"Sign in as...": "Prihlásiť sa ako...",
+	"Submit comment": "Poslať komentár",
+	"Please sign in": "Prosím prihláste sa",
+	"new comment": "nový komentár",
+
+	"Reply": "Odpovedať",
+
+	"stickied": "pripnuté",
+	" posted ": " zverejnené ",
+	"last ": "posledný ",
+	" comment": " komentár",
+	" comments": " komentáre",
+	"0 comments": "0 komentárov",
+	"last activity": "posledná aktivita",
+	"&#9473; started by ": "&#9473; začal: ",
+
+	" minutes ago": " minút dozadu",
+	" hours ago": " hodín dozadu",
+	" days ago": " dní dozadu",
+	"on ": "",
+	"Just now": "Teraz",
+	"Forums: ": "Fóra: ",
+	"used: ": "Využitých: ",
+
+	"on": "",
+	"Oct": "Okt",
+	"May": "Máj",
+	"Jun": "Jún",
+	"Jul": "Júl"
+}

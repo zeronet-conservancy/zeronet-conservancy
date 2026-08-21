@@ -1,0 +1,14 @@
+{
+ "ignore": ".*",
+ "files": {},
+ "signs": {},
+ "user_contents": {
+  "cert_signers": {
+   "__LOCAL_DOMAIN__": "__LOCAL_PROVIDER_ADDRESS__"
+  },
+  "permission_rules": {
+   ".*": {"files_allowed": "data.json", "max_size": 20000}
+  },
+  "permissions": {}
+ }
+}

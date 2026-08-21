@@ -260,6 +260,106 @@ class TestP2PPluginsUiSiteBuilder:
         assert on_disk is True
         assert second_cert["auth_user_name"] == "bob"  # Second site's own self-issue also succeeded
 
+    def testCreateZerotalkStarterVendorsRealAppAndTrustsLocalProvider(self):
+        """zerotalk's own app/ tree, same "full app" starter mechanism as
+        zeromail (see UiSiteBuilder.commands's own module docstring) --
+        a real, patched copy of ZeroTalk's actual client code, not more
+        page-builder content."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                admin_address = "1TestSbZerotalkAdminSiteAA1"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        reply = await _call(ws, "siteBuilderCreate", {"starter": "zerotalk"})
+
+                new_address = reply["result"]["address"]
+                site = site_manager.sites[new_address]
+                content = site.content_manager.contents["content.json"]
+                user_contents = site.content_manager.contents["data/users/content.json"]
+                cert_signers = user_contents["user_contents"]["cert_signers"]
+                index_html = await site.storage.read("index.html", mode="r")
+                return (
+                    content["title"],
+                    "signs" in content and new_address in content["signs"],
+                    site.storage.isFile("index.html"),
+                    site.storage.isFile("js/all.js"),
+                    site.storage.isFile("dbschema.json"),
+                    cert_signers,
+                    index_html,
+                    user.settings.get("local_provider_address"),
+                )
+
+        (
+            title, is_signed, has_index, has_js, has_dbschema,
+            cert_signers, index_html, provider_address,
+        ) = compat.run(scenario)
+        assert title == "ZeroTalk (local identity)"  # From the starter's own settings.json
+        assert is_signed is True
+        assert has_index is True
+        assert has_js is True
+        assert has_dbschema is True
+        assert provider_address
+        assert len(cert_signers) == 1
+        domain, trusted_address = next(iter(cert_signers.items()))
+        assert domain.startswith("local-") and domain != "local"
+        assert trusted_address == provider_address
+        assert "__LOCAL_DOMAIN__" not in index_html
+        assert ("ZEROTALK_LOCAL_DOMAIN = \"%s\"" % domain) in index_html
+
+    def testZerotalkStarterEndToEndComposeAndSign(self):
+        """Same real compose->sign path as zeromail's own end-to-end test
+        (fileWrite + the new contentSign command), proving ZeroTalk's
+        writePublish() patch point (a single shared choke point for
+        topics/comments/votes, unlike zeromail's own saveData()) needed
+        no per-caller duplication."""
+        async def scenario():
+            with tempfile.TemporaryDirectory() as d:
+                data_dir = pathlib.Path(d)
+                site_manager = SiteManager(data_dir)
+                user_manager = UserManager(data_dir)
+                user = user_manager.create()
+                admin_address = "1TestSbZerotalkE2eAdminAA1"
+                admin_site = site_manager.add(admin_address)
+                admin_site.permissions = ["ADMIN"]
+
+                server = UiServer(sites=site_manager.sites, site_manager=site_manager, user_manager=user_manager)
+                async with server.run():
+                    async with trio_websocket.open_websocket_url(_wsUrl(server, admin_site)) as ws:
+                        created = await _call(ws, "siteBuilderCreate", {"starter": "zerotalk"}, msg_id=1)
+                        new_address = created["result"]["address"]
+                        site = site_manager.sites[new_address]
+                        domain = next(iter(
+                            site.content_manager.contents["data/users/content.json"]["user_contents"]["cert_signers"]
+                        ))
+
+                        cert = await user.issueCert(new_address, domain, "web", "carol")
+                        auth_address = cert["auth_address"]
+
+                        async with trio_websocket.open_websocket_url(_wsUrl(server, site)) as ws2:
+                            write_reply = await _call(ws2, "fileWrite", {
+                                "inner_path": "data/users/%s/data.json" % auth_address,
+                                "content_base64": base64.b64encode(b'{"next_topic_id":1,"topic":[]}').decode(),
+                            }, msg_id=1)
+                            sign_reply = await _call(ws2, "contentSign", {
+                                "inner_path": "data/users/%s/content.json" % auth_address,
+                            }, msg_id=2)
+                return write_reply, sign_reply, site.storage.isFile("data/users/%s/content.json" % auth_address), domain
+
+        write_reply, sign_reply, on_disk, domain = compat.run(scenario)
+        assert write_reply["result"] == "ok"
+        result = sign_reply["result"]
+        assert result["cert_user_id"] == "carol@%s" % domain
+        assert "data.json" in result["files"]
+        assert on_disk is True
+
     def testCreateRequiresAdmin(self):
         async def scenario():
             with tempfile.TemporaryDirectory() as d:

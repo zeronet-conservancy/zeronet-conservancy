@@ -1,0 +1,50 @@
+{
+	"Follow in Newsfeed": "在新闻源中关注",
+	"Following": "已关注",
+	"Comments in this topic": "这个话题的新评论",
+	"New topics": "新话题",
+	"New topics in this group": "本组的新话题",
+	"Username mentions": "提到的用户名",
+	"All comments": "所有评论",
+
+	"Main": "主论坛",
+	"Loading...": "加载中...",
+	" + Start new topic": " + 创建新话题",
+	"new topic": " 新话题",
+	"Topic title": " 话题标题",
+	"Topic description": " 话题描述",
+	"Add new topic": "添加新话题",
+
+	"Newest topics": "最新的话题",
+	"More topics": "更多话题",
+	"Sign in as...": "登录为...",
+	"Submit comment": "提交评论",
+	"Please sign in": "请登录",
+	"new comment": "新评论",
+
+	"Reply": "回复",
+
+	"stickied": "已置顶",
+	" posted ": " 发表了 ",
+	"last ": "最后活动于 ",
+	" comment": " 条评论",
+	" comments": " 条评论",
+	"0 comments": "0 条评论",
+	"last activity": "最后活动",
+	"&#9473; started by ": "&#9473; 发布者：",
+
+	" minutes ago": " 分钟前",
+	" hours ago": " 小时前",
+	" days ago": " 天前",
+	"on ": "",
+	"Just now": "刚才",
+
+	"Please use English, you can reach other language forums at the top of this page":"请使用英语，或者你可以在页面顶部到达其他语言的论坛",
+
+	"Mute this user": "屏蔽此用户",
+
+	"Please, choose your account before upvoting.": "请在点赞前选择你的帐户",
+	"Every new user has limited space to store comments, topics and votes.\\n": "每个用户有受限的空间来存储评论、话题与投票。\\n",
+	"This indicator shows your used/total allowed KBytes.\\n": "该指示器显示你已经使用/总共允许的千字节。\\n",
+	"The site admin can increase it if you about to run out of it.": "如果你超出限制，站点管理员可以增加它。"
+}
